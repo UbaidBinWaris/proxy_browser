@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content-Security-Policy is enforced from src/main.tsx (see src/lib/csp.ts), which appends a
+      <meta http-equiv="Content-Security-Policy"> built from one of the two source tags below:
+        - csp-production  : strict policy used by the packaged app (file://). Mirrored by the main process header.
+        - csp-development : adds what `npm run dev` needs — Vite's inline React Fast Refresh preamble and the HMR websocket.
+      A static http-equiv tag here would block the dev preamble; keeping the policy strings in the HTML keeps them auditable.
+    -->
+    <meta
+      name="csp-production"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: proxyqa:; font-src 'self'; connect-src 'self'"
+    />
+    <meta
+      name="csp-development"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; img-src 'self' data: file: proxyqa:; font-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* ws://127.0.0.1:* http://127.0.0.1:*"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>Proxy QA Browser</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

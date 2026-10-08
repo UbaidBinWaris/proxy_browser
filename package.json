@@ -1,0 +1,75 @@
+{
+  "name": "proxy-qa-browser",
+  "version": "1.1.0",
+  "description": "Desktop QA browser for authorized form testing through isolated profiles and proxy exit IPs",
+  "main": "out/main/index.js",
+  "scripts": {
+    "qa": "node out/main/qa-cli.js",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "test": "vitest run",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "lint": "eslint .",
+    "test:watch": "vitest",
+    "browsers:install": "node scripts/install-browsers.mjs",
+    "build:linux": "node scripts/bundle-browsers.mjs --platform linux --webkit-libs && npm run build && electron-builder --linux --x64 --config electron-builder.config.mjs",
+    "build:windows": "npm run build && electron-builder --win --x64 --config electron-builder.config.mjs",
+    "build:windows:bundled": "node scripts/build-windows-bundled.mjs",
+    "build:all": "node scripts/build-all.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UbaidBinWaris/proxy_browser.git"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/UbaidBinWaris/proxy_browser/issues"
+  },
+  "homepage": "https://github.com/UbaidBinWaris/proxy_browser#readme",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Ubaid Bin Waris",
+  "dependencies": {
+    "dotenv": "18.0.5",
+    "pixelmatch": "7.1.0",
+    "playwright-core": "1.63.0",
+    "pngjs": "7.0.0",
+    "zod": "4.6.5"
+  },
+  "overrides": {
+    "http-cache-semantics": "4.3.0",
+    "postcss-selector-parser": "7.1.6"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.4",
+    "@types/pngjs": "6.0.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "5.2.0",
+    "autoprefixer": "10.6.1",
+    "clsx": "2.1.1",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "eslint": "10.12.0",
+    "lucide-react": "1.50.0",
+    "postcss": "8.5.28",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-icons": "5.7.0",
+    "react-router-dom": "7.18.4",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "3.4.19",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vite": "7.3.6",
+    "vitest": "5.0.3",
+    "zustand": "5.0.15"
+  }
+}
