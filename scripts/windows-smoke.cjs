@@ -17,7 +17,7 @@
  * Exits non-zero when any check fails. Screenshots go to smoke-output/.
  */
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global require, __dirname, process, console, setTimeout, window, Buffer */
+/* global require, __dirname, process, console, setTimeout, window, Buffer, module */
 const { _electron: electron } = require('playwright-core')
 const { execFileSync } = require('node:child_process')
 const { createHash } = require('node:crypto')
@@ -78,6 +78,49 @@ async function waitForTask(api, taskId, timeoutMs) {
     await sleep(1000)
   }
   return task
+}
+
+async function checkComputerSetup(api, app, sourceExecutable = EXE, report = check) {
+  // Electron resolves Windows Known Folders independently of env.APPDATA. Check
+  // the same native folder used by the app, preserving a local user's shortcut.
+  const appData = await app.evaluate(({ app }) => app.getPath('appData'))
+  const shortcutPath = path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Proxy QA Browser.lnk')
+  const originalShortcut = fs.existsSync(shortcutPath) ? fs.readFileSync(shortcutPath) : null
+  let localExe
+  try {
+    const computerSetup = await api(() => window.api.desktop.setup({ desktop: false, startMenu: true }))
+    report('computer setup succeeds', computerSetup.ok, computerSetup.error?.message || '')
+    if (!computerSetup.ok) {
+      const logs = await api(() => window.api.logs.list({ level: 'ERROR', limit: 10 }))
+      console.error('Computer setup diagnostics:', JSON.stringify(logs.data))
+    }
+    localExe = computerSetup.ok ? computerSetup.data.installedPath : null
+    report('computer copy is outside the packaged source', localExe && localExe !== sourceExecutable && fs.existsSync(localExe), localExe || '')
+    if (localExe) {
+      const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+      report(
+        'computer copy preserves the exact packaged app.asar',
+        digest(path.join(path.dirname(localExe), 'resources', 'app.asar')) === digest(path.join(path.dirname(sourceExecutable), 'resources', 'app.asar')),
+      )
+    }
+    report(
+      'Start menu shortcut created',
+      computerSetup.ok && computerSetup.data.startMenuShortcut && fs.existsSync(shortcutPath),
+      `${shortcutPath}${computerSetup.ok && computerSetup.data.warnings.length ? `; ${computerSetup.data.warnings.join('; ')}` : ''}`,
+    )
+    if (fs.existsSync(shortcutPath)) {
+      const link = await app.evaluate(({ shell }, file) => shell.readShortcutLink(file), shortcutPath)
+      // Windows Shell expands 8.3 names (RUNNER~1) and may change path casing.
+      const canonical = (file) => fs.realpathSync.native(file).toLowerCase()
+      report('shortcut targets the stable executable', canonical(link.target) === canonical(localExe), link.target)
+      report('shortcut uses the stable app identity', link.appUserModelId === 'com.letsscall.proxy-qa-browser', link.appUserModelId)
+    }
+  } finally {
+    if (originalShortcut !== null) fs.writeFileSync(shortcutPath, originalShortcut)
+    else fs.rmSync(shortcutPath, { force: true })
+  }
+
+  return localExe
 }
 
 async function main() {
@@ -334,29 +377,7 @@ async function main() {
   await win.screenshot({ path: path.join(OUT, '02-after-launches.png') })
   check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 
-  // Real per-user setup, isolated Start menu shortcut and stable local executable.
-  const computerSetup = await api(() => window.api.desktop.setup({ desktop: false, startMenu: true }))
-  check('computer setup succeeds', computerSetup.ok, computerSetup.error?.message || '')
-  if (!computerSetup.ok) {
-    const logs = await api(() => window.api.logs.list({ level: 'ERROR', limit: 10 }))
-    console.error('Computer setup diagnostics:', JSON.stringify(logs.data))
-  }
-  const localExe = computerSetup.ok ? computerSetup.data.installedPath : null
-  check('computer copy is outside the packaged source', localExe && localExe !== EXE && fs.existsSync(localExe), localExe || '')
-  if (localExe) {
-    const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
-    check(
-      'computer copy preserves the exact packaged app.asar',
-      digest(path.join(path.dirname(localExe), 'resources', 'app.asar')) === digest(path.join(path.dirname(EXE), 'resources', 'app.asar')),
-    )
-  }
-  const shortcutPath = path.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Proxy QA Browser.lnk')
-  check('Start menu shortcut created', fs.existsSync(shortcutPath), shortcutPath)
-  if (fs.existsSync(shortcutPath)) {
-    const link = await app.evaluate(({ shell }, file) => shell.readShortcutLink(file), shortcutPath)
-    check('shortcut targets the stable executable', link.target === localExe, link.target)
-    check('shortcut uses the stable app identity', link.appUserModelId === 'com.letsscall.proxy-qa-browser', link.appUserModelId)
-  }
+  const localExe = await checkComputerSetup(api, app)
 
   // (e) app.close() with a session still open leaves no --proxy-qa-session browser behind.
   if (status.chromium) {
@@ -423,7 +444,9 @@ async function main() {
   process.exit(failed.length === 0 ? 0 : 1)
 }
 
-main().catch((err) => {
+module.exports = { checkComputerSetup }
+
+if (require.main === module) main().catch((err) => {
   console.error('SMOKE TEST CRASHED:', err)
   try {
     fs.writeFileSync(
