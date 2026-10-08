@@ -39,3 +39,12 @@ qa-results/
 *.pem
 .release-keys/
 !resources/updates/public-key.pem
+
+# Download website and deployment inputs
+app/webapp/.next/
+app/webapp/node_modules/
+app/webapp/.env*
+!app/webapp/.env.example
+!app/webapp/public-key.pem
+.deploy/
+server-data/

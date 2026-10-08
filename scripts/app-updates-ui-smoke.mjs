@@ -24,7 +24,7 @@ try {
     browserWindow.setBounds({ width: 1280, height: 1100 })
     browserWindow.show()
     browserWindow.focus()
-    const state = { setup: [], pins: 0, launches: 0, apply: 0, failSetup: true, failUsb: true, cancelUsb: false,
+    const state = { setup: [], pins: 0, launches: 0, apply: 0, online: 0, failSetup: true, failUsb: true, cancelUsb: false,
       status: { supported: true, platform: 'win32', arch: 'x64', currentVersion: '1.2.0', installedVersion: null, installedPath: null, runningInstalledCopy: false, desktopShortcut: false, startMenuShortcut: false, offlineUpdatesReady: true, releaseNotes: ['Faster Windows launches from the computer copy.'], warnings: [] } }
     globalThis.qaDesktopUi = state
     const replace = (channel, handler) => { ipcMain.removeHandler(channel); ipcMain.handle(channel, handler) }
@@ -43,6 +43,8 @@ try {
       if (state.cancelUsb) { state.cancelUsb = false; return ok(null) }
       return ok({ version: '1.3.0', fileName: 'Proxy-QA-Browser-1.3.0-Windows-x64.exe', notes: ['Example verified release'], size: 100 * 1024 * 1024 })
     })
+    replace('qa:check-updates', () => ok({ configured: true, available: true, currentVersion: '1.2.0', version: '1.3.0', fileName: 'Proxy-QA-Browser-1.3.0-Windows-x64.exe' }))
+    replace('desktop:apply-online', () => { state.online++; return ok(undefined) })
     replace('desktop:apply-usb', () => { state.apply++; return ok(undefined) })
   })
   await page.waitForFunction(() => Boolean(window.api))
@@ -50,6 +52,7 @@ try {
   await page.evaluate(() => { window.location.hash = '#/settings/about' })
   await page.reload()
   await page.getByRole('heading', { name: 'App & updates', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Download v1.3.0 and restart' }).click()
   await page.getByRole('checkbox', { name: 'Desktop shortcut' }).uncheck()
   await page.getByRole('button', { name: 'Set up on this computer', exact: true }).click()
   await page.getByText(/Setup copy failed; please retry/).waitFor()
@@ -72,12 +75,12 @@ try {
   await page.getByRole('button', { name: 'Choose USB update' }).click()
   await page.getByRole('button', { name: 'Choose USB update' }).waitFor({ state: 'visible' })
   await page.waitForFunction(() => !document.body.textContent.includes('Verified update · v1.3.0'))
-  const calls = await app.evaluate(() => { const state = globalThis.qaDesktopUi; return { pins: state.pins, launches: state.launches, apply: state.apply } })
-  assert.deepEqual(calls, { pins: 1, launches: 1, apply: 1 })
+  const calls = await app.evaluate(() => { const state = globalThis.qaDesktopUi; return { pins: state.pins, launches: state.launches, apply: state.apply, online: state.online } })
+  assert.deepEqual(calls, { pins: 1, launches: 1, apply: 1, online: 1 })
   await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(720, 650); win.setSize(760, 1050) })
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'App screen should not overflow horizontally')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png' }, null, 2))
+  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['online update discovery and restart', 'setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png' }, null, 2))
 } finally {
   if (app) await app.close().catch(() => {})
   await rm(stateDir, { recursive: true, force: true })

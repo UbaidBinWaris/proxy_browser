@@ -41,6 +41,7 @@ const api: ProxyQaApi = {
     launchInstalled: () => invoke(IPC.desktop.launchInstalled),
     chooseUsb: () => invoke(IPC.desktop.chooseUsb),
     applyUsb: () => invoke(IPC.desktop.applyUsb),
+    applyOnline: () => invoke(IPC.desktop.applyOnline),
   },
   qa: {
     visualImages: (batchId, caseId, stepIndex) => invoke(IPC.qa.visualImages, batchId, caseId, stepIndex),

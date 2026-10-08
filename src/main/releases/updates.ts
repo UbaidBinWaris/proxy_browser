@@ -70,9 +70,12 @@ export function createUpdateManager({
 }) {
   let selected: z.infer<typeof UpdatePayloadSchema>['assets'][number] | null = null
   let downloading = false
-  return {
+  let selectedVersion: string | null = null
+  const manager = {
     async check(): Promise<UpdateStatus> {
+      if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')
       selected = null
+      selectedVersion = null
       if (!config) return { configured: false, available: false, currentVersion }
       https.parse(config.feedUrl)
       const response = await fetchImpl(config.feedUrl, { signal: AbortSignal.timeout(15000), redirect: 'error' })
@@ -94,6 +97,7 @@ export function createUpdateManager({
       }
       const payload = verifyUpdateEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')), config.publicKey)
       if (!newerVersion(payload.version, currentVersion)) return { configured: true, available: false, currentVersion }
+      selectedVersion = payload.version
       selected = payload.assets.find((asset) => asset.platform === platform && asset.arch === arch) ?? null
       return {
         configured: true,
@@ -104,9 +108,15 @@ export function createUpdateManager({
       }
     },
     async download(): Promise<string> {
+      return (await manager.downloadRelease()).path
+    },
+    async downloadRelease() {
       if (!selected) throw new AppException('INVALID_INPUT', 'Check for a verified update first.')
       if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')
       const asset = selected
+      const version = selectedVersion!
+      if (!config || new URL(asset.url).origin !== new URL(config.feedUrl).origin)
+        throw new AppException('INVALID_INPUT', 'The update must be downloaded from the publisher’s server.')
       downloading = true
       try {
         await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -118,15 +128,16 @@ export function createUpdateManager({
           expectedSize: asset.size,
           maxBytes: asset.size,
           minBytes: 1,
-          signal: AbortSignal.timeout(120000),
-          fetchImpl,
+          signal: AbortSignal.timeout(30 * 60 * 1000),
+          fetchImpl: (url, init) => fetchImpl(url, { ...init, redirect: 'error' }),
         })
         await rename(`${destination}.part`, destination)
-        return destination
+        return { path: destination, version, asset }
       } finally {
         downloading = false
       }
     },
   }
+  return manager
 }
 export type UpdateManager = ReturnType<typeof createUpdateManager>

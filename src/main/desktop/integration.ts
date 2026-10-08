@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
 import type { DesktopSetupOptions, DesktopStatus, UsbRelease, UsbUpdatePreview } from '@shared/desktop'
 import { AppException } from '../contracts'
+import type { UpdateManager } from '../releases/updates'
 import { newerVersion } from '../releases/updates'
 
 const InstallMarkerSchema = z.object({
@@ -289,6 +290,19 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       await verifyAsset(source, asset)
       selected = { release, asset, source }
       return { version: release.version, fileName: asset.fileName, notes: release.notes, size: asset.size }
+    },
+    /** Only the main-process signed updater supplies this value; IPC accepts no path or manifest. */
+    async applyOnline(update: Awaited<ReturnType<UpdateManager['downloadRelease']>>): Promise<void> {
+      requireSupported()
+      if (!newerVersion(update.version, opts.version) || update.asset.platform !== opts.platform || update.asset.arch !== opts.arch)
+        throw new AppException('INVALID_INPUT', 'The verified update is incompatible with this computer.')
+      if (dirname(resolve(update.path)) !== resolve(opts.updatesDirectory))
+        throw new AppException('INVALID_INPUT', 'The update is outside the managed download directory.')
+      await verifyAsset(update.path, update.asset)
+      selected = { source: update.path, asset: update.asset, release: {
+        format: 1, appId: DESKTOP_APP_ID, version: update.version, releasedAt: new Date().toISOString(), notes: [], assets: [update.asset],
+      } }
+      await this.applyUsb()
     },
     async applyUsb(): Promise<void> {
       await exclusive(async () => {

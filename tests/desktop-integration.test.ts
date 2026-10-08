@@ -270,3 +270,23 @@ it('restores user browser overrides and discards expired wrapper environment on 
   expect(env.PORTABLE_EXECUTABLE_FILE).toBeUndefined()
   expect(env.LD_LIBRARY_PATH).toBe('/usr/lib')
 })
+
+ it('prepares an online update only from the managed directory and rechecks its hash before restarting', async () => {
+   const f = await fixture()
+   await f.manager.setup({ desktop: true, startMenu: true })
+   await mkdir(f.options.updatesDirectory, { recursive: true })
+   const path = join(f.options.updatesDirectory, 'download.AppImage')
+   await writeFile(path, 'new online application')
+   const asset = { platform: 'linux' as const, arch: 'x64' as const, fileName: 'download.AppImage', size: (await stat(path)).size, sha256: await fileSha256(path), url: 'https://releases.test/download.AppImage' }
+   await expect(f.manager.applyOnline({ path: f.options.appImage!, version: '1.3.0', asset })).rejects.toThrow('managed')
+   await expect(f.manager.applyOnline({ path, version: '1.1.0', asset })).rejects.toThrow('incompatible')
+   await writeFile(path, 'tampered online application')
+   await expect(f.manager.applyOnline({ path, version: '1.3.0', asset })).rejects.toThrow()
+   expect(f.restart).not.toHaveBeenCalled()
+   await writeFile(path, 'new online application')
+   await f.manager.applyOnline({ path, version: '1.3.0', asset })
+   const pending = JSON.parse(await readFile(join(f.options.root, 'pending-usb-update.json'), 'utf8'))
+   expect(pending).toMatchObject({ version: '1.3.0', managed: true, desktop: true, startMenu: true, sha256: asset.sha256 })
+   expect(f.restart).toHaveBeenCalledWith(pending.executable)
+   expect(await readFile(pending.executable, 'utf8')).toBe('new online application')
+ })

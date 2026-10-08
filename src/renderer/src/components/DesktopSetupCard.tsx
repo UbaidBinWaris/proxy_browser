@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MonitorDown, Pin, Usb, ArrowUpRight, CheckCircle2 } from 'lucide-react'
+import type { UpdateStatus } from '@shared/qa'
 import type { DesktopStatus, UsbUpdatePreview } from '@shared/desktop'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
@@ -13,6 +14,7 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   const [desktop, setDesktop] = useState(true)
   const [startMenu, setStartMenu] = useState(true)
   const [preview, setPreview] = useState<UsbUpdatePreview | null>(null)
+  const [online, setOnline] = useState<UpdateStatus | null>(null)
   const [pinHelp, setPinHelp] = useState(false)
   useEffect(() => {
     let active = true
@@ -27,6 +29,13 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (compact) return
+    let active = true
+    unwrap(getApi().qa.checkUpdates()).then(value => { if (active) setOnline(value) }).catch(() => undefined)
+    return () => { active = false }
+  }, [compact])
 
   const action = async (name: string, run: () => Promise<void>): Promise<void> => {
     if (busy) return
@@ -47,7 +56,7 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
     <Card>
       <CardHeader
         title={compact ? 'Keep this app on your computer' : 'App & updates'}
-        description="Set up once on each computer. Keep your shortcuts and local data when updating from USB."
+        description="Set up once on each computer. Keep your shortcuts and local data when updating online or from USB."
       />
       <CardBody className="space-y-5">
         {error ? (
@@ -176,6 +185,16 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                     {warning}
                   </p>
                 ))}
+                {!compact && <div className="space-y-3 border-t border-border pt-5">
+                  <p className="text-sm font-medium">Online updates</p>
+                  <p className="text-xs text-muted-foreground">Check the publisher’s server for a signed release. Close browser sessions before restarting; your local data and shortcuts are kept.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={!!busy} loading={busy === 'check-online'} onClick={() => void action('check-online', async () => setOnline(await unwrap(getApi().qa.checkUpdates())))}>Check for updates</Button>
+                    {online?.available && <Button size="sm" disabled={!!busy} loading={busy === 'apply-online'} onClick={() => void action('apply-online', async () => { await unwrap(getApi().desktop.applyOnline()) })}>Download v{online.version} and restart</Button>}
+                  </div>
+                  {online && <p role="status" className="text-xs text-muted-foreground">{!online.configured ? 'Online updates are not configured in this build.' : online.available ? `Verified release v${online.version} is available.` : `You are running v${online.currentVersion}; no newer compatible release is available.`}</p>}
+                  {busy === 'apply-online' && <p role="status" className="text-xs text-muted-foreground">Downloading and verifying the update. Large files can take several minutes. The app will restart when verification finishes.</p>}
+                </div>}
                 {!compact && (
                   <div className="space-y-3 border-t border-border pt-5">
                     <p className="flex items-center gap-2 text-sm font-medium">

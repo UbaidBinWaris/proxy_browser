@@ -21,6 +21,10 @@ export function desktopHandlers(deps: IpcDeps): HandlerSpec[] {
       const path = await deps.files.chooseUsb()
       return path ? desktop().inspectUsb(path) : null
     }),
+    spec(IPC.desktop.applyOnline, NoArgs, async () => {
+      if (!deps.updates) throw new AppException('INTERNAL', 'Online updates are unavailable.')
+      await desktop().applyOnline(await deps.updates.downloadRelease())
+    }),
     spec(IPC.desktop.applyUsb, NoArgs, () => desktop().applyUsb()),
   ]
 }

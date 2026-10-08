@@ -1642,3 +1642,13 @@ GitHub Actions smoke test; as of this README that run is **still pending**.
 - DataImpulse, Google Chrome, Microsoft Edge, Brave, Opera, Vivaldi, Firefox,
   Safari, Windows and other names are trademarks of their owners. This project
   is not affiliated with any of them.
+
+
+## Download website and server updates
+
+The Next.js download site is in `app/webapp`, served behind HTTPS on port 4500. Public downloads use publisher-signed Windows/Linux release metadata. Protected uploads and publishing, direct SSH transfers, and GitHub Actions deployment are documented in [Server deployment](docs/SERVER-DEPLOYMENT.md). Review [Security scope and remaining limitations](docs/SECURITY-REVIEW.md) before rolling out.
+
+```bash
+npm ci --prefix app/webapp
+npm run webapp:dev
+```

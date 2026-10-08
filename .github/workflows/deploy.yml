@@ -1,0 +1,179 @@
+name: Build and deploy browser releases
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: proxy-browser-production
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    environment: production
+    outputs:
+      fileName: ${{ steps.asset.outputs.fileName }}
+      size: ${{ steps.asset.outputs.size }}
+      sha256: ${{ steps.asset.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - id: version
+        run: node scripts/ci-release-version.mjs
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:windows
+      - run: node scripts/windows-smoke.cjs
+      - id: asset
+        run: node scripts/release-asset.mjs win32
+      - name: Transfer EXE directly over SSH
+        shell: bash
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_FILE: ${{ steps.asset.outputs.fileName }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          ssh proxy-browser-production "mkdir -p /var/lib/proxy-browser/staging/'$RELEASE_VERSION'"
+          scp "release/$RELEASE_FILE" "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/$RELEASE_FILE"
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/proxy-browser-deploy
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    outputs:
+      fileName: ${{ steps.asset.outputs.fileName }}
+      size: ${{ steps.asset.outputs.size }}
+      sha256: ${{ steps.asset.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - id: version
+        run: node scripts/ci-release-version.mjs
+      - run: npm ci
+      - run: npm ci --prefix app/webapp
+      - run: npm audit --omit=dev
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm test
+        env:
+          QA_REQUIRE_BROWSER_TESTS: '1'
+      - run: npm run build:linux
+      - run: xvfb-run -a node scripts/computer-setup-smoke.mjs
+      - id: asset
+        run: node scripts/release-asset.mjs linux
+      - name: Transfer AppImage directly over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_FILE: ${{ steps.asset.outputs.fileName }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          ssh proxy-browser-production "mkdir -p /var/lib/proxy-browser/staging/'$RELEASE_VERSION'"
+          rsync -av --partial "release/$RELEASE_FILE" "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
+      - if: always()
+        run: rm -f ~/.ssh/proxy-browser-deploy
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/webapp/package-lock.json
+      - run: npm ci --prefix app/webapp
+      - run: npm audit --prefix app/webapp --omit=dev
+      - run: node scripts/sync-brand.mjs
+      - run: npm test --prefix app/webapp
+      - run: npm run typecheck --prefix app/webapp
+      - run: npm run build --prefix app/webapp
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - run: bash deploy/package-webapp.sh
+      - name: Transfer website archive directly over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          remote="/var/tmp/proxy-browser-${COMMIT_SHA}-${RUN_ID}"
+          ssh proxy-browser-production "mkdir -p '$remote'"
+          rsync -av --partial .deploy/webapp.tar.gz deploy/install-webapp.sh deploy/publish-release.sh "proxy-browser-production:$remote/"
+      - if: always()
+        run: rm -f ~/.ssh/proxy-browser-deploy
+  publish:
+    needs: [windows, linux, website]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - id: version
+        run: node scripts/ci-release-version.mjs
+      - name: Sign trusted build-job metadata with the existing publisher key
+        env:
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+          WINDOWS_FILE: ${{ needs.windows.outputs.fileName }}
+          WINDOWS_SIZE: ${{ needs.windows.outputs.size }}
+          WINDOWS_SHA256: ${{ needs.windows.outputs.sha256 }}
+          LINUX_FILE: ${{ needs.linux.outputs.fileName }}
+          LINUX_SIZE: ${{ needs.linux.outputs.size }}
+          LINUX_SHA256: ${{ needs.linux.outputs.sha256 }}
+        run: |
+          test -n "$RELEASE_SIGNING_PRIVATE_KEY"
+          umask 077
+          mkdir -p .release-keys
+          printf '%s\n' "$RELEASE_SIGNING_PRIVATE_KEY" > .release-keys/private-key.pem
+          node --input-type=module -e 'import {createServerReleaseFromMetadata} from "./scripts/release.mjs"; await createServerReleaseFromMetadata(process.cwd(),[{platform:"win32",arch:"x64",fileName:process.env.WINDOWS_FILE,size:Number(process.env.WINDOWS_SIZE),sha256:process.env.WINDOWS_SHA256},{platform:"linux",arch:"x64",fileName:process.env.LINUX_FILE,size:Number(process.env.LINUX_SIZE),sha256:process.env.LINUX_SHA256}])'
+          rm -f .release-keys/private-key.pem
+      - name: Deploy website and atomically publish the verified binaries
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          remote="/var/tmp/proxy-browser-${COMMIT_SHA}-${RUN_ID}"
+          rsync -av release/Proxy-QA-Browser-Update.json release/update.json "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
+          ssh proxy-browser-production "bash '$remote/install-webapp.sh' '$remote/webapp.tar.gz' '$COMMIT_SHA' && bash '$remote/publish-release.sh' '$RELEASE_VERSION' && install -d -m 755 /opt/proxy-browser/deploy && install -m 755 '$remote/install-webapp.sh' '$remote/publish-release.sh' /opt/proxy-browser/deploy/ && rm -rf '$remote'"
+          curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/health
+          curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/updates/stable -o published-update.json
+          node --input-type=module -e 'import {readFileSync} from "node:fs"; import {verify} from "node:crypto"; const envelope=JSON.parse(readFileSync("published-update.json")); if (!verify(null,Buffer.from(envelope.payload),readFileSync("resources/updates/public-key.pem"),Buffer.from(envelope.signature,"base64")) || JSON.parse(envelope.payload).version !== process.env.RELEASE_VERSION) process.exit(1)'
+      - name: Clear ephemeral keys
+        if: always()
+        run: rm -f .release-keys/private-key.pem ~/.ssh/proxy-browser-deploy

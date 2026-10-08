@@ -72,6 +72,7 @@ export const IPC = {
     launchInstalled: 'desktop:launch-installed',
     chooseUsb: 'desktop:choose-usb',
     applyUsb: 'desktop:apply-usb',
+    applyOnline: 'desktop:apply-online',
   },
   qa: {
     visualImages: 'qa:visual-images',
@@ -234,6 +235,7 @@ export interface ProxyQaApi {
     launchInstalled(): Promise<IpcResult<void>>
     chooseUsb(): Promise<IpcResult<UsbUpdatePreview | null>>
     applyUsb(): Promise<IpcResult<void>>
+    applyOnline(): Promise<IpcResult<void>>
   }
   qa: {
     visualImages(

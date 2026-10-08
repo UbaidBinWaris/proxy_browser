@@ -139,8 +139,8 @@ const config = {
     ...(buildingLinux ? { desktopName: 'com.letsscall.proxy-qa-browser.desktop' } : {}),
     qaReleaseNotes: notes,
     ...(existsSync(publicKeyPath) ? { qaOfflineUpdates: { publicKey: readFileSync(publicKeyPath, 'utf8') } } : {}),
-    ...(process.env.PROXY_QA_UPDATE_FEED && process.env.PROXY_QA_UPDATE_PUBLIC_KEY
-      ? { qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED, publicKey: process.env.PROXY_QA_UPDATE_PUBLIC_KEY } }
+    ...(existsSync(publicKeyPath)
+      ? { qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED || 'https://proxybrowser.ubaidbinwaris.com/api/updates/stable', publicKey: readFileSync(publicKeyPath, 'utf8') } }
       : {}),
   },
 }

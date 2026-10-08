@@ -6,7 +6,7 @@ import { afterEach, expect, it } from 'vitest'
 import { UsbReleaseSchema } from '../src/shared/desktop'
 // The publisher command is plain Node ESM and is also tested directly here.
 // @ts-expect-error Node scripts intentionally do not ship TypeScript declarations.
-import { bumpVersion, nextVersion, initializeKeys, createUsbRelease } from '../scripts/release.mjs'
+import { bumpVersion, nextVersion, initializeKeys, createUsbRelease, createServerRelease, createServerReleaseFromMetadata } from '../scripts/release.mjs'
 
 const folders: string[] = []
 afterEach(async () => { await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))) })
@@ -76,4 +76,30 @@ it('refuses incomplete platform builds and releases without notes', async () => 
   await expect(createUsbRelease(root)).rejects.toThrow('Build both platforms first')
   await writeFile(join(root, 'resources', 'release-notes.json'), '{}')
   await expect(createUsbRelease(root)).rejects.toThrow('Add release notes')
+})
+
+it('creates HTTPS server URLs and a signed feed compatible with the desktop updater', async () => {
+  const root = await fixture()
+  await mkdir(join(root, 'release'))
+  for (const file of ['Proxy-QA-Browser-1.2.0-Windows-x64.exe', 'Proxy-QA-Browser-1.2.0-x86_64.AppImage']) await writeFile(join(root, 'release', file), `application ${file}`)
+  await expect(createServerRelease(root, 'http://insecure.test')).rejects.toThrow('HTTPS')
+  await expect(createServerRelease(root, 'https://user:secret@releases.test')).rejects.toThrow('HTTPS')
+  expect(await createServerRelease(root, 'https://releases.test')).toBe('1.2.0')
+  const raw = JSON.parse(await readFile(join(root, 'release', 'update.json'), 'utf8'))
+  const key = await readFile(join(root, 'resources', 'updates', 'public-key.pem'), 'utf8')
+  const { verifyUpdateEnvelope } = await import('../src/main/releases/updates')
+  const payload = verifyUpdateEnvelope(raw, key)
+  expect(payload.assets[0]?.url).toBe('https://releases.test/api/download/1.2.0/Proxy-QA-Browser-1.2.0-Windows-x64.exe')
+  expect(payload.assets).toHaveLength(2)
+})
+
+it('signs CI job metadata without trusting a server-provided hash or requiring large binaries in GitHub storage', async () => {
+  const root = await fixture()
+  const assets = [{ platform: 'win32', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-Windows-x64.exe', size: 100, sha256: 'a'.repeat(64) }, { platform: 'linux', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-x86_64.AppImage', size: 200, sha256: 'b'.repeat(64) }]
+  await expect(createServerReleaseFromMetadata(root, [assets[0]])).rejects.toThrow('Both')
+  await expect(createServerReleaseFromMetadata(root, [{ ...assets[0], fileName: '../secret.exe' }, assets[1]])).rejects.toThrow('Invalid')
+  await expect(createServerReleaseFromMetadata(root, [{ ...assets[0], sha256: 'bad' }, assets[1]])).rejects.toThrow('Invalid')
+  expect(await createServerReleaseFromMetadata(root, assets)).toBe('1.2.0')
+  const envelope = JSON.parse(await readFile(join(root, 'release', 'update.json'), 'utf8'))
+  expect(JSON.parse(envelope.payload).assets.map((a: { sha256: string }) => a.sha256)).toEqual(['a'.repeat(64), 'b'.repeat(64)])
 })

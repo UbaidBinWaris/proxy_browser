@@ -5,5 +5,12 @@
     "Verify signed USB updates and preserve your existing local profiles, settings and browser downloads.",
     "Find version details, release notes and pinning guidance in App & updates.",
     "Refreshed application icon across the launcher, desktop and taskbar."
+  ],
+  "1.3.0": [
+    "Check, download, verify, and restart with online updates from App & updates.",
+    "Public Windows and Linux downloads with signed release metadata and SHA-256 checksums.",
+    "Keep local profiles and proxy credentials on each device.",
+    "Protected release uploads and atomic publishing with GitHub Actions deployment.",
+    "Consistent browser branding across desktop, shortcuts, and the download website."
   ]
 }

@@ -1,6 +1,6 @@
 {
   "name": "proxy-qa-browser",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Desktop QA browser for authorized form testing through isolated profiles and proxy exit IPs",
   "main": "out/main/index.js",
   "scripts": {
@@ -20,7 +20,12 @@
     "build:all": "node scripts/build-all.mjs",
     "release:version": "node scripts/release.mjs version",
     "release:init": "node scripts/release.mjs init",
-    "release:usb": "node scripts/release.mjs usb"
+    "release:usb": "node scripts/release.mjs usb",
+    "release:server": "node scripts/release.mjs server",
+    "webapp:dev": "npm run dev --prefix app/webapp",
+    "webapp:build": "npm run build --prefix app/webapp",
+    "webapp:test": "npm test --prefix app/webapp",
+    "brand:sync": "node scripts/sync-brand.mjs"
   },
   "repository": {
     "type": "git",
@@ -43,7 +48,10 @@
   },
   "overrides": {
     "http-cache-semantics": "4.3.0",
-    "postcss-selector-parser": "7.1.6"
+    "postcss-selector-parser": "7.1.6",
+    "@electron/get": {
+      "global-agent": "4.1.3"
+    }
   },
   "engines": {
     "node": ">=22.13"

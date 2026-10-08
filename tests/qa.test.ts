@@ -817,7 +817,7 @@ describe('Portable reports and verified updates', () => {
       platform: 'linux',
       arch: 'x64',
       directory: h.dir,
-      fetchImpl: async (url) => (url.endsWith('feed.json') ? Response.json(envelope) : new Response(bytes)),
+      fetchImpl: async (url, init) => { expect(init?.redirect).toBe('error'); return url.endsWith('feed.json') ? Response.json(envelope) : new Response(bytes) },
     })
     expect(await manager.check()).toMatchObject({ available: true, version: '1.1.0' })
     expect(readFileSync(await manager.download())).toEqual(bytes)
@@ -837,6 +837,13 @@ describe('Portable reports and verified updates', () => {
         join(h.dir, 'corrupt', `${createHash('sha256').update(bytes).digest('hex').slice(0, 12)}-app.AppImage.part`),
       ),
     ).toBe(false)
+  })
+  it('rejects a signed update download from another origin', async () => {
+    const keys = generateKeyPairSync('ed25519')
+    const payload = JSON.stringify({ version: '1.2.0', assets: [{ platform: 'linux', arch: 'x64', url: 'https://another.test/app.AppImage', fileName: 'app.AppImage', size: 10, sha256: '0'.repeat(64) }] })
+    const manager = createUpdateManager({ config: { feedUrl: 'https://releases.test/feed', publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString() }, currentVersion: '1.0.0', platform: 'linux', arch: 'x64', directory: harness().dir, fetchImpl: async () => Response.json({ payload, signature: sign(null, Buffer.from(payload), keys.privateKey).toString('base64') }) })
+    await manager.check()
+    await expect(manager.download()).rejects.toThrow('publisher')
   })
   it('returns an explicit unconfigured state when no publisher feed is installed', async () => {
     const manager = createUpdateManager({
