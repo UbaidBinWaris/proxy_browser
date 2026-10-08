@@ -58,7 +58,7 @@ describe('geonames loader', () => {
     expect(resolveGeoNamesDir({ isPackaged: false, resourcesPath: '/nowhere/resources', appPath: process.cwd() })).toBe(DATA_DIR)
     // A packaged build without the extra resource falls back to the app path (and vice versa).
     expect(resolveGeoNamesDir({ isPackaged: true, resourcesPath: '/nowhere/resources', appPath: process.cwd() })).toBe(DATA_DIR)
-    expect(resolveGeoNamesDir({ isPackaged: true, resourcesPath: '/nowhere/resources', appPath: '/nowhere/app' })).toBe('/nowhere/resources/geonames')
+    expect(resolveGeoNamesDir({ isPackaged: true, resourcesPath: '/nowhere/resources', appPath: '/nowhere/app' })).toBe(join('/nowhere/resources', 'geonames'))
   })
 })
 

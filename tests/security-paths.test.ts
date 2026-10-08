@@ -10,9 +10,9 @@ describe('keysDirFor', () => {
   const home = '/home/qa'
 
   it('Linux honours XDG_DATA_HOME and defaults to ~/.local/share', () => {
-    expect(keysDirFor({ platform: 'linux', env: { XDG_DATA_HOME: '/data/xdg' }, homedir: home })).toBe('/data/xdg/proxy-qa-browser/keys')
-    expect(keysDirFor({ platform: 'linux', env: { XDG_DATA_HOME: '  ' }, homedir: home })).toBe('/home/qa/.local/share/proxy-qa-browser/keys')
-    expect(keysDirFor({ platform: 'linux', env: {}, homedir: home })).toBe('/home/qa/.local/share/proxy-qa-browser/keys')
+    expect(keysDirFor({ platform: 'linux', env: { XDG_DATA_HOME: '/data/xdg' }, homedir: home })).toBe(join('/data/xdg', 'proxy-qa-browser', 'keys'))
+    expect(keysDirFor({ platform: 'linux', env: { XDG_DATA_HOME: '  ' }, homedir: home })).toBe(join('/home/qa', '.local', 'share', 'proxy-qa-browser', 'keys'))
+    expect(keysDirFor({ platform: 'linux', env: {}, homedir: home })).toBe(join('/home/qa', '.local', 'share', 'proxy-qa-browser', 'keys'))
   })
 
   it('Windows uses %LOCALAPPDATA% (never %APPDATA%, where userData lives)', () => {
@@ -23,7 +23,7 @@ describe('keysDirFor', () => {
   })
 
   it('macOS uses a dedicated Application Support directory', () => {
-    expect(keysDirFor({ platform: 'darwin', env: {}, homedir: '/Users/qa' })).toBe('/Users/qa/Library/Application Support/ProxyQABrowser-keys')
+    expect(keysDirFor({ platform: 'darwin', env: {}, homedir: '/Users/qa' })).toBe(join('/Users/qa', 'Library', 'Application Support', 'ProxyQABrowser-keys'))
   })
 })
 

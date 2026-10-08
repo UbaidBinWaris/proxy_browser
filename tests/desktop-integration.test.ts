@@ -88,7 +88,7 @@ describe('computer setup', () => {
     expect(await readFile(result.installedPath!, 'utf8')).toBe('portable linux app')
     if (process.platform !== 'win32') expect((await stat(result.installedPath!)).mode & 0o111).toBe(0o111)
     expect(await readFile(join(f.options.menuDirectory, `${DESKTOP_APP_ID}.desktop`), 'utf8')).toContain(
-      `Exec="${result.installedPath}"`,
+      `Exec="${result.installedPath!.replace(/\\/g, '\\\\\\\\')}"`,
     )
     expect(await readFile(join(f.folder, 'userData', 'profiles.sqlite'), 'utf8')).toBe('profiles and settings')
     await f.manager.launchInstalled()

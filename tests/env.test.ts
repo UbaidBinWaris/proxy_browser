@@ -69,14 +69,14 @@ describe('defaultEnvCandidates', () => {
   it('orders portable dir, exec dir, cwd (dev only), userData', () => {
     expect(
       defaultEnvCandidates({ cwd: '/cwd', execDir: '/exec', userData: '/ud', isPackaged: false, portableDir: '/portable' }),
-    ).toEqual(['/portable/.env', '/exec/.env', '/cwd/.env', '/ud/.env'])
+    ).toEqual([join('/portable', '.env'), join('/exec', '.env'), join('/cwd', '.env'), join('/ud', '.env')])
     expect(defaultEnvCandidates({ cwd: '/cwd', execDir: '/exec', userData: '/ud', isPackaged: true })).toEqual([
-      '/exec/.env',
-      '/ud/.env',
+      join('/exec', '.env'),
+      join('/ud', '.env'),
     ])
     expect(defaultEnvCandidates({ cwd: '/same', execDir: '/same', userData: '/ud', isPackaged: false, portableDir: null })).toEqual([
-      '/same/.env',
-      '/ud/.env',
+      join('/same', '.env'),
+      join('/ud', '.env'),
     ])
   })
 
@@ -89,15 +89,15 @@ describe('defaultEnvCandidates', () => {
         isPackaged: true,
         appImagePath: '/home/qa/Apps/Proxy-QA-Browser-1.0.0-x86_64.AppImage',
       }),
-    ).toEqual(['/home/qa/Apps/.env', '/tmp/.mount_ProxyQabc123/.env', '/home/qa/.config/proxy-qa-browser/.env'])
+    ).toEqual([join('/home/qa/Apps', '.env'), join('/tmp/.mount_ProxyQabc123', '.env'), join('/home/qa/.config/proxy-qa-browser', '.env')])
     // Absent / empty APPIMAGE changes nothing.
     expect(defaultEnvCandidates({ cwd: '/cwd', execDir: '/exec', userData: '/ud', isPackaged: true, appImagePath: null })).toEqual([
-      '/exec/.env',
-      '/ud/.env',
+      join('/exec', '.env'),
+      join('/ud', '.env'),
     ])
     expect(defaultEnvCandidates({ cwd: '/cwd', execDir: '/exec', userData: '/ud', isPackaged: true, appImagePath: '' })).toEqual([
-      '/exec/.env',
-      '/ud/.env',
+      join('/exec', '.env'),
+      join('/ud', '.env'),
     ])
   })
 })

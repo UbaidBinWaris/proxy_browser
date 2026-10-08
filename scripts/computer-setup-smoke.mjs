@@ -18,6 +18,7 @@ delete env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS
 const args = [`--user-data-dir=${join(state, 'app')}`]
 let app
 try {
+  console.log('Launching the packaged Linux runtime')
   app = await electron.launch({ executablePath: join(root, 'release', 'linux-unpacked', 'proxy-qa-browser'), args, env, timeout: 60000 })
   const page = await app.firstWindow()
   const api = async (fn, arg) => { const result = await page.evaluate(fn, arg); assert(result.ok, result.error?.message); return result.data }
@@ -35,6 +36,7 @@ try {
   await app.close()
   app = null
   delete env.APPIMAGE
+  console.log('Reopening the installed AppImage copy')
   app = await electron.launch({ executablePath: installed.installedPath, args, env, timeout: 60000 })
   const reopened = await app.firstWindow()
   const status = await reopened.evaluate(() => window.api.desktop.status())

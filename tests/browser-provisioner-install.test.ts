@@ -85,7 +85,7 @@ function linuxProvisioner(store: ExecutablePathStore, installers: InstallerDeps)
     executablePaths: store,
     platform: 'linux',
     arch: 'x64',
-    detection: { fs: sandboxFs(), env: { PATH: '' }, runVersion: async (exe) => (exe.endsWith('/chrome') ? 'Google Chrome 141.0.7390.54' : 'Browser 1.0.0') },
+    detection: { fs: sandboxFs(), env: { PATH: '' }, runVersion: async (exe) => (path.basename(exe) === 'chrome' ? 'Google Chrome 141.0.7390.54' : 'Browser 1.0.0') },
     installers: { tarTools: detectTarTools(), ...installers },
   })
 }

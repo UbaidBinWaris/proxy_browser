@@ -3,6 +3,7 @@
  * platform: candidate lists, env-var expansion, PATH scanning, version parsing,
  * overrides, caching and the never-throw version probe.
  */
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import { INSTALLED_BROWSER_ENGINES } from '../src/shared/types'
@@ -378,22 +379,22 @@ describe('saved-path origins and the app\'s user-space installs', () => {
   })
 
   it('finds the user-space install through its manifest first, then the vendor layout, before system locations', () => {
-    const files = new Map<string, string>([[`${root}/opera/.proxy-qa-install.json`, manifest('usr/lib/x86_64-linux-gnu/opera-stable/opera')]])
-    const exists = new Set([`${root}/opera/usr/lib/x86_64-linux-gnu/opera-stable/opera`, '/usr/bin/opera'])
+    const files = new Map<string, string>([[join(root, 'opera/.proxy-qa-install.json'), manifest('usr/lib/x86_64-linux-gnu/opera-stable/opera')]])
+    const exists = new Set([join(root, 'opera/usr/lib/x86_64-linux-gnu/opera-stable/opera'), '/usr/bin/opera'])
     const fs: DetectFs = { isFile: (p) => exists.has(p), readText: (p) => files.get(p) ?? null }
-    expect(locateExecutable('opera', {}, { ...linux, fs, managedRoot: root })).toEqual({ executablePath: `${root}/opera/usr/lib/x86_64-linux-gnu/opera-stable/opera`, source: 'detected', note: MANAGED_NOTE })
+    expect(locateExecutable('opera', {}, { ...linux, fs, managedRoot: root })).toEqual({ executablePath: join(root, 'opera/usr/lib/x86_64-linux-gnu/opera-stable/opera'), source: 'detected', note: MANAGED_NOTE })
     // Without the managed root, the system copy is found as before.
     expect(locateExecutable('opera', {}, { ...linux, fs })).toMatchObject({ executablePath: '/usr/bin/opera' })
     // A manifest pointing outside its folder is ignored; the default layout is still tried.
-    files.set(`${root}/opera/.proxy-qa-install.json`, manifest('../../etc/passwd'))
-    expect(locateExecutable('opera', {}, { ...linux, fs, managedRoot: root })).toMatchObject({ executablePath: `${root}/opera/usr/lib/x86_64-linux-gnu/opera-stable/opera` })
+    files.set(join(root, 'opera/.proxy-qa-install.json'), manifest('../../etc/passwd'))
+    expect(locateExecutable('opera', {}, { ...linux, fs, managedRoot: root })).toMatchObject({ executablePath: join(root, 'opera/usr/lib/x86_64-linux-gnu/opera-stable/opera') })
   })
 
   it('the detector marks user-space installs as managed and labels auto-saved paths', async () => {
-    const files = new Map<string, string>([[`${root}/brave/.proxy-qa-install.json`, JSON.stringify({ engine: 'brave', binary: 'brave' })]])
-    const exists = new Set([`${root}/brave/brave`])
+    const files = new Map<string, string>([[join(root, 'brave/.proxy-qa-install.json'), JSON.stringify({ engine: 'brave', binary: 'brave' })]])
+    const exists = new Set([join(root, 'brave/brave')])
     const detector = createEngineDetector({
-      getOverrides: () => ({ brave: `${root}/brave/brave` }),
+      getOverrides: () => ({ brave: join(root, 'brave/brave') }),
       getOrigins: () => ({ brave: 'auto' }),
       managedRoot: root,
       platform: 'linux',
@@ -404,7 +405,7 @@ describe('saved-path origins and the app\'s user-space installs', () => {
     })
     const brave = await detector.detectEngine('brave')
     expect(brave).toMatchObject({ available: true, source: 'auto-saved', managedInstall: true, version: '141.1.96.61', installMethod: 'portable-archive' })
-    expect(detector.locate('brave')).toMatchObject({ executablePath: `${root}/brave/brave` })
+    expect(detector.locate('brave')).toMatchObject({ executablePath: join(root, 'brave/brave') })
     expect(detector.locate('vivaldi')).toMatchObject({ executablePath: null })
   })
 })

@@ -9,7 +9,33 @@ concurrency:
   group: proxy-browser-production
   cancel-in-progress: false
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Verify the signing secret against desktop and website public keys
+        env:
+          RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
+        run: node scripts/verify-release-key.mjs
+      - name: Verify deployment SSH authentication and pinned host key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          ssh proxy-browser-production 'test "$(id -un)" = root && test -d /var/lib/proxy-browser/staging && echo "Deployment SSH authentication and host-key verification passed"'
+      - name: Clear ephemeral SSH key
+        if: always()
+        run: rm -f ~/.ssh/proxy-browser-deploy
   windows:
+    needs: preflight
     runs-on: windows-latest
     timeout-minutes: 60
     environment: production
@@ -50,6 +76,7 @@ jobs:
         shell: bash
         run: rm -f ~/.ssh/proxy-browser-deploy
   linux:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: production
@@ -78,6 +105,10 @@ jobs:
           QA_REQUIRE_BROWSER_TESTS: '1'
       - run: npm run build:linux
       - run: xvfb-run -a node scripts/computer-setup-smoke.mjs
+        env:
+          # Hosted runners may lack FUSE; exercise the real AppImage via extraction.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+          DEBUG: pw:browser
       - id: asset
         run: node scripts/release-asset.mjs linux
       - name: Transfer AppImage directly over SSH
@@ -93,6 +124,7 @@ jobs:
       - if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy
   website:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

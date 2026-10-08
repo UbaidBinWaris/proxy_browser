@@ -64,6 +64,8 @@ Push the local source changes, lockfiles, webapp, deployment scripts, and `.gith
 
 The workflow then:
 
+Before building, the **preflight** job verifies the signing secret against both public keys with an in-memory signing round trip, then checks the deployment SSH key and pinned server host key. It prints only success/failure messages. If it fails, fix the named secret; the build jobs will remain skipped. The website transfer alone proves SSH access but does not exercise the signing secret.
+
 1. Chooses one shared stable version: base `major.minor.(patch + GITHUB_RUN_NUMBER)`. For base 1.3.0, workflow run 1 is 1.3.1. All jobs use the same value and copy the base release notes. Keep the same workflow identity/counter; when replacing or resetting it, bump the base minor/major version beyond already published releases.
 2. Builds and tests the Windows EXE, bundled Linux AppImage, and production website. Native Windows smoke tests run on a Windows runner.
 3. Hashes each desktop artifact in its build job and passes only the size and checksum through trusted GitHub job outputs.

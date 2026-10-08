@@ -130,7 +130,7 @@ describe('tar extraction', () => {
     expect(safeJoin('/dest', './')).toBeNull()
   })
 
-  it.runIf(hasTar)('the in-process reader extracts a system-tar tarball: modes, symlinks, GNU long names', async () => {
+  it.runIf(hasTar && process.platform !== 'win32')('the in-process reader extracts a GNU system-tar tarball with executable modes and long names', async () => {
     const longName = `opt/vendor/${'deep-directory-name/'.repeat(6)}resources.pak`
     const tgz = systemTarGz(
       [
@@ -144,6 +144,21 @@ describe('tar extraction', () => {
     expect(result.files).toBe(2)
     expect(statSync(path.join(dest, 'opt/vendor/browser')).mode & 0o111).not.toBe(0)
     expect(readFileSync(path.join(dest, longName), 'utf8')).toHaveLength(5000)
+  })
+
+  it('extracts GNU long-name records on every platform', async () => {
+    const longName = `opt/vendor/${'deep-directory-name/'.repeat(6)}resources.pak`
+    const name = Buffer.from(`${longName}\0`)
+    const archive = Buffer.concat([
+      ustarHeader('././@LongLink', name.length, 'L'),
+      name,
+      Buffer.alloc((512 - name.length % 512) % 512),
+      ustarFile('resources.pak', Buffer.from('browser resources')),
+      TAR_END,
+    ])
+    const dest = path.join(work, 'gnu-long-name')
+    expect((await extractTarBuffer(archive, dest)).files).toBe(1)
+    expect(readFileSync(path.join(dest, longName), 'utf8')).toBe('browser resources')
   })
 
   it.runIf(hasTar)('handles pax long paths and symlinks', async () => {
@@ -194,7 +209,8 @@ describe('tar extraction', () => {
       const dest = path.join(work, `sys-${label}`)
       const { stream, done } = decompress(Readable.from([data]), compression, tools)
       await Promise.all([extractTar(stream, dest, tools), done])
-      expect(statSync(path.join(dest, 'opt/app/app')).mode & 0o111, label).not.toBe(0)
+      expect(readFileSync(path.join(dest, 'opt/app/app'), 'utf8'), label).toBe('#!/bin/sh\n')
+      if (process.platform !== 'win32') expect(statSync(path.join(dest, 'opt/app/app')).mode & 0o111, label).not.toBe(0)
     }
     // Without a system tar the in-process reader takes over.
     const dest = path.join(work, 'js')
@@ -244,7 +260,8 @@ describe('ZIP reader', () => {
     const result = await extractZipFile(zipPath, dest, progress)
     expect(result.files).toBe(3)
     expect(readFileSync(path.join(dest, 'brave'))).toEqual(binary)
-    expect(statSync(path.join(dest, 'brave')).mode & 0o777).toBe(0o755)
+    expect(entries.find((entry) => entry.name === 'brave')!.unixMode! & 0o777).toBe(0o755)
+    if (process.platform !== 'win32') expect(statSync(path.join(dest, 'brave')).mode & 0o777).toBe(0o755)
     expect(readFileSync(path.join(dest, 'resources.pak'))).toEqual(big)
     expect(readlinkSync(path.join(dest, 'brave-browser'))).toBe('brave')
     expect(existsSync(path.join(work, 'evil'))).toBe(false)
@@ -401,7 +418,8 @@ describe('installUserSpace', () => {
       resolvePackage: async () => ({ url: 'https://dl.example/chrome.deb', fileName: 'chrome.deb', version: '141.0.7390.54', expectedSize: null, expectedSha256: null }),
     })
     expect(result.executablePath).toBe(path.join(root, 'chrome', 'opt/google/chrome/chrome'))
-    expect(statSync(result.executablePath).mode & 0o111).not.toBe(0)
+    expect(readFileSync(result.executablePath, 'utf8')).toBe(chromeScript)
+    if (process.platform !== 'win32') expect(statSync(result.executablePath).mode & 0o111).not.toBe(0)
     expect(new Set(phases)).toEqual(new Set(['starting', 'downloading', 'verifying', 'extracting']))
     const manifest = JSON.parse(readFileSync(path.join(root, 'chrome', '.proxy-qa-install.json'), 'utf8')) as { binary: string; version: string; bytes: number }
     expect(manifest).toMatchObject({ binary: 'opt/google/chrome/chrome', version: '141.0.7390.54', bytes: deb.length })
@@ -430,7 +448,8 @@ describe('installUserSpace', () => {
     const result = await installUserSpace({ engine: 'opera', rootDir: root, fetchImpl: fetch, tools: detectTarTools(), onProgress: () => undefined, resolvePackage: async () => ({ url: 'https://deb.example/opera.deb', fileName: 'opera.deb', version: '136.0', expectedSize: null, expectedSha256: null }) })
     expect(result.executablePath).toBe(path.join(root, 'opera', 'usr/lib/opera-new-layout/opera'))
     // The executable bit is restored when the archive lost it.
-    expect(statSync(result.executablePath).mode & 0o111).not.toBe(0)
+    expect(readFileSync(result.executablePath, 'utf8')).toBe('#!/bin/sh\n')
+    if (process.platform !== 'win32') expect(statSync(result.executablePath).mode & 0o111).not.toBe(0)
     expect(findFileByName(path.join(root, 'opera'), 'nothing-here')).toBeNull()
   })
 

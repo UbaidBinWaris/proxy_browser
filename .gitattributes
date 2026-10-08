@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Node script hashbangs must stay LF when imported by the test runner on Windows.
+*.mjs text eol=lf
+# Deployment scripts are executed by Bash on Linux, including Windows CI uploads.
+*.sh text eol=lf
