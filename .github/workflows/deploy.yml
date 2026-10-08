@@ -104,6 +104,7 @@ jobs:
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
       - run: npm run build:linux
+      - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/computer-setup-smoke.mjs
         env:
           # Hosted runners may lack FUSE; exercise the real AppImage via extraction.

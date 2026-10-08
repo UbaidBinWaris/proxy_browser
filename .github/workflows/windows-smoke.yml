@@ -41,6 +41,9 @@ jobs:
       - name: Build portable EXE
         run: npm run build:windows
 
+      - name: Verify runtime archive copying in Electron
+        run: node scripts/runtime-copy-smoke.mjs
+
       - name: Smoke test the packaged app
         run: node scripts/windows-smoke.cjs
 

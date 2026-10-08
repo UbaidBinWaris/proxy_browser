@@ -10,7 +10,7 @@ export default defineConfig({
         // index.ts only sets PLAYWRIGHT_BROWSERS_PATH, then dynamically imports main.ts
         // (emitted as a sibling chunk) so playwright-core is not evaluated too early.
         input: { index: resolve(__dirname, 'src/main/index.ts'), 'qa-cli': resolve(__dirname, 'src/main/qa/cli.ts') },
-        external: ['playwright-core', 'node:sqlite'],
+        external: ['playwright-core', 'node:sqlite', 'original-fs'],
         // main.ts resolves ../preload and ../renderer from its own __dirname, so the chunk
         // must sit next to index.js in out/main rather than in out/main/chunks/.
         output: { chunkFileNames: '[name]-[hash].js' },

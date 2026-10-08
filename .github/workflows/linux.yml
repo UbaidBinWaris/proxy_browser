@@ -25,6 +25,7 @@ jobs:
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
       - run: npm run build
+      - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/desktop-smoke.mjs
       - run: xvfb-run -a node scripts/first-run-smoke.mjs
       - run: xvfb-run -a node scripts/launcher-ui-smoke.mjs

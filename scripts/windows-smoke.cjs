@@ -17,9 +17,10 @@
  * Exits non-zero when any check fails. Screenshots go to smoke-output/.
  */
 /* eslint-disable @typescript-eslint/no-require-imports */
-/* global require, __dirname, process, console, setTimeout, window */
+/* global require, __dirname, process, console, setTimeout, window, Buffer */
 const { _electron: electron } = require('playwright-core')
 const { execFileSync } = require('node:child_process')
+const { createHash } = require('node:crypto')
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -51,11 +52,12 @@ function countImage(image) {
 /** Processes whose command line carries the session marker (CIM through a hidden PowerShell). */
 function markedProcesses() {
   const script =
-    "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('--proxy-qa-session=') } | ForEach-Object { $_.ProcessId }"
+    "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.Contains('--proxy-qa-session=') } | ForEach-Object { $_.ProcessId }"
   try {
     const out = execFileSync(
       'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      // An encoded query also keeps its own command line free of the browser marker.
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')],
       { encoding: 'utf8', windowsHide: true },
     )
     return out
@@ -335,8 +337,19 @@ async function main() {
   // Real per-user setup, isolated Start menu shortcut and stable local executable.
   const computerSetup = await api(() => window.api.desktop.setup({ desktop: false, startMenu: true }))
   check('computer setup succeeds', computerSetup.ok, computerSetup.error?.message || '')
+  if (!computerSetup.ok) {
+    const logs = await api(() => window.api.logs.list({ level: 'ERROR', limit: 10 }))
+    console.error('Computer setup diagnostics:', JSON.stringify(logs.data))
+  }
   const localExe = computerSetup.ok ? computerSetup.data.installedPath : null
   check('computer copy is outside the packaged source', localExe && localExe !== EXE && fs.existsSync(localExe), localExe || '')
+  if (localExe) {
+    const digest = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+    check(
+      'computer copy preserves the exact packaged app.asar',
+      digest(path.join(path.dirname(localExe), 'resources', 'app.asar')) === digest(path.join(path.dirname(EXE), 'resources', 'app.asar')),
+    )
+  }
   const shortcutPath = path.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Proxy QA Browser.lnk')
   check('Start menu shortcut created', fs.existsSync(shortcutPath), shortcutPath)
   if (fs.existsSync(shortcutPath)) {

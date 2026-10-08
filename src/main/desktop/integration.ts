@@ -1,6 +1,6 @@
 import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { chmod, copyFile, cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import * as fileSystem from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
@@ -18,7 +18,7 @@ const InstallMarkerSchema = z.object({
 const MARKER = 'proxy-qa-application.json'
 const PENDING = 'pending-usb-update.json'
 const exists = async (path: string): Promise<boolean> =>
-  stat(path)
+  fileSystem.stat(path)
     .then(() => true)
     .catch(() => false)
 
@@ -41,6 +41,8 @@ export function desktopEntry(executable: string, icon: string): string {
 }
 
 export interface DesktopIntegrationOptions {
+  /** Electron supplies original-fs so app.asar is copied as a file, rather than a virtual directory. */
+  fileSystem?: typeof fileSystem
   platform: string
   arch: string
   isPackaged: boolean
@@ -74,6 +76,7 @@ export interface DesktopIntegrationOptions {
 }
 
 export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
+  const { chmod, copyFile, cp, lstat, mkdir, readFile, rename, rm, writeFile } = opts.fileSystem ?? fileSystem
   const windows = opts.platform === 'win32'
   const supported =
     opts.isPackaged && opts.arch === 'x64' && (windows || (opts.platform === 'linux' && !!opts.appImage))

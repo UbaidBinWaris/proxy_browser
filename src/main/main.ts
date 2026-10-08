@@ -25,6 +25,7 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { BrowserWindow, app, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron'
+import originalFs from 'original-fs'
 
 import { EVENTS } from '@shared/ipc'
 import { DESKTOP_APP_ID, DESKTOP_APP_NAME, USB_MANIFEST_NAME } from '@shared/desktop'
@@ -579,6 +580,7 @@ async function bootstrap(): Promise<Runtime> {
     directory: join(paths.data, 'updates'),
   })
   const desktop = createDesktopIntegration({
+    fileSystem: originalFs.promises,
     platform: process.platform,
     arch: process.arch,
     isPackaged: app.isPackaged,
@@ -599,7 +601,7 @@ async function bootstrap(): Promise<Runtime> {
     updatesDirectory: join(paths.data, 'usb-updates'),
     publicKey: metadata.qaOfflineUpdates?.publicKey ?? null,
     releaseNotes: metadata.qaReleaseNotes ?? [],
-    writeWindowsShortcut: (path, options) => shell.writeShortcutLink(path, 'replace', options),
+    writeWindowsShortcut: (path, options) => shell.writeShortcutLink(path, 'create', options),
     reveal: (path) => shell.showItemInFolder(path),
     onInstalled: (executable) => {
       if (process.platform === 'win32')
