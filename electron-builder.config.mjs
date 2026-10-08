@@ -20,11 +20,15 @@
  * src/main/browser/browsers-path.ts (env → bundled → provisioned → dev cache).
  */
 /* global process */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
+const publicKeyPath = join(ROOT, 'resources', 'updates', 'public-key.pem')
+const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+const notes = JSON.parse(readFileSync(join(ROOT, 'resources', 'release-notes.json'), 'utf8'))[version] ?? []
+
 const BUNDLE_WINDOWS_BROWSERS = process.env.PROXY_QA_BUNDLE_BROWSERS === '1'
 
 // Whole argv (not sliced): argv[0]/argv[1] are the node/CLI paths and can never equal a flag.
@@ -99,6 +103,7 @@ const config = {
   npmRebuild: false,
   artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
   linux: {
+    syncDesktopName: true,
     target: [{ target: 'AppImage', arch: ['x64'] }],
     category: 'Development',
     synopsis: 'QA browser for authorized form testing through isolated profiles and proxy exit IPs',
@@ -130,13 +135,14 @@ const config = {
   },
   publish: null,
   ...(process.env.PROXY_QA_SIGNED_RELEASE === '1' ? { forceCodeSigning: true } : {}),
-  ...(process.env.PROXY_QA_UPDATE_FEED && process.env.PROXY_QA_UPDATE_PUBLIC_KEY
-    ? {
-        extraMetadata: {
-          qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED, publicKey: process.env.PROXY_QA_UPDATE_PUBLIC_KEY },
-        },
-      }
-    : {}),
+  extraMetadata: {
+    ...(buildingLinux ? { desktopName: 'com.letsscall.proxy-qa-browser.desktop' } : {}),
+    qaReleaseNotes: notes,
+    ...(existsSync(publicKeyPath) ? { qaOfflineUpdates: { publicKey: readFileSync(publicKeyPath, 'utf8') } } : {}),
+    ...(process.env.PROXY_QA_UPDATE_FEED && process.env.PROXY_QA_UPDATE_PUBLIC_KEY
+      ? { qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED, publicKey: process.env.PROXY_QA_UPDATE_PUBLIC_KEY } }
+      : {}),
+  },
 }
 
 export default config

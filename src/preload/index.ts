@@ -34,6 +34,14 @@ function onEvent<C extends EventChannel>(channel: C, listener: (payload: EventPa
 }
 
 const api: ProxyQaApi = {
+  desktop: {
+    status: () => invoke(IPC.desktop.status),
+    setup: (options) => invoke(IPC.desktop.setup, options),
+    showPinning: () => invoke(IPC.desktop.showPinning),
+    launchInstalled: () => invoke(IPC.desktop.launchInstalled),
+    chooseUsb: () => invoke(IPC.desktop.chooseUsb),
+    applyUsb: () => invoke(IPC.desktop.applyUsb),
+  },
   qa: {
     visualImages: (batchId, caseId, stepIndex) => invoke(IPC.qa.visualImages, batchId, caseId, stepIndex),
     saveEnvironment: (input, id) =>

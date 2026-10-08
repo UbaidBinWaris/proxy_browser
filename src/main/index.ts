@@ -23,7 +23,11 @@ import { join } from 'node:path'
 
 import { app, dialog } from 'electron'
 
+import { captureRelaunchEnvironment } from './desktop/relaunch-env'
+
 import { WEBKIT_LIBS_ENV, resolveBrowsersDir, resolveWebkitLibsDir } from './browser/browsers-path'
+
+captureRelaunchEnvironment(process.env)
 
 const browsers = resolveBrowsersDir({
   envPath: process.env.PLAYWRIGHT_BROWSERS_PATH,

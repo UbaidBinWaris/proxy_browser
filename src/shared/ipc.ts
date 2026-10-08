@@ -1,3 +1,4 @@
+import type { DesktopSetupOptions, DesktopStatus, UsbUpdatePreview } from './desktop'
 /**
  * IPC contract between renderer and main.
  *
@@ -64,6 +65,14 @@ import type {
 } from './qa'
 
 export const IPC = {
+  desktop: {
+    status: 'desktop:status',
+    setup: 'desktop:setup',
+    showPinning: 'desktop:show-pinning',
+    launchInstalled: 'desktop:launch-installed',
+    chooseUsb: 'desktop:choose-usb',
+    applyUsb: 'desktop:apply-usb',
+  },
   qa: {
     visualImages: 'qa:visual-images',
     saveEnvironment: 'qa:save-environment',
@@ -218,6 +227,14 @@ export type Unsubscribe = () => void
 
 /** The complete bridge exposed to the renderer as `window.api`. */
 export interface ProxyQaApi {
+  desktop: {
+    status(): Promise<IpcResult<DesktopStatus>>
+    setup(options: DesktopSetupOptions): Promise<IpcResult<DesktopStatus>>
+    showPinning(): Promise<IpcResult<void>>
+    launchInstalled(): Promise<IpcResult<void>>
+    chooseUsb(): Promise<IpcResult<UsbUpdatePreview | null>>
+    applyUsb(): Promise<IpcResult<void>>
+  }
   qa: {
     visualImages(
       batchId: string,

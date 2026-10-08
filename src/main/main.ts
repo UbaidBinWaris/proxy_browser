@@ -27,6 +27,9 @@ import { pathToFileURL } from 'node:url'
 import { BrowserWindow, app, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron'
 
 import { EVENTS } from '@shared/ipc'
+import { DESKTOP_APP_ID, DESKTOP_APP_NAME, USB_MANIFEST_NAME } from '@shared/desktop'
+import { createDesktopIntegration } from './desktop/integration'
+import { restoreRelaunchEnvironment } from './desktop/relaunch-env'
 
 import { createBrowserManager } from './browser/browser-manager'
 import { createBrowserProvisioner } from './browser/browser-provisioner'
@@ -118,6 +121,9 @@ function resolveOutDir(): string {
 const OUT_DIR = resolveOutDir()
 const PRELOAD_PATH = join(OUT_DIR, 'preload', 'index.cjs')
 const RENDERER_INDEX = join(OUT_DIR, 'renderer', 'index.html')
+
+app.setAppUserModelId(DESKTOP_APP_ID)
+if (process.platform === 'linux') app.setDesktopName(`${DESKTOP_APP_ID}.desktop`)
 
 // --- Before `ready` -----------------------------------------------------------
 
@@ -562,6 +568,8 @@ async function bootstrap(): Promise<Runtime> {
   const metadataFile = join(app.getAppPath(), 'package.json')
   const metadata = (existsSync(metadataFile) ? JSON.parse(readFileSync(metadataFile, 'utf8')) : {}) as {
     qaUpdates?: UpdateConfig
+    qaOfflineUpdates?: { publicKey: string }
+    qaReleaseNotes?: string[]
   }
   const updates = createUpdateManager({
     config: metadata.qaUpdates ?? null,
@@ -570,6 +578,52 @@ async function bootstrap(): Promise<Runtime> {
     arch: process.arch,
     directory: join(paths.data, 'updates'),
   })
+  const desktop = createDesktopIntegration({
+    platform: process.platform,
+    arch: process.arch,
+    isPackaged: app.isPackaged,
+    version: app.getVersion(),
+    executable: process.execPath,
+    portableExecutable: process.env.PORTABLE_EXECUTABLE_FILE ?? null,
+    appImage: process.env.APPIMAGE ?? null,
+    resourcesPath: process.resourcesPath,
+    root:
+      process.platform === 'win32'
+        ? join(process.env.LOCALAPPDATA ?? app.getPath('appData'), 'ProxyQABrowser')
+        : join(process.env.XDG_DATA_HOME ?? join(app.getPath('home'), '.local', 'share'), 'proxy-qa-browser'),
+    desktopDirectory: app.getPath('desktop'),
+    menuDirectory:
+      process.platform === 'win32'
+        ? join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
+        : join(process.env.XDG_DATA_HOME ?? join(app.getPath('home'), '.local', 'share'), 'applications'),
+    updatesDirectory: join(paths.data, 'usb-updates'),
+    publicKey: metadata.qaOfflineUpdates?.publicKey ?? null,
+    releaseNotes: metadata.qaReleaseNotes ?? [],
+    writeWindowsShortcut: (path, options) => shell.writeShortcutLink(path, 'replace', options),
+    reveal: (path) => shell.showItemInFolder(path),
+    onInstalled: (executable) => {
+      if (process.platform === 'win32')
+        mainWindow?.setAppDetails({
+          appId: DESKTOP_APP_ID,
+          appIconPath: executable,
+          appIconIndex: 0,
+          relaunchCommand: `"${executable}" --user-data-dir="${paths.userData}"`,
+          relaunchDisplayName: DESKTOP_APP_NAME,
+        })
+    },
+    restart: (executable) => {
+      restoreRelaunchEnvironment(process.env)
+      app.relaunch({ execPath: executable, args: [`--user-data-dir=${paths.userData}`] })
+      setTimeout(() => app.quit(), 250)
+    },
+  })
+  // A restart into a verified portable release replaces the stable application folder
+  // after the old process has released its files. Failure leaves that copy usable.
+  await desktop
+    .finishPendingUpdate()
+    .catch((error: unknown) =>
+      logger.warn('desktop', 'Local update setup failed; open App & updates to retry', { error }),
+    )
   // Local schedules intentionally do not replay missed intervals after downtime.
   const qaTimer = setInterval(() => {
     void qa.tick().catch((err: unknown) => logger.warn('qa', 'Schedule check failed', { error: err }))
@@ -616,7 +670,16 @@ async function bootstrap(): Promise<Runtime> {
       visuals,
       gateways,
       updates,
+      desktop,
       files: {
+        chooseUsb: async () => {
+          const result = await dialog.showOpenDialog({
+            title: `Select ${USB_MANIFEST_NAME} from your USB release`,
+            properties: ['openFile'],
+            filters: [{ name: 'Signed USB update', extensions: ['json'] }],
+          })
+          return result.canceled ? null : (result.filePaths[0] ?? null)
+        },
         chooseBackup: async () => {
           const result = await dialog.showOpenDialog({
             title: 'Restore encrypted QA configuration',
@@ -631,6 +694,16 @@ async function bootstrap(): Promise<Runtime> {
   )
 
   mainWindow = createWindow(appUrl, logger)
+  const localApp = await desktop.status()
+  const relaunchExecutable = localApp.installedPath ?? process.env.PORTABLE_EXECUTABLE_FILE
+  if (process.platform === 'win32' && relaunchExecutable)
+    mainWindow.setAppDetails({
+      appId: DESKTOP_APP_ID,
+      appIconPath: relaunchExecutable,
+      appIconIndex: 0,
+      relaunchCommand: `"${relaunchExecutable}" --user-data-dir="${paths.userData}"`,
+      relaunchDisplayName: DESKTOP_APP_NAME,
+    })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow(appUrl, logger)

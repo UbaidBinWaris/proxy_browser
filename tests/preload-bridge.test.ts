@@ -64,6 +64,7 @@ describe('preload bridge', () => {
       'browser',
       'browsers',
       'dashboard',
+      'desktop',
       'events',
       'launcher',
       'locations',
@@ -84,6 +85,12 @@ describe('preload bridge', () => {
 
   it('maps each method to its contract channel with the arguments passed through', async () => {
     const cases: Array<[() => Promise<unknown>, string, unknown[]]> = [
+      [() => api.desktop.status(), IPC.desktop.status, []],
+      [() => api.desktop.setup({ desktop: false, startMenu: true }), IPC.desktop.setup, [{ desktop: false, startMenu: true }]],
+      [() => api.desktop.showPinning(), IPC.desktop.showPinning, []],
+      [() => api.desktop.launchInstalled(), IPC.desktop.launchInstalled, []],
+      [() => api.desktop.chooseUsb(), IPC.desktop.chooseUsb, []],
+      [() => api.desktop.applyUsb(), IPC.desktop.applyUsb, []],
       [() => api.app.getInfo(), IPC.app.getInfo, []],
       [() => api.app.openPath('/tmp/x.png'), IPC.app.openPath, ['/tmp/x.png']],
       [() => api.profiles.list(), IPC.profiles.list, []],

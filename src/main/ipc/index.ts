@@ -1,3 +1,4 @@
+import { desktopHandlers } from './desktop'
 /**
  * IPC entry point: registers one handler per channel in `IPC` and wires event
  * forwarding. `registerIpcHandlers` refuses to start if any declared channel
@@ -38,6 +39,7 @@ export function allIpcChannels(): string[] {
 export function buildHandlerSpecs(deps: IpcDeps): HandlerSpec[] {
   return [
     ...appHandlers(deps),
+    ...desktopHandlers(deps),
     ...profileHandlers(deps),
     ...proxyHandlers(deps),
     ...browserHandlers(deps),

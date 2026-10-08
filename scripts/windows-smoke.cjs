@@ -82,7 +82,9 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true })
   if (!fs.existsSync(EXE)) throw new Error(`Packaged app not found at ${EXE}. Run "npm run build:windows" first.`)
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'pqa-smoke-'))
-  const env = { ...process.env }
+  const env = { ...process.env, APPDATA: path.join(userData, 'Roaming'), LOCALAPPDATA: path.join(userData, 'Local') }
+  fs.mkdirSync(env.APPDATA, { recursive: true })
+  fs.mkdirSync(env.LOCALAPPDATA, { recursive: true })
   delete env.ELECTRON_RUN_AS_NODE
   for (const key of Object.keys(env)) if (key.startsWith('DATAIMPULSE_')) delete env[key]
 
@@ -330,6 +332,19 @@ async function main() {
   await win.screenshot({ path: path.join(OUT, '02-after-launches.png') })
   check('no renderer console errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '))
 
+  // Real per-user setup, isolated Start menu shortcut and stable local executable.
+  const computerSetup = await api(() => window.api.desktop.setup({ desktop: false, startMenu: true }))
+  check('computer setup succeeds', computerSetup.ok, computerSetup.error?.message || '')
+  const localExe = computerSetup.ok ? computerSetup.data.installedPath : null
+  check('computer copy is outside the packaged source', localExe && localExe !== EXE && fs.existsSync(localExe), localExe || '')
+  const shortcutPath = path.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Proxy QA Browser.lnk')
+  check('Start menu shortcut created', fs.existsSync(shortcutPath), shortcutPath)
+  if (fs.existsSync(shortcutPath)) {
+    const link = await app.evaluate(({ shell }, file) => shell.readShortcutLink(file), shortcutPath)
+    check('shortcut targets the stable executable', link.target === localExe, link.target)
+    check('shortcut uses the stable app identity', link.appUserModelId === 'com.letsscall.proxy-qa-browser', link.appUserModelId)
+  }
+
   // (e) app.close() with a session still open leaves no --proxy-qa-session browser behind.
   if (status.chromium) {
     await api((input) => window.api.launcher.quickLaunch(input), {
@@ -359,7 +374,7 @@ async function main() {
   check('no --proxy-qa-session process remains after app.close()', leftovers.length === 0, leftovers.join(','))
 
   const restart = await electron.launch({
-    executablePath: EXE,
+    executablePath: localExe || EXE,
     args: [`--user-data-dir=${userData}`],
     env,
     timeout: 120_000,
@@ -367,6 +382,8 @@ async function main() {
   const win2 = await restart.firstWindow({ timeout: 120_000 })
   await win2.waitForLoadState('domcontentloaded')
   await sleep(2500)
+  const localStatus = (await win2.evaluate(() => window.api.desktop.status())).data
+  check('second start uses the computer copy', localStatus.runningInstalledCopy === true)
   const setup2 = (await win2.evaluate(() => window.api.setup.status())).data
   check('second start continues from saved setup', setup2.firstRun === false && setup2.security.decryptOk === true)
   const status2 = (await win2.evaluate(() => window.api.browsers.status())).data

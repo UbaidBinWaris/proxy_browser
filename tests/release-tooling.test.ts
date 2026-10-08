@@ -1,0 +1,79 @@
+import { createPublicKey, verify } from 'node:crypto'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, expect, it } from 'vitest'
+import { UsbReleaseSchema } from '../src/shared/desktop'
+// The publisher command is plain Node ESM and is also tested directly here.
+// @ts-expect-error Node scripts intentionally do not ship TypeScript declarations.
+import { bumpVersion, nextVersion, initializeKeys, createUsbRelease } from '../scripts/release.mjs'
+
+const folders: string[] = []
+afterEach(async () => { await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))) })
+async function fixture() {
+  const root = await mkdtemp(join(tmpdir(), 'release-tooling-'))
+  folders.push(root)
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'proxy-qa-browser', version: '1.2.0' }))
+  await writeFile(join(root, 'package-lock.json'), JSON.stringify({ version: '1.2.0', packages: { '': { version: '1.2.0' } } }))
+  await mkdir(join(root, 'resources'))
+  await writeFile(join(root, 'resources', 'release-notes.json'), JSON.stringify({ '1.2.0': ['New release'] }))
+  return root
+}
+
+it('increments semantic versions and synchronizes the package and lockfile', async () => {
+  expect(nextVersion('1.2.9', 'patch')).toBe('1.2.10')
+  expect(nextVersion('1.2.9', 'minor')).toBe('1.3.0')
+  expect(nextVersion('1.2.9', 'major')).toBe('2.0.0')
+  expect(() => nextVersion('1.2.9', '1.2.8')).toThrow('increase')
+  expect(() => nextVersion('1.2.9', '1.03.0')).toThrow('stable')
+  const root = await fixture()
+  expect(bumpVersion(root, 'minor')).toBe('1.3.0')
+  expect(JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version).toBe('1.3.0')
+  const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'))
+  expect(lock.version).toBe('1.3.0')
+  expect(lock.packages[''].version).toBe('1.3.0')
+})
+
+it('refuses inconsistent versions before writing either file', async () => {
+  const root = await fixture()
+  await writeFile(join(root, 'package-lock.json'), JSON.stringify({ version: '0.0.0', packages: { '': { version: '0.0.0' } } }))
+  expect(() => bumpVersion(root, 'minor')).toThrow('disagree')
+  expect(JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version).toBe('1.2.0')
+})
+
+it('keeps the publisher key stable and requires a backup if the private key is missing', async () => {
+  const root = await fixture()
+  const publicPath = initializeKeys(root)
+  const publicKey = await readFile(publicPath, 'utf8')
+  expect(initializeKeys(root)).toBe(publicPath)
+  expect(await readFile(publicPath, 'utf8')).toBe(publicKey)
+  const privatePath = join(root, '.release-keys', 'private-key.pem')
+  if (process.platform !== 'win32') expect((await stat(privatePath)).mode & 0o777).toBe(0o600)
+  await rm(privatePath)
+  expect(() => initializeKeys(root)).toThrow('Restore your publisher private key')
+  expect(await readFile(publicPath, 'utf8')).toBe(publicKey)
+})
+
+it('signs both platform artifacts using the exact importer schema and writes hashes', async () => {
+  const root = await fixture()
+  await mkdir(join(root, 'release'))
+  const assets = ['Proxy-QA-Browser-1.2.0-Windows-x64.exe', 'Proxy-QA-Browser-1.2.0-x86_64.AppImage']
+  for (const file of assets) await writeFile(join(root, 'release', file), `application ${file}`)
+  expect(await createUsbRelease(root)).toEqual(assets)
+  const envelope = JSON.parse(await readFile(join(root, 'release', 'Proxy-QA-Browser-Update.json'), 'utf8'))
+  const publicKey = createPublicKey(await readFile(join(root, 'resources', 'updates', 'public-key.pem')))
+  expect(verify(null, Buffer.from(envelope.payload), publicKey, Buffer.from(envelope.signature, 'base64'))).toBe(true)
+  const release = UsbReleaseSchema.parse(JSON.parse(envelope.payload))
+  expect(release.version).toBe('1.2.0')
+  expect(release.assets.map((asset) => asset.fileName)).toEqual(assets)
+  const sums = await readFile(join(root, 'release', 'SHA256SUMS-1.2.0.txt'), 'utf8')
+  expect(sums.trim().split('\n')).toHaveLength(3)
+  expect(sums).toContain('Proxy-QA-Browser-Update.json')
+})
+
+it('refuses incomplete platform builds and releases without notes', async () => {
+  const root = await fixture()
+  await expect(createUsbRelease(root)).rejects.toThrow('Build both platforms first')
+  await writeFile(join(root, 'resources', 'release-notes.json'), '{}')
+  await expect(createUsbRelease(root)).rejects.toThrow('Add release notes')
+})

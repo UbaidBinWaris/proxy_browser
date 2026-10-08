@@ -1,3 +1,4 @@
+import { DesktopSetupCard } from '@/components/DesktopSetupCard'
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Save } from 'lucide-react'
@@ -536,6 +537,7 @@ function AboutTab({ onReveal }: { onReveal: (path: string) => void }): React.JSX
 
   return (
     <div className="flex flex-col gap-6">
+      <DesktopSetupCard />
       <Card>
         <CardHeader title="Proxy QA Browser" actions={info ? <Badge variant={info.isPackaged ? 'muted' : 'info'}>{info.isPackaged ? 'Packaged build' : 'Development build'}</Badge> : null} />
         <CardBody>

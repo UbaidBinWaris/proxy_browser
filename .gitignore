@@ -37,3 +37,5 @@ qa-results/
 *.pfx
 *.p12
 *.pem
+.release-keys/
+!resources/updates/public-key.pem

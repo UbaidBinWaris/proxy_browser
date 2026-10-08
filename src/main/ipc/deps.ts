@@ -1,3 +1,4 @@
+import type { DesktopIntegration } from '../desktop/integration'
 /**
  * Everything the IPC layer needs from the rest of the main process.
  */
@@ -44,12 +45,13 @@ export interface IpcWindows {
 }
 
 export interface IpcDeps {
+  desktop?: DesktopIntegration
   recorder?: RecorderManager
   visuals?: VisualStore
   qa?: QaService
   gateways?: GatewayManager
   updates?: UpdateManager
-  files?: { chooseBackup(): Promise<string | null> }
+  files?: { chooseBackup(): Promise<string | null>; chooseUsb?(): Promise<string | null> }
   app: IpcAppInfoSource
   shell: IpcShell
   paths: AppPaths

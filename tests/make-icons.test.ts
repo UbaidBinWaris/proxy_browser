@@ -152,14 +152,14 @@ describe('make-icons', () => {
   })
 
   describe('committed icon set (regenerate with `node scripts/make-icons.mjs`)', () => {
-    it('keeps the SVG sources with the squircle tile, gradient, globe and green badge', () => {
+    it('keeps vector sources for the application tile, browser frame and route mark', () => {
       for (const name of ['icon.svg', 'icon-small.svg']) {
         const svg = readFileSync(join(ICONS_DIR, name), 'utf8')
         expect(svg).toContain('viewBox="0 0 512 512"')
-        expect(svg).toContain('#0B1220')
-        expect(svg).toContain('#1E3A8A')
-        expect(svg).toContain('#22C55E')
-        expect(svg).toMatch(/<ellipse\b/)
+        expect(svg).toContain('#25319C')
+        expect(svg).toContain('#FFFFFF')
+        expect(svg).toMatch(/<rect\b/)
+        expect(svg).toMatch(/<path\b/)
         expect(svg).toMatch(/<circle\b/)
       }
     })
@@ -188,7 +188,7 @@ describe('make-icons', () => {
       expect(entries.at(-1)!.data.equals(readFileSync(join(ICONS_DIR, '256.png')))).toBe(true)
     })
 
-    it('renders a transparent outside, an opaque tile and the green badge', () => {
+    it('renders a transparent outside, opaque indigo tile and a legible browser route mark', () => {
       const { width, pixels } = decodeRgba(readFileSync(join(ICONS_DIR, 'icon.png')))
       const pixel = (x: number, y: number): number[] => {
         const i = (y * width + x) * 4
@@ -196,18 +196,18 @@ describe('make-icons', () => {
       }
       // Corner outside the rounded square: fully transparent (omitBackground).
       expect(pixel(2, 2)[3]).toBe(0)
-      // Inside the tile, away from the globe: opaque and dark.
+      // Opaque indigo tile.
       const tile = pixel(256, 40)
       expect(tile[3]).toBe(255)
-      expect(Math.max(tile[0]!, tile[1]!, tile[2]!)).toBeLessThan(0x90)
-      // Badge body: #22C55E.
-      const badge = pixel(378, 330)
-      expect(badge[3]).toBe(255)
-      expect(Math.abs(badge[0]! - 0x22)).toBeLessThan(6)
-      expect(Math.abs(badge[1]! - 0xc5)).toBeLessThan(6)
-      expect(Math.abs(badge[2]! - 0x5e)).toBeLessThan(6)
-      // Globe equator stroke: white.
-      expect(pixel(120, 236)).toEqual([255, 255, 255, 255])
+      expect(tile[2]!).toBeGreaterThan(tile[0]!)
+      // Mint route contrasted against the tile.
+      const route = pixel(242, 291)
+      expect(route[3]).toBe(255)
+      expect(route[1]!).toBeGreaterThan(220)
+      expect(route[0]!).toBeLessThan(210)
+      // Browser frame and header divider remain white.
+      expect(pixel(102, 256)).toEqual([255, 255, 255, 255])
+      expect(pixel(256, 192)).toEqual([255, 255, 255, 255])
     })
   })
 })

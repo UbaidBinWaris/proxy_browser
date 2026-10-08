@@ -5,8 +5,8 @@
  * when the module is evaluated, and Rollup hoists static imports. The process
  * entry (src/main/index.ts) therefore has to set the env var and load the real
  * main module with a dynamic import, and it must not pull playwright-core in
- * through any static import of its own. The only app module it may import is
- * browser/browsers-path.ts, which in turn must stay free of playwright-core.
+ * through any static import of its own. Its static application modules (browser paths and relaunch environment)
+ * must stay free of playwright-core.
  */
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -37,12 +37,14 @@ describe('src/main/index.ts (process entry)', () => {
   const code = stripComments(source)
   const imports = staticImportSpecifiers(code)
 
-  it('statically imports only electron, node:path and the browsers-path module', () => {
+  it('statically imports only Electron, paths and modules that do not load Playwright', () => {
     expect(imports.length).toBeGreaterThan(0)
     for (const spec of imports) {
-      expect(['electron', 'node:path', './browser/browsers-path'], `unexpected static import "${spec}"`).toContain(spec)
+      expect(['electron', 'node:path', './browser/browsers-path', './desktop/relaunch-env'], `unexpected static import "${spec}"`).toContain(spec)
     }
     expect(imports).toContain('./browser/browsers-path')
+    const relaunch = stripComments(readFileSync(join(ROOT, 'src/main/desktop/relaunch-env.ts'), 'utf8'))
+    expect(staticImportSpecifiers(relaunch)).toEqual([])
   })
 
   it('never imports or requires playwright-core, other ./browser/* modules or ./proxy/* (even dynamically)', () => {

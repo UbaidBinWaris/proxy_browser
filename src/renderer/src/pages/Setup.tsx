@@ -1,3 +1,4 @@
+import { DesktopSetupCard } from '@/components/DesktopSetupCard'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -577,6 +578,8 @@ function DoneStep({ setup, browsers, security, completing, onBack, onFinish }: D
     : 'Add them later with Manage keys (Settings → Advanced)'
 
   return (
+    <>
+    <DesktopSetupCard compact />
     <Card>
       <CardHeader
         title="You're set"
@@ -656,6 +659,7 @@ function DoneStep({ setup, browsers, security, completing, onBack, onFinish }: D
         </Button>
       </CardFooter>
     </Card>
+    </>
   )
 }
 

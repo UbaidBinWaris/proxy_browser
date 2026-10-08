@@ -24,7 +24,7 @@ export const SETTINGS_TAB_LABELS: Record<SettingsTab, string> = {
   general: 'General',
   browsers: 'Browsers',
   advanced: 'Advanced',
-  about: 'About',
+  about: 'App & updates',
 }
 
 /** A route segment → tab; null for anything unknown (the page then redirects to General). */

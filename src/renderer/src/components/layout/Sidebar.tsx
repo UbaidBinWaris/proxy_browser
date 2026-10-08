@@ -80,7 +80,7 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
-        <span className="font-mono text-[11px] text-muted-foreground">{info ? `v${info.version}` : 'v—'}</span>
+        <Link to="/settings/about" title="App version and updates" className="focus-ring rounded font-mono text-[11px] text-muted-foreground hover:text-foreground">{info ? `v${info.version}` : 'v—'}</Link>
         <Link to={PROXY_KEYS_PATH} className="focus-ring rounded-full" aria-label={`${pill.label}. Open proxy keys settings`} title="Proxy keys (Settings → Advanced)">
           <Badge variant={pill.tone} dot className="hover:brightness-125">
             {pill.label}

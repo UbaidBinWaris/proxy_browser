@@ -1,0 +1,352 @@
+import { createHash, createPublicKey, randomUUID, verify } from 'node:crypto'
+import { createReadStream } from 'node:fs'
+import { chmod, copyFile, cp, lstat, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { z } from 'zod'
+import { DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
+import type { DesktopSetupOptions, DesktopStatus, UsbRelease, UsbUpdatePreview } from '@shared/desktop'
+import { AppException } from '../contracts'
+import { newerVersion } from '../releases/updates'
+
+const InstallMarkerSchema = z.object({
+  appId: z.literal(DESKTOP_APP_ID),
+  platform: z.enum(['win32', 'linux']),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/),
+  installedAt: z.string(),
+})
+const MARKER = 'proxy-qa-application.json'
+const PENDING = 'pending-usb-update.json'
+const exists = async (path: string): Promise<boolean> =>
+  stat(path)
+    .then(() => true)
+    .catch(() => false)
+
+export async function fileSha256(path: string): Promise<string> {
+  const digest = createHash('sha256')
+  for await (const chunk of createReadStream(path)) digest.update(chunk)
+  return digest.digest('hex')
+}
+
+/** Desktop entries have their own escaping rules, not shell quoting. */
+export function desktopEntry(executable: string, icon: string): string {
+  if (/\r|\n|=/.test(executable) || /\r|\n/.test(icon))
+    throw new AppException('INVALID_INPUT', 'Unsupported application path.')
+  const argument = executable
+    .replace(/\\/g, '\\\\\\\\')
+    .replace(/["`$]/g, (char) => `\\\\${char}`)
+    .replace(/%/g, '%%')
+  const iconValue = icon.replace(/\\/g, '\\\\')
+  return `[Desktop Entry]\nType=Application\nVersion=1.0\nName=${DESKTOP_APP_NAME}\nComment=Isolated browser profiles for desktop QA\nExec="${argument}"\nIcon=${iconValue}\nTerminal=false\nCategories=Development;Network;\nStartupWMClass=${DESKTOP_APP_ID}\n`
+}
+
+export interface DesktopIntegrationOptions {
+  platform: string
+  arch: string
+  isPackaged: boolean
+  version: string
+  /** Windows: extracted application executable. */
+  executable: string
+  /** Linux: the outer AppImage, rather than its mounted executable. */
+  appImage: string | null
+  portableExecutable: string | null
+  resourcesPath: string
+  root: string
+  desktopDirectory: string
+  menuDirectory: string
+  updatesDirectory: string
+  publicKey: string | null
+  releaseNotes: string[]
+  writeWindowsShortcut: (
+    path: string,
+    options: {
+      target: string
+      cwd: string
+      icon: string
+      iconIndex: number
+      appUserModelId: string
+      description: string
+    },
+  ) => boolean
+  reveal: (path: string) => void
+  restart: (executable: string) => void
+  onInstalled?: (executable: string) => void
+}
+
+export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
+  const windows = opts.platform === 'win32'
+  const supported =
+    opts.isPackaged && opts.arch === 'x64' && (windows || (opts.platform === 'linux' && !!opts.appImage))
+  const application = join(opts.root, 'Application')
+  const previous = join(opts.root, 'Application.previous')
+  const executableName = windows ? 'Proxy-QA-Browser.exe' : 'Proxy-QA-Browser.AppImage'
+  const installedExecutable = join(application, executableName)
+  const shortcutName = windows ? `${DESKTOP_APP_NAME}.lnk` : `${DESKTOP_APP_ID}.desktop`
+  const desktopShortcut = join(opts.desktopDirectory, shortcutName)
+  const menuShortcut = join(opts.menuDirectory, shortcutName)
+  const currentExecutable = windows ? opts.executable : opts.appImage
+  const distributionFile = windows ? opts.portableExecutable : opts.appImage
+  let warnings: string[] = []
+  let busy = false
+  let selected: { release: UsbRelease; asset: UsbRelease['assets'][number]; source: string } | null = null
+
+  const requireSupported = (): void => {
+    if (!supported)
+      throw new AppException(
+        'INVALID_INPUT',
+        'Computer setup is available in the Windows EXE and Linux AppImage releases.',
+      )
+  }
+  const readMarker = async (folder = application) => {
+    try {
+      return InstallMarkerSchema.parse(JSON.parse(await readFile(join(folder, MARKER), 'utf8')))
+    } catch {
+      return null
+    }
+  }
+  const status = async (): Promise<DesktopStatus> => {
+    const marker = await readMarker()
+    const installed = !!marker && marker.platform === opts.platform && (await exists(installedExecutable))
+    return {
+      supported,
+      platform: opts.platform,
+      arch: opts.arch,
+      currentVersion: opts.version,
+      installedVersion: installed ? marker.version : null,
+      installedPath: installed ? installedExecutable : null,
+      runningInstalledCopy:
+        installed && !!currentExecutable && resolve(currentExecutable) === resolve(installedExecutable),
+      desktopShortcut: await exists(desktopShortcut),
+      startMenuShortcut: await exists(menuShortcut),
+      offlineUpdatesReady: !!opts.publicKey,
+      releaseNotes: opts.releaseNotes,
+      warnings,
+    }
+  }
+  const exclusive = async <T>(run: () => Promise<T>): Promise<T> => {
+    if (busy) throw new AppException('SESSION_LIMIT', 'Computer setup or an update is already in progress.')
+    busy = true
+    try {
+      return await run()
+    } finally {
+      busy = false
+    }
+  }
+  const writeShortcuts = async (options: DesktopSetupOptions): Promise<void> => {
+    for (const [enabled, path, label] of [
+      [options.desktop, desktopShortcut, 'Desktop'],
+      [options.startMenu, menuShortcut, windows ? 'Start menu' : 'Applications menu'],
+    ] as const) {
+      if (!enabled) continue
+      try {
+        await mkdir(dirname(path), { recursive: true })
+        if (windows) {
+          if (
+            !opts.writeWindowsShortcut(path, {
+              target: installedExecutable,
+              cwd: application,
+              icon: installedExecutable,
+              iconIndex: 0,
+              appUserModelId: DESKTOP_APP_ID,
+              description: DESKTOP_APP_NAME,
+            })
+          )
+            throw new Error('Shortcut could not be written')
+        } else {
+          await writeFile(path, desktopEntry(installedExecutable, join(application, 'icon.png')), { mode: 0o755 })
+          await chmod(path, 0o755)
+        }
+      } catch {
+        warnings.push(`${label} shortcut could not be created. You can still open the installed app directly.`)
+      }
+    }
+  }
+  const install = async (options: DesktopSetupOptions): Promise<DesktopStatus> => {
+    requireSupported()
+    warnings = []
+    const before = await status()
+    if (before.installedVersion && newerVersion(before.installedVersion, opts.version))
+      throw new AppException(
+        'INVALID_INPUT',
+        'A newer version is already set up on this computer. Open that version instead.',
+      )
+    if (before.installedVersion === opts.version) {
+      await writeShortcuts(options)
+      opts.onInstalled?.(installedExecutable)
+      return status()
+    }
+    if (before.runningInstalledCopy)
+      throw new AppException('INVALID_INPUT', 'Open the newer release from USB to update the installed copy.')
+    if ((await exists(application)) && !(await readMarker()))
+      throw new AppException(
+        'INVALID_INPUT',
+        'The application destination contains unrecognized files. They have been left untouched.',
+      )
+    if ((await exists(previous)) && !(await readMarker(previous)))
+      throw new AppException(
+        'INVALID_INPUT',
+        'The previous application folder contains unrecognized files. They have been left untouched.',
+      )
+    await mkdir(opts.root, { recursive: true, mode: 0o700 })
+    const staging = join(opts.root, `Application.staging-${randomUUID()}`)
+    let movedPrevious = false
+    try {
+      if (windows) {
+        const source = dirname(opts.executable)
+        if (
+          relative(source, opts.root) === '' ||
+          (!relative(source, opts.root).startsWith('..') && !isAbsolute(relative(source, opts.root)))
+        )
+          throw new AppException('INVALID_INPUT', 'The setup destination must be outside the running application.')
+        await cp(source, staging, {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+          filter: async (path) => !(await lstat(path)).isSymbolicLink(),
+        })
+      } else {
+        await mkdir(staging, { mode: 0o700 })
+        await copyFile(opts.appImage!, join(staging, executableName))
+        await chmod(join(staging, executableName), 0o755)
+        await copyFile(join(opts.resourcesPath, 'icon.png'), join(staging, 'icon.png'))
+      }
+      if (!(await exists(join(staging, executableName))))
+        throw new AppException('INTERNAL', 'The application copy is incomplete.')
+      await writeFile(
+        join(staging, MARKER),
+        JSON.stringify({
+          appId: DESKTOP_APP_ID,
+          platform: opts.platform,
+          version: opts.version,
+          installedAt: new Date().toISOString(),
+        }),
+        { mode: 0o600 },
+      )
+      if (await exists(application)) {
+        await rm(previous, { recursive: true, force: true })
+        await rename(application, previous)
+        movedPrevious = true
+      }
+      try {
+        await rename(staging, application)
+      } catch (error) {
+        if (movedPrevious) await rename(previous, application)
+        throw error
+      }
+      await writeShortcuts(options)
+      opts.onInstalled?.(installedExecutable)
+      return status()
+    } finally {
+      await rm(staging, { recursive: true, force: true })
+    }
+  }
+  const verifyAsset = async (source: string, asset: UsbRelease['assets'][number]): Promise<void> => {
+    const details = await lstat(source)
+    if (!details.isFile() || details.size !== asset.size || (await fileSha256(source)) !== asset.sha256)
+      throw new AppException(
+        'INVALID_INPUT',
+        'The USB update file is incomplete or has changed. Copy the release again.',
+      )
+  }
+  return {
+    status,
+    setup: (options: DesktopSetupOptions) => exclusive(() => install(options)),
+    async showPinning(): Promise<void> {
+      requireSupported()
+      const current = await status()
+      if (!current.installedPath)
+        throw new AppException('INVALID_INPUT', 'Set up the app on this computer before creating a pin.')
+      await writeShortcuts({ desktop: false, startMenu: true })
+      opts.reveal((await exists(menuShortcut)) ? menuShortcut : installedExecutable)
+    },
+    async launchInstalled(): Promise<void> {
+      const current = await status()
+      if (!current.installedPath || current.installedVersion !== opts.version)
+        throw new AppException('INVALID_INPUT', 'Set up this version on the computer first.')
+      opts.restart(current.installedPath)
+    },
+    async inspectUsb(manifestPath: string): Promise<UsbUpdatePreview> {
+      selected = null
+      requireSupported()
+      if (!opts.publicKey) throw new AppException('INVALID_INPUT', 'This build has no publisher key for USB updates.')
+      if ((await lstat(manifestPath)).size > 100000)
+        throw new AppException('INVALID_INPUT', 'The USB update file is too large.')
+      const envelope = z
+        .object({ payload: z.string().max(65536), signature: z.string().max(256) })
+        .parse(JSON.parse(await readFile(manifestPath, 'utf8')))
+      const key = createPublicKey(opts.publicKey)
+      if (
+        key.asymmetricKeyType !== 'ed25519' ||
+        !verify(null, Buffer.from(envelope.payload), key, Buffer.from(envelope.signature, 'base64'))
+      )
+        throw new AppException('INVALID_INPUT', 'This USB update is not signed by your publisher.')
+      const release = UsbReleaseSchema.parse(JSON.parse(envelope.payload))
+      if (!newerVersion(release.version, opts.version))
+        throw new AppException('INVALID_INPUT', 'Choose a release newer than the version currently running.')
+      const asset = release.assets.find((item) => item.platform === opts.platform && item.arch === opts.arch)
+      if (!asset || (windows ? !asset.fileName.endsWith('.exe') : !asset.fileName.endsWith('.AppImage')))
+        throw new AppException('INVALID_INPUT', 'This USB release is not compatible with this computer.')
+      const source = join(dirname(manifestPath), asset.fileName)
+      await verifyAsset(source, asset)
+      selected = { release, asset, source }
+      return { version: release.version, fileName: asset.fileName, notes: release.notes, size: asset.size }
+    },
+    async applyUsb(): Promise<void> {
+      await exclusive(async () => {
+        if (!selected) throw new AppException('INVALID_INPUT', 'Choose and verify a USB update first.')
+        const update = selected
+        await mkdir(opts.updatesDirectory, { recursive: true, mode: 0o700 })
+        const destination = join(opts.updatesDirectory, `${update.asset.sha256.slice(0, 16)}-${update.asset.fileName}`)
+        const partial = `${destination}.${randomUUID()}.part`
+        try {
+          await copyFile(update.source, partial)
+          await verifyAsset(partial, update.asset)
+          await chmod(partial, windows ? 0o600 : 0o755)
+          await rename(partial, destination)
+          const current = await status()
+          await mkdir(opts.root, { recursive: true, mode: 0o700 })
+          await writeFile(
+            join(opts.root, PENDING),
+            JSON.stringify({
+              version: update.release.version,
+              executable: destination,
+              sha256: update.asset.sha256,
+              managed: !!current.installedPath,
+              desktop: current.desktopShortcut,
+              startMenu: current.startMenuShortcut,
+            }),
+            { mode: 0o600 },
+          )
+          opts.restart(destination)
+        } finally {
+          await rm(partial, { force: true })
+        }
+      })
+    },
+    /** The verified new USB runtime can replace the old local copy now that the old process has exited. */
+    async finishPendingUpdate(): Promise<void> {
+      const path = join(opts.root, PENDING)
+      if (!supported || !(await exists(path))) return
+      const pending = z
+        .object({
+          version: z.string(),
+          executable: z.string(),
+          sha256: z.string(),
+          managed: z.boolean(),
+          desktop: z.boolean(),
+          startMenu: z.boolean(),
+        })
+        .parse(JSON.parse(await readFile(path, 'utf8')))
+      if (
+        pending.version !== opts.version ||
+        !distributionFile ||
+        resolve(pending.executable) !== resolve(distributionFile)
+      )
+        return
+      if ((await fileSha256(distributionFile)) !== pending.sha256)
+        throw new AppException('INVALID_INPUT', 'The prepared USB update has changed.')
+      if (pending.managed) await exclusive(() => install({ desktop: pending.desktop, startMenu: pending.startMenu }))
+      await rm(path)
+    },
+  }
+}
+export type DesktopIntegration = ReturnType<typeof createDesktopIntegration>

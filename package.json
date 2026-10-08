@@ -1,6 +1,6 @@
 {
   "name": "proxy-qa-browser",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Desktop QA browser for authorized form testing through isolated profiles and proxy exit IPs",
   "main": "out/main/index.js",
   "scripts": {
@@ -17,7 +17,10 @@
     "build:linux": "node scripts/bundle-browsers.mjs --platform linux --webkit-libs && npm run build && electron-builder --linux --x64 --config electron-builder.config.mjs",
     "build:windows": "npm run build && electron-builder --win --x64 --config electron-builder.config.mjs",
     "build:windows:bundled": "node scripts/build-windows-bundled.mjs",
-    "build:all": "node scripts/build-all.mjs"
+    "build:all": "node scripts/build-all.mjs",
+    "release:version": "node scripts/release.mjs version",
+    "release:init": "node scripts/release.mjs init",
+    "release:usb": "node scripts/release.mjs usb"
   },
   "repository": {
     "type": "git",

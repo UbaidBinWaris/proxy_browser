@@ -67,21 +67,23 @@ captured network requests and any lead / certificate IDs the form returned.
 Choose the single portable Windows EXE or the Linux AppImage.
 These builds contain no proxy credentials.
 
-| Platform | File | Size (build of 2026-10-07) | Browsers |
+| Platform | File | Size (v1.2.0 build) | Browsers |
 | --- | --- | --- | --- |
-| Windows 10/11 x64 | `Proxy-QA-Browser-1.1.0-Windows-x64.exe` (portable) | 102,464,708 bytes (≈ 98 MiB) | Downloaded on first run |
-| Linux x86-64 | `Proxy-QA-Browser-1.1.0-x86_64.AppImage` | 569,528,515 bytes (≈ 543 MiB) | Chromium, Firefox and WebKit built in |
+| Windows 10/11 x64 | `Proxy-QA-Browser-1.2.0-Windows-x64.exe` (portable) | 102,438,716 bytes (≈ 98 MiB) | Downloaded on first run |
+| Linux x86-64 | `Proxy-QA-Browser-1.2.0-x86_64.AppImage` | 569,483,398 bytes (≈ 543 MiB) | Chromium, Firefox and WebKit built in |
 
 ### Windows (portable EXE)
 
-1. Copy `Proxy-QA-Browser-1.1.0-Windows-x64.exe` anywhere (Desktop, Downloads,
+1. Copy `Proxy-QA-Browser-1.2.0-Windows-x64.exe` anywhere (Desktop, Downloads,
    a USB stick). There is no installer and you do not need administrator rights.
 2. Double-click it. The EXE is **not code-signed**, so Windows SmartScreen may
    show *"Windows protected your PC"*. Click **More info** → **Run anyway**.
    Some antivirus products are cautious with unsigned portable EXEs too; see
    [Troubleshooting](#troubleshooting).
 3. The portable EXE **unpacks itself to `%TEMP%` on every launch**, so the
-   window takes a few seconds to appear. Nothing is installed; your data lives
+   window takes a few seconds to appear. Use **Set up on this computer** in
+   **Settings → App & updates** for a stable local copy and faster later launches.
+   Your data lives
    in `%APPDATA%\proxy-qa-browser` and the vault key in
    `%LOCALAPPDATA%\ProxyQABrowser\keys` (see [Data locations](#data-locations)),
    so moving or deleting the `.exe` loses nothing.
@@ -95,6 +97,9 @@ These builds contain no proxy credentials.
    with Windows, is detected automatically and can be used as soon as setup is
    done. Proxy credentials can be skipped and added later from Settings.
 
+For shortcut setup, Windows pinning, signed USB updates and the publisher’s
+next-version workflow, see [Versioning and USB distribution](docs/DISTRIBUTION.md).
+
 Only one copy of the app runs at a time: starting it again just brings the
 open window to the front.
 
@@ -103,15 +108,15 @@ open window to the front.
 1. Make the file executable and run it:
 
    ```bash
-   chmod +x Proxy-QA-Browser-1.1.0-x86_64.AppImage
-   ./Proxy-QA-Browser-1.1.0-x86_64.AppImage
+   chmod +x Proxy-QA-Browser-1.2.0-x86_64.AppImage
+   ./Proxy-QA-Browser-1.2.0-x86_64.AppImage
    ```
 
 2. AppImages mount themselves with **FUSE 2**. If you see
    `dlopen(): error loading libfuse.so.2`, install it — Arch: `sudo pacman -S
    fuse2`; Ubuntu 24.04: `sudo apt install libfuse2t64`; older Debian/Ubuntu:
    `sudo apt install libfuse2` — or run it with
-   `./Proxy-QA-Browser-1.1.0-x86_64.AppImage --appimage-extract-and-run`.
+   `./Proxy-QA-Browser-1.2.0-x86_64.AppImage --appimage-extract-and-run`.
 3. The AppImage is **self-contained**: Chromium, Firefox and WebKit are inside,
    together with the Ubuntu libraries Playwright's WebKit needs on other
    distributions (ICU 74, flite 2.2, libxml2 2.9). Nothing is downloaded and
@@ -131,7 +136,7 @@ Terminals hosted by an Electron app (VS Code, Cursor, …) often export
 window opens**. Start it without that variable:
 
 ```bash
-env -u ELECTRON_RUN_AS_NODE ./Proxy-QA-Browser-1.1.0-x86_64.AppImage
+env -u ELECTRON_RUN_AS_NODE ./Proxy-QA-Browser-1.2.0-x86_64.AppImage
 ```
 
 Double-clicking the file in a file manager is not affected.
@@ -982,7 +987,7 @@ There is no telemetry and nothing is uploaded.
 
 `<userData>` is `%APPDATA%\proxy-qa-browser` on Windows and
 `${XDG_CONFIG_HOME:-~/.config}/proxy-qa-browser` on Linux. The exact paths are
-listed under Settings → About.
+listed under Settings → App & updates.
 
 | What | Windows | Linux |
 | --- | --- | --- |
@@ -1038,7 +1043,7 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 | --- | --- | --- |
 | Windows: *"Windows protected your PC"* | The EXE is not code-signed | **More info** → **Run anyway**. See [FAQ](#faq) for code signing |
 | Windows: antivirus quarantines or slows the EXE | Unsigned portable EXEs that unpack themselves to `%TEMP%` look suspicious to some scanners | Restore it / add an exception for the file, or sign the build |
-| Windows: the window takes several seconds to appear | The portable EXE unpacks itself to `%TEMP%` on every launch | Expected |
+| Windows: the window takes several seconds to appear | The portable EXE unpacks itself to `%TEMP%` on every launch | Use **App & updates → Set up on this computer**, then launch the local shortcut |
 | **Browsers opened by themselves on Windows** (fixed in this version) | Older versions read browser versions by running `chrome.exe --version` (and Edge, Brave, Opera, Vivaldi), which on Windows opens a window; Opera/Brave installers also started the browser after installing | Update. Versions are now read from the `.exe` file without running it, Opera installs pass `/launchopera=0`, and windows an installer opens after an install are closed. Windows you opened yourself are never touched |
 | Linux: `dlopen(): error loading libfuse.so.2` | FUSE 2 missing | Install `fuse2` / `libfuse2t64` / `libfuse2`, or run with `--appimage-extract-and-run` |
 | Linux: AppImage fails with a `chrome-sandbox` / namespace error | Unprivileged user namespaces disabled | Enable them (e.g. `sudo sysctl kernel.unprivileged_userns_clone=1` where that sysctl exists, or your distribution's AppArmor/userns setting) |
@@ -1274,7 +1279,7 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | `npm run dev` | `electron-vite dev`: main, preload and renderer with hot reload (DevTools open detached) |
 | `npm run build` | `electron-vite build` → `out/main`, `out/preload`, `out/renderer` |
 | `npm run preview` | `electron-vite preview`: run the built `out/` without packaging |
-| `npm test` | `vitest run` (869 tests) |
+| `npm test` | `vitest run` (891 tests) |
 | `npm run test:watch` | `vitest` in watch mode |
 | `npm run typecheck` | `tsc` for `tsconfig.node.json` (main, preload, shared, renderer `lib`/`stores`, tests) and `tsconfig.web.json` (renderer) |
 | `npm run lint` | ESLint (typescript-eslint; `no-explicit-any`, `consistent-type-imports`) |
@@ -1282,6 +1287,9 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | `npm run build:linux` | `scripts/bundle-browsers.mjs --platform linux --webkit-libs` → `npm run build` → `electron-builder --linux --x64` → self-contained AppImage |
 | `npm run build:windows` | `npm run build` → `electron-builder --win --x64` → slim portable EXE (on Windows, or on Linux with wine) |
 | `npm run build:windows:bundled` | `scripts/build-windows-bundled.mjs`: bundle the win64 engines, build, package with `PROXY_QA_BUNDLE_BROWSERS=1` |
+| `npm run release:version -- patch` | Increase the version in the package and lockfile together |
+| `npm run release:init` | Initialize or validate the stable publisher key pair |
+| `npm run release:usb` | Sign current Windows and Linux files and create the USB manifest/checksums |
 | `npm run build:all` | `scripts/build-all.mjs`: on Linux the AppImage, then the EXE via local wine or Docker; on Windows the EXE |
 
 Other scripts: `scripts/build-all.sh` (Bash version of `build:all`, always uses
@@ -1444,8 +1452,8 @@ release/Proxy-QA-Browser-<version>-x86_64.AppImage        Linux, self-contained
 release/Proxy-QA-Browser-<version>-Windows-x64.exe        Windows portable (the only Windows artifact)
 ```
 
-Current 1.1.0 builds: AppImage 569,524,447 bytes (≈ 543 MiB), EXE
-102,463,203 bytes (≈ 98 MiB).
+Current 1.2.0 builds: AppImage 569,483,398 bytes (≈ 543 MiB), EXE
+102,438,716 bytes (≈ 98 MiB).
 
 **Linux AppImage (native)**
 
@@ -1519,7 +1527,7 @@ and `src/renderer/src/assets/app-icon.png` (64).
 
 ### Releasing checklist
 
-1. Bump the version: `npm version <x.y.z> --no-git-tag-version` (updates
+1. Bump the version: `npm run release:version -- patch` (updates
    `package.json` and `package-lock.json`; artifact names follow it).
 2. `npm ci`, `npm run typecheck`, `npm run lint`, `npm test`.
 3. Build: `npm run build:all` on Linux (or `npm run build:linux` there and
@@ -1530,7 +1538,9 @@ and `src/renderer/src/assets/app-icon.png` (64).
 5. Smoke-test the EXE on Windows: `node scripts/windows-smoke.cjs` on a real PC
    or the GitHub Actions workflow, plus one proxied launch by hand.
 6. Sign the EXE if a certificate is available.
-7. Publish the two files from `release/` and update the
+7. Add release notes to `resources/release-notes.json`, run `npm run release:usb`,
+   then distribute the current executable, signed JSON and checksums as described
+   in [Versioning and USB distribution](docs/DISTRIBUTION.md). Update the
    [Acceptance checklist](#acceptance-checklist) statuses.
 
 ### Conventions
@@ -1578,9 +1588,9 @@ GitHub Actions smoke test; as of this README that run is **still pending**.
 | 10 | WebKit through DataImpulse | HTTPS form loads through the local relay; iPhone viewport; AppImage uses bundled host libraries on Arch | Verified (live; `ldd` + launch from the AppImage) |
 | 11 | Concurrent sessions + isolation | With single-session off, two windows, no shared cookies/storage | Verified (manual + `tests/context-isolation.test.ts`) |
 | 12 | Screenshot, network inspector, persistence | PNG saved and shown; requests listed and filterable; lead/certificate IDs extracted; data survives restart | Verified |
-| 13 | AppImage builds (self-contained) | `npm run build:linux` → AppImage with 3 engines (no headless shell) and the 17 WebKit sonames | Verified (build of 2026-10-07, 569 MB) |
+| 13 | AppImage builds (self-contained) | `npm run build:linux` → AppImage with 3 engines (no headless shell) and the 17 WebKit sonames | Verified (v1.2.0 build, 569 MB) |
 | 14 | AppImage runs | `fuse2`; packaged; browsers *bundled*; only *credentials* pending; `.env` files and `DATAIMPULSE_PROXY_*` variables ignored; key backend *GNOME Keyring / libsecret*; all three engines launch with nothing downloaded | Verified (fresh `--user-data-dir` + `XDG_DATA_HOME`) |
-| 15 | Windows portable EXE builds from Linux | `scripts/build-all.sh` → `BUILD COMPLETE`, AppImage + portable EXE, no installer | Verified (cross-built on the Linux host; current EXE built 2026-10-07, 102 MB) |
+| 15 | Windows portable EXE builds from Linux | `scripts/build-all.sh` → `BUILD COMPLETE`, AppImage + portable EXE, no installer | Verified (cross-built on the Linux host; current v1.2.0 EXE, 102 MB) |
 | 16 | Windows portable EXE runs | Starts after unpacking; wizard asks for browsers and credentials; DPAPI key in `%LOCALAPPDATA%\ProxyQABrowser\keys`; engines in `%APPDATA%\proxy-qa-browser\data\browsers`; tests 1–12 pass | **Pending Windows run** (`scripts/windows-smoke.cjs` / GitHub Actions + manual proxied launch) |
 | 17 | Secret hygiene | Password and `user:pass@` absent from logs, log files, database, `install.json`, key file; vault is ciphertext; relay logs show only `host:port` | Verified |
 
