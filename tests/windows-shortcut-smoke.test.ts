@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -79,4 +79,29 @@ it('restores the user shortcut even if native shortcut inspection throws', async
   f.electron.shell.readShortcutLink = () => { throw new Error('native shortcut read failed') }
   await expect(f.run()).rejects.toThrow('native shortcut read failed')
   expect(await readFile(f.shortcut)).toEqual(original)
+})
+
+it('accepts another filesystem path that resolves to the same installed executable', async () => {
+  const f = await fixture()
+  const local = join(root, 'local')
+  const aliasDirectory = join(root, 'local-alias')
+  await mkdir(local, { recursive: true })
+  // Directory junctions do not require Windows file-symlink privileges.
+  await symlink(local, aliasDirectory, process.platform === 'win32' ? 'junction' : 'dir')
+  const alias = join(aliasDirectory, 'Application', 'Proxy-QA-Browser.exe')
+  const readLink = f.electron.shell.readShortcutLink
+  f.electron.shell.readShortcutLink = (file) => ({ ...readLink(file), target: alias })
+  await f.run()
+  expect(f.checks).toContainEqual({ name: 'shortcut targets the stable executable', ok: true })
+  expect(f.checks.every((check) => check.ok)).toBe(true)
+})
+
+it('rejects a different executable even if it contains the same bytes', async () => {
+  const f = await fixture()
+  const different = join(root, 'different.exe')
+  await writeFile(different, 'runtime executable')
+  const readLink = f.electron.shell.readShortcutLink
+  f.electron.shell.readShortcutLink = (file) => ({ ...readLink(file), target: different })
+  await f.run()
+  expect(f.checks).toContainEqual({ name: 'shortcut targets the stable executable', ok: false })
 })

@@ -110,7 +110,9 @@ async function checkComputerSetup(api, app, sourceExecutable = EXE, report = che
     )
     if (fs.existsSync(shortcutPath)) {
       const link = await app.evaluate(({ shell }, file) => shell.readShortcutLink(file), shortcutPath)
-      report('shortcut targets the stable executable', link.target === localExe, link.target)
+      // Windows Shell expands 8.3 names (RUNNER~1) and may change path casing.
+      const canonical = (file) => fs.realpathSync.native(file).toLowerCase()
+      report('shortcut targets the stable executable', canonical(link.target) === canonical(localExe), link.target)
       report('shortcut uses the stable app identity', link.appUserModelId === 'com.letsscall.proxy-qa-browser', link.appUserModelId)
     }
   } finally {
