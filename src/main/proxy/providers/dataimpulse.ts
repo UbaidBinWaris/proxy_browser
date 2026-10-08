@@ -1,7 +1,10 @@
 /**
- * DataImpulse proxy provider.
+ * DataImpulse proxy dialect (`dataImpulseDialect`).
  *
  * ALL DataImpulse-specific username / parameter construction lives in this file.
+ * The generic gateway handling (per-pool credentials, status, tests, IP lookup,
+ * secrets) is `GatewayProvider` (./gateway-provider.ts); `DataImpulseProvider`
+ * below is kept as a thin compatibility wrapper (GatewayProvider + this dialect).
  *
  * Username syntax (verified against the official docs):
  *   - https://docs.dataimpulse.com/proxies/parameters            (general format)
@@ -17,14 +20,15 @@
  *   - State and city names are lower-case with spaces removed (DataImpulse's own
  *     state list: `state.newjersey`, `state.northcarolina`); diacritics and
  *     punctuation are stripped too ("'Ewa Beach" → `ewabeach`). The separator is
- *     configurable through `settings.targetingEncoding` ('remove-spaces' default,
- *     'underscore', 'keep') in case the gateway changes its convention.
+ *     configurable through `settings.providerOptions.dataimpulse.encoding`
+ *     ('remove-spaces' default, 'underscore', 'keep') in case the gateway changes
+ *     its convention.
  *   - `zip.<5 digits>`.
  *   - `sessid.<value>` pins the exit IP (~30 min by default); `sessttl.<minutes>`
  *     sets the interval.
  *
- * Pools: Residential and Mobile are separate plans with separate logins on the
- * same gateway (gw.dataimpulse.com:823). Credentials are kept per pool.
+ * Products: Residential and Mobile are separate plans with separate logins on the
+ * same gateway (gw.dataimpulse.com:823). Credentials are kept per product.
  *
  * Composition (`buildProxyConfig`): the configured login may already carry
  * parameters (e.g. `login__cr.us`). They are parsed; `cr`/`state`/`city`/`zip`
@@ -35,20 +39,28 @@
  * (placeholders `{username}` = login incl. targeting, `{session}`, `{sep}` which
  * resolves to `;` when the username already has `__`, otherwise `__`). Default:
  * `{username}{sep}sessid.{session}`. Precedence: template saved with the pool's
- * credentials → constructor default (env DATAIMPULSE_SESSION_TEMPLATE in
- * development) → DEFAULT_SESSION_TEMPLATE. `sessttl` is appended after the
- * template result, so a custom template never has to know about it.
+ * credentials → gateway default (env DATAIMPULSE_SESSION_TEMPLATE in
+ * development) → DEFAULT_SESSION_TEMPLATE; GatewayProvider resolves it and
+ * hands it to `compose()` as `credentials.sessionTemplate`. `sessttl` is
+ * appended after the template result, so a custom template never has to know
+ * about it.
  *
- * Credentials are dynamic: `setCredentials()` is called by the composition root
- * whenever the vault changes (or the development .env fallback applies).
+ * Location re-roll: a PROXY_DEAD failure (HTTP 503 from the gateway, an
+ * exhausted location pool) is not retryable — see `isRetryableDataImpulseFailure`.
  */
-import { PROXY_POOLS, PROXY_POOL_LABELS, ProxyCredentialsInputSchema, STICKY_SESSION_ID_MAX_LENGTH, STICKY_SESSION_ID_PATTERN, isValidSessionTemplate } from '../../../shared/types'
-import type { AppSettings, CredentialSource, GeoTarget, IpInfo, ProxyConfigStatus, ProxyCredentialsInput, ProxyPool, ProxyPoolStatus, ProxyTestResult } from '../../../shared/types'
-import { AppException } from '../../contracts'
-import type { IpChecker, Logger, ProxyConnection, ProxyCredentials, ProxyProvider, ProxyRequest } from '../../contracts'
-import { stripCredentials } from '../ip-checker'
+import { STICKY_SESSION_ID_MAX_LENGTH, STICKY_SESSION_ID_PATTERN, TARGET_MODES } from '../../../shared/types'
+import type { AppError, CredentialSource, GeoTarget } from '../../../shared/types'
+import type { IpChecker, Logger, ProxyCredentials, ProxyRequest } from '../../contracts'
+import { DATAIMPULSE_STATES_FILE } from '../../locations/geonames-loader'
+import { DEFAULT_TARGETING_ENCODING, TARGETING_ENCODINGS, encodePlaceName, encodeStateName, notConfiguredMessage, productNotConfiguredMessage } from '../targeting-text'
+import type { TargetingEncoding } from '../targeting-text'
+import type { ComposedConnection, DialectOptions, ProviderCredentials, ProviderDialect } from './dialect'
+import { GatewayProvider } from './gateway-provider'
 
-export type TargetingEncoding = AppSettings['targetingEncoding']
+// Neutral helpers re-exported so existing imports from this module keep working.
+export { DEFAULT_TARGETING_ENCODING, TARGETING_ENCODINGS, encodePlaceName, encodeStateName } from '../targeting-text'
+export type { TargetingEncoding } from '../targeting-text'
+export { REQUIRED_CREDENTIAL_FIELDS, maskUsername } from './gateway-provider'
 
 export interface DataImpulseProviderOptions {
   ipChecker: IpChecker
@@ -58,12 +70,16 @@ export interface DataImpulseProviderOptions {
   /** Initial credentials (same as calling `setCredentials` right after construction). */
   credentials?: ProxyCredentials[]
   source?: CredentialSource
-  /** How multi-word place names are encoded (settings.targetingEncoding). Defaults to 'remove-spaces'. */
-  getTargetingEncoding?: () => TargetingEncoding
+  /** How multi-word place names are encoded (settings.providerOptions.dataimpulse.encoding). Defaults to 'remove-spaces'. */
+  getTargetingEncoding?: () => string
 }
 
 export const DEFAULT_SESSION_TEMPLATE = '{username}{sep}sessid.{session}'
-export const DEFAULT_TARGETING_ENCODING: TargetingEncoding = 'remove-spaces'
+/** DataImpulse plans (product keys), in picker order. Stored values from before providers existed use these keys. */
+export const DATAIMPULSE_PRODUCTS = ['residential', 'mobile'] as const
+export const DATAIMPULSE_GATEWAY = { host: 'gw.dataimpulse.com', port: 823 } as const
+/** Shown when a target asks for more than a country (same text as the launcher's DOUBLE_RATE_WARNING). */
+export const GEO_TARGETING_BILLING_NOTE = 'State/city/ZIP targeting is billed at 2× by DataImpulse.'
 /** Auto-generated ids (`createSession`) are short lowercase slugs. */
 export const SESSION_ID_MAX_LENGTH = 32
 export const SESSION_ID_PATTERN = /^[a-z0-9-]{1,32}$/
@@ -73,23 +89,11 @@ const ROTATION_SUFFIX_PATTERN = /^(.*)-r(\d+)$/
 export const PARAM_PREFIX = '__'
 export const PARAM_SEPARATOR = ';'
 const KEY_VALUE_SEPARATOR = '.'
-const LOG_SCOPE = 'proxy.dataimpulse'
 
 /** Parameter keys owned by the geo target: replaced (never duplicated) when a request carries a target. */
 const GEO_KEYS = ['cr', 'state', 'city', 'zip'] as const
 /** Parameter keys owned by the session: replaced when a request carries a sticky id. */
 const SESSION_KEYS = ['sessid', 'sessttl'] as const
-
-/** Fields reported as missing while no credentials are active. */
-export const REQUIRED_CREDENTIAL_FIELDS = ['host', 'port', 'username', 'password'] as const
-
-export const NOT_CONFIGURED_MESSAGE =
-  'Proxy credentials are not configured. Enter and save your DataImpulse credentials in the app (first-run setup or Settings) to use the proxy modes.'
-
-/** Message for a request against a pool that has no credentials. */
-export function poolNotConfiguredMessage(pool: ProxyPool): string {
-  return `${PROXY_POOL_LABELS[pool]} credentials are not configured. Add them under Settings → Advanced → Proxy keys.`
-}
 
 /** Convert any profile name to a lowercase kebab slug ([a-z0-9-]). */
 export function kebabSlug(input: string): string {
@@ -102,48 +106,11 @@ export function kebabSlug(input: string): string {
     .replace(/-{2,}/g, '-')
 }
 
-/** Mask a username as "ab****yz"; very short usernames are fully masked. */
-export function maskUsername(username: string): string {
-  if (username.length <= 4) return '*'.repeat(Math.max(username.length, 4))
-  return `${username.slice(0, 2)}****${username.slice(-2)}`
-}
-
 // ---------------------------------------------------------------------------
-// Encoding helpers (exported for unit tests and the launcher preview)
+// Encoding helpers (exported for unit tests and the launcher preview).
+// Place/state name encoding is provider-neutral: see ../targeting-text.ts
+// (DataImpulse's documented convention is the 'remove-spaces' default).
 // ---------------------------------------------------------------------------
-
-/**
- * Encode a human place name the way DataImpulse expects it: ASCII, lower-case,
- * no punctuation/apostrophes, words joined according to `encoding`.
- *   "New Jersey"  → "newjersey"  ('remove-spaces', the documented convention)
- *   "'Ewa Beach"  → "ewabeach"
- *   "St. Louis"   → "stlouis"    ('underscore' → "st_louis", 'keep' → "st louis")
- *   "Winston-Salem" → "winstonsalem"
- */
-export function encodePlaceName(name: string, encoding: TargetingEncoding = DEFAULT_TARGETING_ENCODING): string {
-  const words = name
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .filter((word) => word.length > 0)
-  switch (encoding) {
-    case 'underscore':
-      return words.join('_')
-    case 'keep':
-      return words.join(' ')
-    case 'remove-spaces':
-      return words.join('')
-  }
-}
-
-/** DataImpulse state parameter value ("New Jersey" → "newjersey"). */
-export function encodeStateName(state: string, encoding: TargetingEncoding = DEFAULT_TARGETING_ENCODING): string {
-  return encodePlaceName(state, encoding)
-}
 
 /** Lower-case ISO-2 country for the `cr` parameter. */
 export function encodeCountry(country: string): string {
@@ -258,239 +225,130 @@ export function buildDataImpulseUsername(baseUsername: string, sessionId: string
   return template.replaceAll('{username}', baseUsername).replaceAll('{session}', sessionId).replaceAll('{sep}', sep)
 }
 
-function validateTemplate(template: string): string {
-  if (!isValidSessionTemplate(template)) {
-    throw new AppException(
-      'INVALID_INPUT',
-      'DATAIMPULSE_SESSION_TEMPLATE must contain both {username} and {session} placeholders.',
-      `template="${template}"`,
-    )
-  }
-  return template
+/** The request's encoding option when it is one DataImpulse knows, otherwise the documented default. */
+function encodingFrom(options: DialectOptions | undefined): TargetingEncoding {
+  const value = options?.encoding
+  return value !== undefined && (TARGETING_ENCODINGS as readonly string[]).includes(value) ? (value as TargetingEncoding) : DEFAULT_TARGETING_ENCODING
 }
 
-function firstIssue(issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>): string {
-  const issue = issues[0]
-  if (!issue) return 'Invalid credentials.'
-  const path = issue.path.map(String).join('.')
-  return path ? `${path}: ${issue.message}` : issue.message
+function gatewayServer(credentials: Pick<ProviderCredentials, 'host' | 'port'>): string {
+  return `http://${credentials.host}:${credentials.port}`
 }
 
-interface PoolState {
-  credentials: ProxyCredentials
-  template: string
+/** Deterministic sticky session id for a profile: `profile-<kebab slug>`, at most 32 characters. */
+export function createDataImpulseSession(profileName: string): string {
+  const slug = kebabSlug(profileName)
+  const body = slug.length > 0 ? slug : 'default'
+  return trimSessionId(`profile-${body}`)
 }
 
-export class DataImpulseProvider implements ProxyProvider {
-  readonly name = 'dataimpulse' as const
+/**
+ * Next sticky session id for a profile. The current id is preserved verbatim
+ * (the profile charset allows upper case and underscores, which DataImpulse
+ * accepts) and `-r<N>` is appended or incremented; the stem is truncated only
+ * when needed to stay within the 64-character profile limit.
+ */
+export function rotateDataImpulseSession(currentSessionId: string | null, profileName: string): string {
+  const base = currentSessionId && STICKY_SESSION_ID_PATTERN.test(currentSessionId) ? currentSessionId : createDataImpulseSession(profileName)
+  const match = ROTATION_SUFFIX_PATTERN.exec(base)
+  const stem = match ? (match[1] ?? base) : base
+  const nextRound = match ? Number.parseInt(match[2] ?? '1', 10) + 1 : 2
+  const suffix = `-r${nextRound}`
+  const next = trimSessionId(stem, STICKY_SESSION_ID_MAX_LENGTH - suffix.length) + suffix
+  if (next !== currentSessionId) return next
+  // Degenerate case (e.g. counter overflowed the length budget): fall back to a random suffix.
+  const random = `-${Math.random().toString(36).slice(2, 6).padEnd(4, '0')}`
+  return trimSessionId(stem, STICKY_SESSION_ID_MAX_LENGTH - random.length) + random
+}
 
-  private readonly ipChecker: IpChecker
-  private readonly logger: Logger
-  private readonly defaultTemplate: string
-  private readonly getTargetingEncoding: () => TargetingEncoding
-  private readonly pools = new Map<ProxyPool, PoolState>()
-  private source: CredentialSource = 'none'
+/**
+ * Whether a failed exit-IP check is worth another sticky session id.
+ * Not for PROXY_DEAD: after the IP checker's own retries it means the gateway
+ * refused a new sticky session (live: HTTP 503 once a thin ZIP pool's IPs were
+ * all pinned), and it keeps refusing until a session expires. Not for rejected
+ * credentials either.
+ */
+export function isRetryableDataImpulseFailure(error: AppError): boolean {
+  return error.code !== 'PROXY_DEAD' && error.code !== 'PROXY_AUTH_FAILED'
+}
 
-  constructor(options: DataImpulseProviderOptions) {
-    this.ipChecker = options.ipChecker
-    this.logger = options.logger
-    this.defaultTemplate = validateTemplate(options.sessionTemplate?.trim() || DEFAULT_SESSION_TEMPLATE)
-    this.getTargetingEncoding = options.getTargetingEncoding ?? ((): TargetingEncoding => DEFAULT_TARGETING_ENCODING)
-    if (options.credentials !== undefined) {
-      this.setCredentials(options.credentials, options.source ?? 'vault')
-    }
-  }
+export const dataImpulseDialect: ProviderDialect = {
+  id: 'dataimpulse',
+  displayName: 'DataImpulse',
+  docsUrl: 'https://docs.dataimpulse.com/proxies/parameters',
+  capabilities: {
+    products: DATAIMPULSE_PRODUCTS.map((key) => ({ key, label: key === 'residential' ? 'Residential' : 'Mobile' })),
+    targetModes: [...TARGET_MODES],
+    sticky: {
+      supported: true,
+      // `sessttl` range accepted by the profile schema (stickyTtlMinutes).
+      ttlMinutes: { min: 1, max: 1440 },
+      idPattern: STICKY_SESSION_ID_PATTERN.source,
+      idMaxLength: STICKY_SESSION_ID_MAX_LENGTH,
+    },
+    defaults: { host: DATAIMPULSE_GATEWAY.host, port: DATAIMPULSE_GATEWAY.port },
+    extraCredentialFields: [],
+    targetingBillingNote: GEO_TARGETING_BILLING_NOTE,
+    stateAllowlistFile: DATAIMPULSE_STATES_FILE,
+    encodingOptions: [...TARGETING_ENCODINGS],
+  },
+  sessionTemplate: { default: DEFAULT_SESSION_TEMPLATE, settingName: 'DATAIMPULSE_SESSION_TEMPLATE' },
 
-  isConfigured(): boolean {
-    return this.pools.size > 0
-  }
-
-  isPoolConfigured(pool: ProxyPool): boolean {
-    return this.pools.has(pool)
-  }
-
-  /** Replace the whole pool set. An empty list clears every pool. */
-  setCredentials(credentials: ProxyCredentials[], source: CredentialSource): void {
-    const had = [...this.pools.keys()]
-    this.pools.clear()
-    for (const entry of credentials) {
-      if (this.pools.has(entry.pool)) {
-        this.logger.warn(LOG_SCOPE, `Duplicate credentials for the ${entry.pool} pool; keeping the first entry`)
-        continue
-      }
-      this.pools.set(entry.pool, { credentials: { ...entry }, template: this.resolveTemplate(entry.sessionTemplate, entry.pool) })
-      this.logger.registerSecret(entry.password)
-      this.logger.registerSecret(`${entry.username}:${entry.password}`)
-    }
-    this.source = this.pools.size > 0 ? source : 'none'
-    if (this.pools.size === 0) {
-      if (had.length > 0) this.logger.info(LOG_SCOPE, 'Proxy credentials cleared; proxy modes are unavailable until credentials are saved again')
-      return
-    }
-    for (const [pool, state] of this.pools) {
-      this.logger.info(LOG_SCOPE, `Proxy credentials activated for the ${pool} pool`, {
-        pool,
-        source: this.source,
-        host: state.credentials.host,
-        port: state.credentials.port,
-        username: maskUsername(state.credentials.username),
-        templateOverride: state.credentials.sessionTemplate !== null,
-      })
-    }
-    const dropped = had.filter((pool) => !this.pools.has(pool))
-    if (dropped.length > 0) this.logger.info(LOG_SCOPE, `Proxy credentials removed for pool(s): ${dropped.join(', ')}`)
-  }
-
-  getConfigStatus(): ProxyConfigStatus {
-    const pools: ProxyPoolStatus[] = PROXY_POOLS.map((pool) => {
-      const state = this.pools.get(pool)
-      return {
-        pool,
-        configured: state !== undefined,
-        host: state?.credentials.host ?? null,
-        port: state?.credentials.port ?? null,
-        usernameMasked: state ? maskUsername(state.credentials.username) : null,
-        source: state ? this.source : 'none',
-      }
-    })
-    // Summary fields describe the primary pool: residential when present, otherwise the first configured one.
-    const primary = this.pools.get('residential') ?? [...this.pools.values()][0] ?? null
+  compose(credentials: ProviderCredentials, request: ProxyRequest, options?: DialectOptions): ComposedConnection {
+    const composed = composeUsername(credentials.username, request, encodingFrom(options), credentials.sessionTemplate ?? DEFAULT_SESSION_TEMPLATE)
     return {
-      configured: primary !== null,
-      pools,
-      provider: 'dataimpulse',
-      host: primary?.credentials.host ?? null,
-      port: primary?.credentials.port ?? null,
-      usernameMasked: primary ? maskUsername(primary.credentials.username) : null,
-      missing: primary ? [] : [...REQUIRED_CREDENTIAL_FIELDS],
-      source: this.source,
-    }
-  }
-
-  buildTargetingString(request: ProxyRequest): string {
-    return buildTargetingString(request, this.getTargetingEncoding())
-  }
-
-  buildProxyConfig(request: ProxyRequest): ProxyConnection {
-    const state = this.requirePool(request.pool)
-    const composed = composeUsername(state.credentials.username, request, this.getTargetingEncoding(), state.template)
-    return {
-      server: `http://${state.credentials.host}:${state.credentials.port}`,
+      server: gatewayServer(credentials),
       username: composed.username,
-      password: state.credentials.password,
-      pool: request.pool,
-      sessionId: request.sessionId,
-      target: request.target ? { ...request.target } : null,
+      password: credentials.password,
       targetingString: joinParams(composed.effectiveParams),
     }
-  }
+  },
 
-  async testConnection(request: ProxyRequest): Promise<ProxyTestResult> {
-    try {
-      const ip = await this.getCurrentIp(request)
-      return { status: 'working', sessionId: request.sessionId, ip, error: null }
-    } catch (err) {
-      const error = err instanceof AppException ? err.toAppError() : toInternalError(err)
-      this.logger.warn(LOG_SCOPE, 'Proxy test failed', { pool: request.pool, sessionId: request.sessionId, code: error.code, message: error.message })
-      return { status: 'failed', sessionId: request.sessionId, ip: null, error }
+  /** Candidate credentials are tested with the login exactly as entered; the parameters it carries are reported. */
+  composeCredentialCheck(credentials: ProviderCredentials): ComposedConnection {
+    return {
+      server: gatewayServer(credentials),
+      username: credentials.username,
+      password: credentials.password,
+      targetingString: joinParams(parseLogin(credentials.username).params),
     }
-  }
+  },
 
-  /**
-   * Live check of candidate credentials through the gateway (rotating mode, no
-   * targeting). The active credentials are untouched and nothing is persisted;
-   * the input password is registered as a secret so it can never appear in a
-   * log line.
-   */
-  async testCredentials(input: ProxyCredentialsInput): Promise<ProxyTestResult> {
-    const parsed = ProxyCredentialsInputSchema.safeParse(input)
-    if (!parsed.success) throw new AppException('INVALID_INPUT', firstIssue(parsed.error.issues))
-    const c = parsed.data
-    this.logger.registerSecret(c.password)
-    this.logger.registerSecret(`${c.username}:${c.password}`)
-    const meta = { pool: c.pool, host: c.host, port: c.port, username: maskUsername(c.username) }
-    const connection: ProxyConnection = {
-      server: `http://${c.host}:${c.port}`,
-      username: c.username,
-      password: c.password,
-      pool: c.pool,
-      sessionId: null,
-      target: null,
-      targetingString: joinParams(parseLogin(c.username).params),
-    }
-    this.logger.info(LOG_SCOPE, 'Testing candidate proxy credentials (not saved)', meta)
-    try {
-      const ip = await this.ipChecker.lookup(connection)
-      this.logger.info(LOG_SCOPE, 'Candidate proxy credentials work', { ...meta, ip: ip.ip, country: ip.countryCode, latencyMs: ip.latencyMs })
-      return { status: 'working', sessionId: null, ip, error: null }
-    } catch (err) {
-      const error = err instanceof AppException ? err.toAppError() : toInternalError(err)
-      this.logger.warn(LOG_SCOPE, 'Candidate proxy credentials failed', { ...meta, code: error.code, message: error.message })
-      return { status: 'failed', sessionId: null, ip: null, error }
-    }
-  }
+  targetingString(request: ProxyRequest, options?: DialectOptions): string {
+    return buildTargetingString(request, encodingFrom(options))
+  },
 
-  async getCurrentIp(request: ProxyRequest): Promise<IpInfo> {
-    const connection = this.buildProxyConfig(request)
-    return this.ipChecker.lookup(connection)
-  }
+  createSession: createDataImpulseSession,
+  rotateSession: rotateDataImpulseSession,
+  isRetryableLocationFailure: isRetryableDataImpulseFailure,
+}
 
-  createSession(profileName: string): string {
-    const slug = kebabSlug(profileName)
-    const body = slug.length > 0 ? slug : 'default'
-    return trimSessionId(`profile-${body}`)
-  }
+/** "Proxy credentials are not configured. Enter and save your DataImpulse credentials …" */
+export const NOT_CONFIGURED_MESSAGE = notConfiguredMessage(dataImpulseDialect.displayName)
 
-  /**
-   * Next sticky session id for a profile. The current id is preserved verbatim
-   * (the profile charset allows upper case and underscores, which DataImpulse
-   * accepts) and `-r<N>` is appended or incremented; the stem is truncated only
-   * when needed to stay within the 64-character profile limit.
-   */
-  rotateSession(currentSessionId: string | null, profileName: string): string {
-    const base = currentSessionId && STICKY_SESSION_ID_PATTERN.test(currentSessionId) ? currentSessionId : this.createSession(profileName)
-    const match = ROTATION_SUFFIX_PATTERN.exec(base)
-    const stem = match ? (match[1] ?? base) : base
-    const nextRound = match ? Number.parseInt(match[2] ?? '1', 10) + 1 : 2
-    const suffix = `-r${nextRound}`
-    const next = trimSessionId(stem, STICKY_SESSION_ID_MAX_LENGTH - suffix.length) + suffix
-    if (next !== currentSessionId) return next
-    // Degenerate case (e.g. counter overflowed the length budget): fall back to a random suffix.
-    const random = `-${Math.random().toString(36).slice(2, 6).padEnd(4, '0')}`
-    return trimSessionId(stem, STICKY_SESSION_ID_MAX_LENGTH - random.length) + random
-  }
+/** "DataImpulse Mobile credentials are not configured. Add them under Settings → Advanced → Proxy keys." */
+export function poolNotConfiguredMessage(pool: string): string {
+  return productNotConfiguredMessage(dataImpulseDialect, pool)
+}
 
-  private resolveTemplate(override: string | null, pool: ProxyPool): string {
-    const candidate = override?.trim()
-    if (!candidate) return this.defaultTemplate
-    if (!isValidSessionTemplate(candidate)) {
-      this.logger.warn(LOG_SCOPE, `Ignoring the session template saved with the ${pool} credentials (missing {username}/{session}); using the default`, {
-        pool,
-        template: candidate,
-      })
-      return this.defaultTemplate
-    }
-    return candidate
-  }
-
-  private requirePool(pool: ProxyPool): PoolState {
-    const state = this.pools.get(pool)
-    if (!state) {
-      throw new AppException(
-        'PROXY_NOT_CONFIGURED',
-        this.pools.size === 0 ? NOT_CONFIGURED_MESSAGE : poolNotConfiguredMessage(pool),
-        this.pools.size === 0 ? `missing: ${REQUIRED_CREDENTIAL_FIELDS.join(', ')}` : `pool=${pool}; configured: ${[...this.pools.keys()].join(', ')}`,
-      )
-    }
-    return state
+/**
+ * Compatibility wrapper kept for existing call sites and tests:
+ * `GatewayProvider` with the DataImpulse dialect.
+ */
+export class DataImpulseProvider extends GatewayProvider {
+  constructor(options: DataImpulseProviderOptions) {
+    super({
+      dialect: dataImpulseDialect,
+      ipChecker: options.ipChecker,
+      logger: options.logger,
+      sessionTemplate: options.sessionTemplate,
+      credentials: options.credentials,
+      source: options.source,
+      getEncoding: options.getTargetingEncoding,
+    })
   }
 }
 
 function trimSessionId(value: string, max: number = SESSION_ID_MAX_LENGTH): string {
   return value.slice(0, max).replace(/-+$/g, '')
-}
-
-function toInternalError(err: unknown): { code: 'INTERNAL'; message: string; detail: string } {
-  const detail = stripCredentials(err instanceof Error ? err.message : String(err))
-  return { code: 'INTERNAL', message: 'Unexpected error while testing the proxy. Check the logs for details.', detail }
 }

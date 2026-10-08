@@ -7,16 +7,18 @@
  * write and the read-back (the "written but could not be verified" path);
  * everything else goes straight to the real module.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type * as NodeFs from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ProxyCredentialsInput } from '../src/shared/types'
+import { AppException } from '../src/main/contracts'
+import { writeFileAtomicSync } from '../src/main/util/atomic-file'
 import { ProxyCredentialsInputSchema } from '../src/shared/types'
-import type { CredentialVault, Logger, ProxyCredentials } from '../src/main/contracts'
+import type { CredentialVault, Logger, StoredProxyCredentials } from '../src/main/contracts'
 import { decryptJson, encryptJson, generateKey, parseVaultBlob, parseWrappedKey } from '../src/main/security/crypto'
 import type { WrappedKey } from '../src/main/security/crypto'
 import {
@@ -24,11 +26,13 @@ import {
   UNDECRYPTABLE_WARNING,
   VAULT_FILE_NAME,
   VAULT_PAYLOAD_VERSION,
+  entriesToList,
   VERIFY_FAILED_MESSAGE,
   createCredentialVault,
   parseVaultPayload,
   toVaultPayload,
 } from '../src/main/security/credential-vault'
+import type { CredentialVaultOptions, VaultEntries, VaultPayload } from '../src/main/security/credential-vault'
 import { createInstallStateStore } from '../src/main/security/install-state'
 import type { InstallStateStore } from '../src/main/security/install-state'
 import { createMachineDerivedWrapper } from '../src/main/security/key-wrapper'
@@ -65,10 +69,21 @@ const USERNAME = 'acme_login__cr.us'
 const MOBILE_USERNAME = 'acme_mobile_login'
 const MACHINE = { machineId: 'machine-aaaa-bbbb', username: 'tester' }
 
-const input: ProxyCredentialsInput = { pool: 'residential', host: 'gw.dataimpulse.com', port: 823, username: USERNAME, password: PASSWORD, sessionTemplate: null }
-const stored: ProxyCredentials = { ...input, sessionTemplate: null }
-const mobileInput: ProxyCredentialsInput = { pool: 'mobile', host: 'gw.dataimpulse.com', port: 823, username: MOBILE_USERNAME, password: MOBILE_PASSWORD, sessionTemplate: null }
-const mobileStored: ProxyCredentials = { ...mobileInput, sessionTemplate: null }
+const input = { pool: 'residential', host: 'gw.dataimpulse.com', port: 823, username: USERNAME, password: PASSWORD, sessionTemplate: null } satisfies ProxyCredentialsInput
+const stored: StoredProxyCredentials = { ...input, providerId: 'dataimpulse', extras: {}, sessionTemplate: null }
+const mobileInput = { pool: 'mobile', host: 'gw.dataimpulse.com', port: 823, username: MOBILE_USERNAME, password: MOBILE_PASSWORD, sessionTemplate: null } satisfies ProxyCredentialsInput
+const mobileStored: StoredProxyCredentials = { ...mobileInput, providerId: 'dataimpulse', extras: {}, sessionTemplate: null }
+
+/** In-memory vault entries for one DataImpulse product (the shape `toVaultPayload` takes). */
+const entriesOf = (...list: StoredProxyCredentials[]): VaultEntries => {
+  const entries: VaultEntries = new Map()
+  for (const entry of list) {
+    const products = entries.get(entry.providerId) ?? new Map<string, StoredProxyCredentials>()
+    products.set(entry.pool, entry)
+    entries.set(entry.providerId, products)
+  }
+  return entries
+}
 
 interface CapturingLogger extends Logger {
   entries: Array<{ level: string; scope: string; message: string; meta?: Record<string, unknown> }>
@@ -143,19 +158,31 @@ function rawKeyOf(keyPath: string): Buffer {
 const posix = process.platform !== 'win32'
 
 describe('vault payload shapes', () => {
-  it('reads the per-pool payload and the legacy single-credential payload', () => {
-    expect(parseVaultPayload({ v: VAULT_PAYLOAD_VERSION, pools: { mobile: { host: 'gw', port: 1, username: 'u', password: 'p', sessionTemplate: null } } })).toEqual({
-      pools: { mobile: { pool: 'mobile', host: 'gw', port: 1, username: 'u', password: 'p', sessionTemplate: null } },
-      legacy: false,
-    })
-    expect(parseVaultPayload({ host: 'gw', port: 823, username: 'u', password: 'p', sessionTemplate: '{username}{sep}sid.{session}' })).toEqual({
-      pools: { residential: { pool: 'residential', host: 'gw', port: 823, username: 'u', password: 'p', sessionTemplate: '{username}{sep}sid.{session}' } },
-      legacy: true,
-    })
+  const plain = { host: 'gw', port: 1, username: 'u', password: 'p', sessionTemplate: null }
+
+  it('reads the per-provider v3 payload, the per-pool v2 payload and the legacy single-credential payload', () => {
+    expect(VAULT_PAYLOAD_VERSION).toBe(3)
+    const v3 = parseVaultPayload({ v: 3, providers: { dataimpulse: { products: { mobile: plain } }, acme: { products: { residential: { ...plain, extras: { zone: 'z1' } } } } } })
+    expect(v3.version).toBe(3)
+    expect(entriesToList(v3.entries)).toEqual([
+      { providerId: 'dataimpulse', pool: 'mobile', ...plain, extras: {} },
+      { providerId: 'acme', pool: 'residential', ...plain, extras: { zone: 'z1' } },
+    ])
+    // v2: every pool is a DataImpulse product.
+    const v2 = parseVaultPayload({ v: 2, pools: { residential: plain, mobile: { ...plain, username: 'm' } } })
+    expect(v2.version).toBe(2)
+    expect(entriesToList(v2.entries)).toEqual([
+      { providerId: 'dataimpulse', pool: 'residential', ...plain, extras: {} },
+      { providerId: 'dataimpulse', pool: 'mobile', ...plain, username: 'm', extras: {} },
+    ])
+    // Legacy: one credential object → DataImpulse residential.
+    const legacy = parseVaultPayload({ host: 'gw', port: 823, username: 'u', password: 'p', sessionTemplate: '{username}{sep}sid.{session}' })
+    expect(legacy.version).toBe(1)
+    expect(entriesToList(legacy.entries)).toEqual([{ providerId: 'dataimpulse', pool: 'residential', host: 'gw', port: 823, username: 'u', password: 'p', sessionTemplate: '{username}{sep}sid.{session}', extras: {} }])
     expect(() => parseVaultPayload({ v: 9 })).toThrowError(/does not contain proxy credentials/)
-    expect(toVaultPayload({ residential: stored })).toEqual({
+    expect(toVaultPayload(entriesOf(stored))).toEqual({
       v: VAULT_PAYLOAD_VERSION,
-      pools: { residential: { host: stored.host, port: stored.port, username: stored.username, password: stored.password, sessionTemplate: null } },
+      providers: { dataimpulse: { products: { residential: { host: stored.host, port: stored.port, username: stored.username, password: stored.password, sessionTemplate: null, extras: {} } } } },
     })
   })
 })
@@ -185,8 +212,8 @@ describe('createCredentialVault', () => {
     expect(vault.vaultPath).toBe(join(world.paths.vault, VAULT_FILE_NAME))
     expect(existsSync(vault.keyPath)).toBe(true)
     expect(existsSync(vault.vaultPath)).toBe(false)
-    expect(vault.get('residential')).toBeNull()
-    expect(vault.get('mobile')).toBeNull()
+    expect(vault.get('dataimpulse', 'residential')).toBeNull()
+    expect(vault.get('dataimpulse', 'mobile')).toBeNull()
     expect(vault.getAll()).toEqual([])
 
     const key = readKeyFile(vault.keyPath)
@@ -196,7 +223,7 @@ describe('createCredentialVault', () => {
     const status = await vault.status()
     expect(status).toMatchObject({
       source: 'none',
-      configuredPools: [],
+      configuredProducts: {},
       keyBackend: 'os-keychain',
       keyBackendLabel: 'Fake Keychain',
       keyPresent: true,
@@ -215,15 +242,15 @@ describe('createCredentialVault', () => {
 
   it('save → get → status, emits onChange, registers secrets, never writes plaintext', async () => {
     const vault = await openVault(world, fakeKeychain())
-    const changes: ProxyCredentials[][] = []
+    const changes: StoredProxyCredentials[][] = []
     vault.onChange((c) => changes.push(c))
 
     const status = await vault.save(input)
-    expect(vault.get('residential')).toEqual(stored)
-    expect(vault.get('mobile')).toBeNull()
+    expect(vault.get('dataimpulse', 'residential')).toEqual(stored)
+    expect(vault.get('dataimpulse', 'mobile')).toBeNull()
     expect(vault.getAll()).toEqual([stored])
     expect(changes).toEqual([[stored]])
-    expect(status).toMatchObject({ source: 'vault', configuredPools: ['residential'], vaultPresent: true, decryptOk: true, permissionsOk: true, warnings: [] })
+    expect(status).toMatchObject({ source: 'vault', configuredProducts: { dataimpulse: ['residential'] }, vaultPresent: true, decryptOk: true, permissionsOk: true, warnings: [] })
     expect(status.vaultUpdatedAt).not.toBeNull()
     if (posix) expect(statSync(vault.vaultPath).mode & 0o777).toBe(0o600)
 
@@ -237,20 +264,20 @@ describe('createCredentialVault', () => {
     expect(world.logger.secrets).toContain(PASSWORD)
     expect(world.logger.secrets).toContain(`${USERNAME}:${PASSWORD}`)
     const saved = world.logger.entries.find((e) => e.message.startsWith('Proxy credentials saved to encrypted vault'))
-    expect(saved?.meta).toMatchObject({ pool: 'residential', host: 'gw.dataimpulse.com', port: 823, username: 'ac****us', configuredPools: ['residential'] })
+    expect(saved?.meta).toMatchObject({ pool: 'residential', host: 'gw.dataimpulse.com', port: 823, username: 'ac****us', configuredProducts: { dataimpulse: ['residential'] } })
     expect(JSON.stringify(world.logger.entries)).not.toContain(PASSWORD)
     expect(JSON.stringify(world.logger.entries)).not.toContain(USERNAME)
   })
 
   it('stores pools independently: saving mobile keeps residential, clearing one pool keeps the other', async () => {
     const vault = await openVault(world, fakeKeychain())
-    const changes: ProxyCredentials[][] = []
+    const changes: StoredProxyCredentials[][] = []
     vault.onChange((c) => changes.push(c))
     await vault.save(input)
     const both = await vault.save(mobileInput)
-    expect(both.configuredPools).toEqual(['residential', 'mobile'])
+    expect(both.configuredProducts).toEqual({ dataimpulse: ['residential', 'mobile'] })
     expect(vault.getAll()).toEqual([stored, mobileStored])
-    expect(vault.get('mobile')).toEqual(mobileStored)
+    expect(vault.get('dataimpulse', 'mobile')).toEqual(mobileStored)
     expect(world.logger.secrets).toContain(MOBILE_PASSWORD)
     expect(world.logger.secrets).toContain(`${MOBILE_USERNAME}:${MOBILE_PASSWORD}`)
     const vaultText = readFileSync(vault.vaultPath, 'utf8')
@@ -259,46 +286,53 @@ describe('createCredentialVault', () => {
 
     // Overwriting one pool replaces only that pool.
     await vault.save({ ...input, username: 'acme_v2' })
-    expect(vault.get('residential')?.username).toBe('acme_v2')
-    expect(vault.get('mobile')).toEqual(mobileStored)
+    expect(vault.get('dataimpulse', 'residential')?.username).toBe('acme_v2')
+    expect(vault.get('dataimpulse', 'mobile')).toEqual(mobileStored)
 
-    const afterClear = await vault.clear('residential')
-    expect(afterClear).toMatchObject({ configuredPools: ['mobile'], vaultPresent: true, source: 'vault' })
-    expect(vault.get('residential')).toBeNull()
-    expect(vault.get('mobile')).toEqual(mobileStored)
+    const afterClear = await vault.clear('dataimpulse', 'residential')
+    expect(afterClear).toMatchObject({ configuredProducts: { dataimpulse: ['mobile'] }, vaultPresent: true, source: 'vault' })
+    expect(vault.get('dataimpulse', 'residential')).toBeNull()
+    expect(vault.get('dataimpulse', 'mobile')).toEqual(mobileStored)
     expect(changes.at(-1)).toEqual([mobileStored])
 
     const reopened = await openVault(makeWorld(root), fakeKeychain())
     expect(reopened.getAll()).toEqual([mobileStored])
 
     // Clearing the last pool removes the file; clearing an absent pool is a no-op that still emits.
-    const gone = await reopened.clear('mobile')
-    expect(gone).toMatchObject({ configuredPools: [], vaultPresent: false, keyPresent: true, source: 'none' })
+    const gone = await reopened.clear('dataimpulse', 'mobile')
+    expect(gone).toMatchObject({ configuredProducts: {}, vaultPresent: false, keyPresent: true, source: 'none' })
     expect(existsSync(reopened.vaultPath)).toBe(false)
-    const noop = await reopened.clear('mobile')
-    expect(noop.configuredPools).toEqual([])
+    const noop = await reopened.clear('dataimpulse', 'mobile')
+    expect(noop.configuredProducts).toEqual({})
   })
 
-  it('migrates a legacy single-credential vault into pools.residential and rewrites the file once', async () => {
+  it('migrates a legacy single-credential vault into providers.dataimpulse (residential), backs it up and rewrites the file once', async () => {
     const first = await openVault(world, fakeKeychain())
     const installId = world.install.get().installId
     // Write a vault exactly as the previous version did: one credential object, no pools.
     const legacyPayload = { host: input.host, port: input.port, username: input.username, password: input.password, sessionTemplate: '{username}{sep}sid.{session}' }
     const legacyBlob = encryptJson(rawKeyOf(first.keyPath), legacyPayload, installId, new Date('2026-01-01T00:00:00Z'))
     writeFileSync(first.vaultPath, JSON.stringify(legacyBlob))
+    const legacyMode = statSync(first.vaultPath).mode & 0o777
 
     const again = makeWorld(root)
     const migrated = await openVault(again, fakeKeychain())
-    expect(migrated.get('residential')).toEqual({ ...stored, sessionTemplate: '{username}{sep}sid.{session}' })
-    expect(migrated.get('mobile')).toBeNull()
+    expect(migrated.get('dataimpulse', 'residential')).toEqual({ ...stored, sessionTemplate: '{username}{sep}sid.{session}' })
+    expect(migrated.get('dataimpulse', 'mobile')).toBeNull()
     expect(again.logger.secrets).toContain(PASSWORD)
     expect(again.logger.entries.some((e) => /Migrated the single-credential vault/.test(e.message))).toBe(true)
 
     const rewritten = parseVaultBlob(JSON.parse(readFileSync(migrated.vaultPath, 'utf8')))
     expect(rewritten.updatedAt).not.toBe(legacyBlob.updatedAt)
-    const payload = decryptJson(rawKeyOf(migrated.keyPath), rewritten) as { v: number; pools: Record<string, unknown> }
+    const payload = decryptJson(rawKeyOf(migrated.keyPath), rewritten) as VaultPayload
     expect(payload.v).toBe(VAULT_PAYLOAD_VERSION)
-    expect(Object.keys(payload.pools)).toEqual(['residential'])
+    expect(Object.keys(payload.providers)).toEqual(['dataimpulse'])
+    expect(Object.keys(payload.providers.dataimpulse?.products ?? {})).toEqual(['residential'])
+    // The legacy file was copied verbatim before the rewrite (older builds cannot read v3).
+    expect(readFileSync(migrated.backupPath, 'utf8')).toBe(JSON.stringify(legacyBlob))
+    // Same directory, same permissions as the file it copies.
+    expect(migrated.backupPath).toBe(`${migrated.vaultPath}.v2.bak`)
+    if (posix) expect(statSync(migrated.backupPath).mode & 0o777).toBe(legacyMode)
     expect(JSON.stringify(payload)).toContain(PASSWORD) // the decrypted payload, never the file
     expect(readFileSync(migrated.vaultPath, 'utf8')).not.toContain(PASSWORD)
 
@@ -307,14 +341,14 @@ describe('createCredentialVault', () => {
     const stable = await openVault(third, fakeKeychain())
     expect(stable.getAll()).toHaveLength(1)
     expect(third.logger.entries.some((e) => /Migrated/.test(e.message))).toBe(false)
-    expect(await stable.status()).toMatchObject({ configuredPools: ['residential'], decryptOk: true, warnings: [] })
+    expect(await stable.status()).toMatchObject({ configuredProducts: { dataimpulse: ['residential'] }, decryptOk: true, warnings: [] })
   })
 
   it('rejects invalid input (including a template without placeholders and an unknown pool) before touching disk', async () => {
     const vault = await openVault(world, fakeKeychain())
     await expect(vault.save({ ...input, password: '' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     await expect(vault.save({ ...input, sessionTemplate: '{username}-static' })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
-    await expect(vault.save({ ...input, pool: 'datacenter' as never })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(vault.save({ ...input, pool: 'Data Center' as never })).rejects.toMatchObject({ code: 'INVALID_INPUT' })
     expect(existsSync(vault.vaultPath)).toBe(false)
     expect(ProxyCredentialsInputSchema.safeParse({ ...input, sessionTemplate: '' }).success).toBe(true)
     // The pool defaults to residential for callers that predate pools.
@@ -322,9 +356,9 @@ describe('createCredentialVault', () => {
     expect(ProxyCredentialsInputSchema.parse(withoutPool).pool).toBe('residential')
     const withTemplate = await vault.save({ ...input, sessionTemplate: '  {username}{sep}sid.{session} ' })
     expect(withTemplate.decryptOk).toBe(true)
-    expect(vault.get('residential')?.sessionTemplate).toBe('{username}{sep}sid.{session}')
+    expect(vault.get('dataimpulse', 'residential')?.sessionTemplate).toBe('{username}{sep}sid.{session}')
     await vault.save({ ...input, sessionTemplate: '' })
-    expect(vault.get('residential')?.sessionTemplate).toBeNull()
+    expect(vault.get('dataimpulse', 'residential')?.sessionTemplate).toBeNull()
   })
 
   it('restart with the same files restores the credentials', async () => {
@@ -333,8 +367,8 @@ describe('createCredentialVault', () => {
 
     const again = makeWorld(root)
     const second = await openVault(again, fakeKeychain())
-    expect(second.get('residential')).toEqual(stored)
-    expect(await second.status()).toMatchObject({ vaultPresent: true, decryptOk: true, configuredPools: ['residential'], warnings: [] })
+    expect(second.get('dataimpulse', 'residential')).toEqual(stored)
+    expect(await second.status()).toMatchObject({ vaultPresent: true, decryptOk: true, configuredProducts: { dataimpulse: ['residential'] }, warnings: [] })
     expect(again.logger.secrets).toContain(PASSWORD)
     expect(again.install.get().installId).toBe(world.install.get().installId)
   })
@@ -349,10 +383,10 @@ describe('createCredentialVault', () => {
 
     const again = makeWorld(root)
     const second = await openVault(again, keychain)
-    expect(second.get('residential')).toBeNull()
+    expect(second.get('dataimpulse', 'residential')).toBeNull()
     expect(second.getAll()).toEqual([])
     const status = await second.status()
-    expect(status).toMatchObject({ keyPresent: true, vaultPresent: true, decryptOk: false, source: 'none', configuredPools: [] })
+    expect(status).toMatchObject({ keyPresent: true, vaultPresent: true, decryptOk: false, source: 'none', configuredProducts: {} })
     expect(status.warnings).toContain(UNDECRYPTABLE_WARNING)
     expect(again.logger.secrets).not.toContain(PASSWORD)
     await expect(second.rotateKey()).rejects.toMatchObject({ code: 'VAULT_ERROR' })
@@ -369,7 +403,7 @@ describe('createCredentialVault', () => {
 
     const again = makeWorld(root)
     const reopened = await openVault(again, fakeKeychain())
-    expect(reopened.get('residential')).toBeNull()
+    expect(reopened.get('dataimpulse', 'residential')).toBeNull()
     const status = await reopened.status()
     expect(status.decryptOk).toBe(false)
     expect(status.keyPresent).toBe(true)
@@ -379,16 +413,16 @@ describe('createCredentialVault', () => {
   it('clear() of the only pool removes the vault file, keeps the key and emits an empty list', async () => {
     const vault = await openVault(world, fakeKeychain())
     await vault.save(input)
-    const changes: ProxyCredentials[][] = []
+    const changes: StoredProxyCredentials[][] = []
     vault.onChange((c) => changes.push(c))
     const keyBefore = readFileSync(vault.keyPath, 'utf8')
 
-    const status = await vault.clear('residential')
+    const status = await vault.clear('dataimpulse', 'residential')
     expect(existsSync(vault.vaultPath)).toBe(false)
     expect(readFileSync(vault.keyPath, 'utf8')).toBe(keyBefore)
-    expect(vault.get('residential')).toBeNull()
+    expect(vault.get('dataimpulse', 'residential')).toBeNull()
     expect(changes).toEqual([[]])
-    expect(status).toMatchObject({ source: 'none', configuredPools: [], vaultPresent: false, keyPresent: true, decryptOk: true })
+    expect(status).toMatchObject({ source: 'none', configuredProducts: {}, vaultPresent: false, keyPresent: true, decryptOk: true })
   })
 
   it('rotateKey() keeps every pool, changes the key file and leaves no .rotating file', async () => {
@@ -403,7 +437,7 @@ describe('createCredentialVault', () => {
     expect(after.data).not.toBe(before.data)
     expect(readFileSync(vault.vaultPath, 'utf8')).not.toBe(vaultBefore)
     expect(vault.getAll()).toEqual([stored, mobileStored])
-    expect(status).toMatchObject({ decryptOk: true, vaultPresent: true, keyCreatedAt: after.createdAt, configuredPools: ['residential', 'mobile'] })
+    expect(status).toMatchObject({ decryptOk: true, vaultPresent: true, keyCreatedAt: after.createdAt, configuredProducts: { dataimpulse: ['residential', 'mobile'] } })
     expect(existsSync(`${vault.keyPath}.rotating`)).toBe(false)
     if (posix) expect(statSync(vault.keyPath).mode & 0o777).toBe(0o600)
 
@@ -430,19 +464,19 @@ describe('createCredentialVault', () => {
     expect(readFileSync(vault.keyPath, 'utf8')).toBe(keyBefore)
     expect(readFileSync(vault.vaultPath, 'utf8')).toBe(vaultBefore)
     expect(existsSync(`${vault.keyPath}.rotating`)).toBe(false)
-    expect(vault.get('residential')).toEqual(stored)
+    expect(vault.get('dataimpulse', 'residential')).toEqual(stored)
     expect(await vault.status()).toMatchObject({ decryptOk: true })
   })
 
   it('save() read-back verification failure: nothing is saved and the previous vault is restored', async () => {
     const vault = await openVault(world, fakeKeychain())
-    const changes: ProxyCredentials[][] = []
+    const changes: StoredProxyCredentials[][] = []
     vault.onChange((c) => changes.push(c))
 
     fsHooks.corruptRead = vault.vaultPath
     await expect(vault.save(input)).rejects.toMatchObject({ code: 'VAULT_ERROR', message: VERIFY_FAILED_MESSAGE })
     expect(existsSync(vault.vaultPath)).toBe(false)
-    expect(vault.get('residential')).toBeNull()
+    expect(vault.get('dataimpulse', 'residential')).toBeNull()
     expect(changes).toEqual([])
 
     await vault.save(input)
@@ -451,7 +485,7 @@ describe('createCredentialVault', () => {
     fsHooks.unlessEquals = previous
     await expect(vault.save({ ...input, username: 'someone_else' })).rejects.toMatchObject({ code: 'VAULT_ERROR' })
     expect(readFileSync(vault.vaultPath, 'utf8')).toBe(previous)
-    expect(vault.get('residential')).toEqual(stored)
+    expect(vault.get('dataimpulse', 'residential')).toEqual(stored)
     expect(changes).toEqual([[stored]])
     expect(world.logger.entries.some((e) => e.level === 'ERROR' && /could not be verified/.test(e.message))).toBe(true)
   })
@@ -465,11 +499,11 @@ describe('createCredentialVault', () => {
     const pendingKey = generateKey()
     const pending: WrappedKey = { ...readKeyFile(vault.keyPath), createdAt: '2026-10-03T00:00:00.000Z', data: (await keychain.wrap(pendingKey, { installId })).toString('base64') }
     writeFileSync(`${vault.keyPath}.rotating`, JSON.stringify(pending))
-    writeFileSync(vault.vaultPath, JSON.stringify(encryptJson(pendingKey, toVaultPayload({ residential: stored }), installId)))
+    writeFileSync(vault.vaultPath, JSON.stringify(encryptJson(pendingKey, toVaultPayload(entriesOf(stored)), installId)))
 
     const again = makeWorld(root)
     const reopened = await openVault(again, keychain)
-    expect(reopened.get('residential')).toEqual(stored)
+    expect(reopened.get('dataimpulse', 'residential')).toEqual(stored)
     expect(existsSync(`${vault.keyPath}.rotating`)).toBe(false)
     expect(readKeyFile(vault.keyPath).data).toBe(pending.data)
     expect(again.logger.entries.some((e) => /interrupted key rotation/.test(e.message))).toBe(true)
@@ -483,7 +517,7 @@ describe('createCredentialVault', () => {
     const keyBefore = readFileSync(vault.keyPath, 'utf8')
 
     const reopened = await openVault(makeWorld(root), keychain)
-    expect(reopened.get('residential')).toEqual(stored)
+    expect(reopened.get('dataimpulse', 'residential')).toEqual(stored)
     expect(existsSync(`${vault.keyPath}.rotating`)).toBe(false)
     expect(readFileSync(vault.keyPath, 'utf8')).toBe(keyBefore)
   })
@@ -495,12 +529,12 @@ describe('createCredentialVault', () => {
     expect((await vault.status()).keyBackend).toBe('machine-derived')
 
     const same = await openVault(makeWorld(root), createMachineDerivedWrapper(MACHINE), { machine: MACHINE })
-    expect(same.get('residential')).toEqual(stored)
+    expect(same.get('dataimpulse', 'residential')).toEqual(stored)
 
     const other = { machineId: 'different-machine', username: 'tester' }
     const otherWorld = makeWorld(root)
     const elsewhere = await openVault(otherWorld, createMachineDerivedWrapper(other), { machine: other })
-    expect(elsewhere.get('residential')).toBeNull()
+    expect(elsewhere.get('dataimpulse', 'residential')).toBeNull()
     const status = await elsewhere.status()
     expect(status.decryptOk).toBe(false)
     expect(status.keyPresent).toBe(true)
@@ -514,7 +548,7 @@ describe('createCredentialVault', () => {
 
     const upgradedWorld = makeWorld(root)
     const upgraded = await openVault(upgradedWorld, fakeKeychain({ label: 'GNOME Keyring / libsecret' }))
-    expect(upgraded.get('residential')).toEqual(stored)
+    expect(upgraded.get('dataimpulse', 'residential')).toEqual(stored)
     const before = await upgraded.status()
     expect(before.keyBackend).toBe('machine-derived')
     expect(before.warnings.some((w) => /rotate the key to upgrade/.test(w))).toBe(true)
@@ -523,7 +557,7 @@ describe('createCredentialVault', () => {
     expect(after.keyBackend).toBe('os-keychain')
     expect(after.keyBackendLabel).toBe('GNOME Keyring / libsecret')
     expect(after.warnings).toEqual([])
-    expect(upgraded.get('residential')).toEqual(stored)
+    expect(upgraded.get('dataimpulse', 'residential')).toEqual(stored)
   }, 30_000)
 
   it('recordProxyTest() is reflected in status() and persisted in install.json', async () => {
@@ -551,5 +585,205 @@ describe('createCredentialVault', () => {
     expect(store.recoveredFrom).toMatch(/install\.json\.corrupt-/)
     expect(store.get().installId).not.toBe(world.install.get().installId)
     expect(existsSync(store.recoveredFrom!)).toBe(true)
+  })
+})
+
+describe('vault v2 → v3 migration', () => {
+  let root: string
+  let world: World
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'proxy-qa-vault-v3-'))
+    world = makeWorld(root)
+  })
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  type Writer = NonNullable<CredentialVaultOptions['writeFileAtomic']>
+
+  async function openWith(target: World, wrapper: KeyWrapperBackend, extra: Partial<CredentialVaultOptions> = {}): Promise<CredentialVault> {
+    return createCredentialVault({ paths: target.paths, logger: target.logger, wrapper, machine: MACHINE, install: target.install, ...extra })
+  }
+
+  /** Write a vault exactly as v1.3.0 / 1.4.0 did (payload v2, DataImpulse pools only). Returns the file text and paths. */
+  async function writeV2Vault(keychain: KeyWrapperBackend, mode = 0o600): Promise<{ text: string; vaultPath: string; backupPath: string; keyPath: string }> {
+    const first = await openWith(world, keychain)
+    const v2 = {
+      v: 2,
+      pools: {
+        residential: { host: input.host, port: input.port, username: input.username, password: input.password, sessionTemplate: null },
+        mobile: { host: mobileInput.host, port: mobileInput.port, username: mobileInput.username, password: mobileInput.password, sessionTemplate: '{username}{sep}sid.{session}' },
+      },
+    }
+    const text = `${JSON.stringify(encryptJson(rawKeyOf(first.keyPath), v2, world.install.get().installId, new Date('2026-09-01T00:00:00Z')), null, 2)}\n`
+    writeFileSync(first.vaultPath, text, { mode })
+    if (posix) chmodSync(first.vaultPath, mode)
+    return { text, vaultPath: first.vaultPath, backupPath: first.backupPath, keyPath: first.keyPath }
+  }
+
+  const mobileV2: StoredProxyCredentials = { ...mobileStored, sessionTemplate: '{username}{sep}sid.{session}' }
+
+  it('migrates both pools into providers.dataimpulse, copies the v2 file to .v2.bak first and rewrites it once', async () => {
+    const keychain = fakeKeychain()
+    const original = await writeV2Vault(keychain, 0o640)
+    const again = makeWorld(root)
+    const migrated = await openWith(again, keychain)
+
+    expect(migrated.getAll()).toEqual([stored, mobileV2])
+    expect(migrated.get('dataimpulse', 'mobile')).toEqual(mobileV2)
+    expect(again.logger.secrets).toEqual(expect.arrayContaining([PASSWORD, MOBILE_PASSWORD]))
+    expect(again.logger.entries.some((e) => /Migrated the per-pool vault into the per-provider format/.test(e.message))).toBe(true)
+
+    // Backup: same directory, byte-for-byte copy, same permissions; still encrypted.
+    expect(original.backupPath).toBe(join(dirname(original.vaultPath), `${VAULT_FILE_NAME}.v2.bak`))
+    expect(readFileSync(original.backupPath, 'utf8')).toBe(original.text)
+    if (posix) expect(statSync(original.backupPath).mode & 0o777).toBe(0o640)
+    expect(readFileSync(original.backupPath, 'utf8')).not.toContain(PASSWORD)
+    const v2 = decryptJson(rawKeyOf(original.keyPath), parseVaultBlob(JSON.parse(readFileSync(original.backupPath, 'utf8')))) as { v: number }
+    expect(v2.v).toBe(2)
+
+    // The vault itself is now v3, owner-only.
+    const payload = decryptJson(rawKeyOf(original.keyPath), parseVaultBlob(JSON.parse(readFileSync(original.vaultPath, 'utf8')))) as VaultPayload
+    expect(payload).toMatchObject({ v: 3, providers: { dataimpulse: { products: { residential: { username: USERNAME, extras: {} }, mobile: { username: MOBILE_USERNAME } } } } })
+    if (posix) expect(statSync(original.vaultPath).mode & 0o777).toBe(0o600)
+    expect(await migrated.status()).toMatchObject({ decryptOk: true, configuredProducts: { dataimpulse: ['residential', 'mobile'] }, warnings: [] })
+
+    // Second start: nothing to migrate, the backup is left alone.
+    const backupBefore = statSync(original.backupPath).mtimeMs
+    const third = makeWorld(root)
+    const stable = await openWith(third, keychain)
+    expect(stable.getAll()).toEqual([stored, mobileV2])
+    expect(third.logger.entries.some((e) => /Migrated|Backed up/.test(e.message))).toBe(false)
+    expect(statSync(original.backupPath).mtimeMs).toBe(backupBefore)
+  })
+
+  it('a failed rewrite leaves the v2 file and the .v2.bak untouched, keeps the credentials usable and reports VAULT_ERROR naming the backup', async () => {
+    const keychain = fakeKeychain()
+    const original = await writeV2Vault(keychain)
+    const failing: Writer = (path, data, options) => {
+      if (path === original.vaultPath) throw new Error('ENOSPC: no space left on device')
+      writeFileAtomicSync(path, data, options)
+    }
+    const again = makeWorld(root)
+    const vault = await openWith(again, keychain, { writeFileAtomic: failing })
+
+    // Original and backup are both the v2 bytes; nothing half-written.
+    expect(readFileSync(original.vaultPath, 'utf8')).toBe(original.text)
+    expect(readFileSync(original.backupPath, 'utf8')).toBe(original.text)
+    // The decrypted credentials are still active for this session.
+    expect(vault.getAll()).toEqual([stored, mobileV2])
+    const status = await vault.status()
+    expect(status.warnings.some((w) => w.includes(original.backupPath) && /could not be upgraded/.test(w))).toBe(true)
+    const logged = again.logger.entries.find((e) => e.level === 'ERROR' && e.message.includes(original.backupPath))
+    expect(logged?.meta).toMatchObject({ error: expect.stringMatching(/ENOSPC/) })
+    expect(JSON.stringify(again.logger.entries)).not.toContain(PASSWORD)
+
+    // A later save retries the rewrite and fails the same way: VAULT_ERROR, files untouched.
+    await expect(vault.save({ ...input, username: 'changed_login' })).rejects.toMatchObject({ code: 'VAULT_ERROR' })
+    expect(readFileSync(original.vaultPath, 'utf8')).toBe(original.text)
+    expect(readFileSync(original.backupPath, 'utf8')).toBe(original.text)
+
+    // Next start with a working disk: the migration completes.
+    const fixed = await openWith(makeWorld(root), keychain)
+    expect(fixed.getAll()).toEqual([stored, mobileV2])
+    expect((await fixed.status()).warnings).toEqual([])
+    expect(readFileSync(original.backupPath, 'utf8')).toBe(original.text)
+  })
+
+  it('a failed backup copy never lets the v2 file be overwritten: VAULT_ERROR names the backup path', async () => {
+    const keychain = fakeKeychain()
+    const original = await writeV2Vault(keychain)
+    const noBackup: Writer = (path, data, options) => {
+      if (path === original.backupPath) throw new Error('EACCES: permission denied')
+      writeFileAtomicSync(path, data, options)
+    }
+    const vault = await openWith(makeWorld(root), keychain, { writeFileAtomic: noBackup })
+    expect(existsSync(original.backupPath)).toBe(false)
+    expect(readFileSync(original.vaultPath, 'utf8')).toBe(original.text)
+    expect(vault.getAll()).toEqual([stored, mobileV2])
+
+    let thrown: unknown
+    try {
+      await vault.save(input)
+    } catch (err) {
+      thrown = err
+    }
+    expect(thrown).toBeInstanceOf(AppException)
+    expect(thrown).toMatchObject({ code: 'VAULT_ERROR' })
+    expect((thrown as AppException).message).toContain(original.backupPath)
+    expect(readFileSync(original.vaultPath, 'utf8')).toBe(original.text)
+    await expect(vault.clear('dataimpulse', 'residential')).rejects.toMatchObject({ code: 'VAULT_ERROR' })
+    await expect(vault.rotateKey()).rejects.toMatchObject({ code: 'VAULT_ERROR' })
+    expect(readFileSync(original.vaultPath, 'utf8')).toBe(original.text)
+    expect(existsSync(original.backupPath)).toBe(false)
+  })
+
+  it('moves an older, different .v2.bak aside instead of overwriting it', async () => {
+    const keychain = fakeKeychain()
+    const original = await writeV2Vault(keychain)
+    writeFileSync(original.backupPath, 'older backup')
+    const at = new Date('2026-10-09T00:00:00Z')
+    await openWith(makeWorld(root), keychain, { now: () => at })
+    expect(readFileSync(original.backupPath, 'utf8')).toBe(original.text)
+    expect(readFileSync(`${original.backupPath}.${at.getTime()}`, 'utf8')).toBe('older backup')
+  })
+
+  it('round-trips several providers with extra fields; extras are encrypted like passwords', async () => {
+    const keychain = fakeKeychain()
+    const vault = await openWith(world, keychain)
+    await vault.save(input)
+    await vault.save({
+      providerId: 'acme',
+      pool: 'isp',
+      host: 'gw.acme.example',
+      port: 7000,
+      username: 'acme_user',
+      password: 'Acme-Pass-1',
+      sessionTemplate: null,
+      extras: { zone: 'zone-alpha', apiKey: 'Acme-Api-Key-77', empty: '' },
+    })
+    const acme: StoredProxyCredentials = {
+      providerId: 'acme',
+      pool: 'isp',
+      host: 'gw.acme.example',
+      port: 7000,
+      username: 'acme_user',
+      password: 'Acme-Pass-1',
+      sessionTemplate: null,
+      extras: { zone: 'zone-alpha', apiKey: 'Acme-Api-Key-77' },
+    }
+    expect(vault.get('acme', 'isp')).toEqual(acme)
+    expect(vault.get('acme', 'residential')).toBeNull()
+    const text = readFileSync(vault.vaultPath, 'utf8')
+    for (const secret of ['zone-alpha', 'Acme-Api-Key-77', 'Acme-Pass-1', 'acme_user']) expect(text).not.toContain(secret)
+
+    const reopened = await openWith(makeWorld(root), keychain)
+    expect(reopened.getAll()).toEqual([stored, acme])
+    expect(await reopened.status()).toMatchObject({ configuredProducts: { dataimpulse: ['residential'], acme: ['isp'] } })
+    // A vault created in the v3 format never needs a backup.
+    expect(existsSync(reopened.backupPath)).toBe(false)
+
+    await reopened.clear('acme', 'isp')
+    expect((await openWith(makeWorld(root), keychain)).getAll()).toEqual([stored])
+  })
+
+  it('registers extra fields the provider declares secret with the logger (all extras when nothing is declared)', async () => {
+    const keychain = fakeKeychain()
+    const secretExtraKeys = (id: string): string[] => (id === 'acme' ? ['apiKey'] : [])
+    const declared = await openWith(world, keychain, { secretExtraKeys })
+    await declared.save({ providerId: 'acme', pool: 'isp', host: 'gw.acme.example', port: 7000, username: 'u1', password: 'p1', sessionTemplate: null, extras: { zone: 'zone-public', apiKey: 'Secret-Api-Key' } })
+    expect(world.logger.secrets).toContain('Secret-Api-Key')
+    expect(world.logger.secrets).not.toContain('zone-public')
+
+    const restarted = makeWorld(root)
+    await openWith(restarted, keychain, { secretExtraKeys })
+    expect(restarted.logger.secrets).toContain('Secret-Api-Key')
+    expect(restarted.logger.secrets).not.toContain('zone-public')
+
+    const conservative = makeWorld(root)
+    await openWith(conservative, keychain)
+    expect(conservative.logger.secrets).toEqual(expect.arrayContaining(['Secret-Api-Key', 'zone-public']))
   })
 })

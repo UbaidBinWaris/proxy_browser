@@ -97,12 +97,14 @@ try {
   await session.screenshot({ path: join(output, 'launcher-session.png') })
 
   await input.click()
-  await page.getByRole('listbox', { name: 'Previously used URLs' }).waitFor()
+  // Scoped to the URL list: the Connection card's native selects (e.g. Proxy provider) have options too.
+  const history = page.getByRole('listbox', { name: 'Previously used URLs' })
+  await history.waitFor()
   assert.equal(
-    (await page.getByRole('option').first().innerText()).split('\n')[0],
+    (await history.getByRole('option').first().innerText()).split('\n')[0],
     'https://recent.example.test/form-54',
   )
-  await page.getByRole('option').first().click()
+  await history.getByRole('option').first().click()
   assert.equal(await input.inputValue(), 'https://recent.example.test/form-54')
   await input.fill('older.example')
   await page.getByRole('option').filter({ hasText: olderUrl }).click()

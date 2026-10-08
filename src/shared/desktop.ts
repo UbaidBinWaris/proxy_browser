@@ -1,7 +1,12 @@
 import { z } from 'zod'
 
-/** Keep this identity stable across releases: Windows pins and Linux desktop entries use it. */
-export const DESKTOP_APP_ID = 'com.letsscall.proxy-qa-browser'
+/**
+ * Keep this identity stable across releases: Windows pins and Linux desktop entries use it.
+ * Identities of earlier releases stay accepted through src/main/desktop/app-identity.ts.
+ */
+export const DESKTOP_APP_ID = 'com.ubaidbinwaris.proxy-qa-browser'
+/** Reverse-DNS application identity; whether it is accepted is decided in the main process. */
+export const AppIdSchema = z.string().regex(/^[a-z0-9]+(\.[a-z0-9-]+)+$/).max(200)
 export const DESKTOP_APP_NAME = 'Proxy QA Browser'
 export const USB_MANIFEST_NAME = 'Proxy-QA-Browser-Update.json'
 export const RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
@@ -33,7 +38,7 @@ export interface DesktopStatus {
 
 export const UsbReleaseSchema = z.object({
   format: z.literal(1),
-  appId: z.literal(DESKTOP_APP_ID),
+  appId: AppIdSchema,
   version: z.string().regex(RELEASE_VERSION),
   releasedAt: z.string().datetime(),
   notes: z.array(z.string().min(1).max(500)).max(30),

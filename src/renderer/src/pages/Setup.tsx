@@ -26,7 +26,6 @@ import type {
 import {
   BROWSER_ENGINE_LABELS,
   BUNDLED_BROWSER_ENGINES,
-  PROXY_POOL_LABELS,
   SETUP_STEPS,
   isTaskActive,
 } from '@shared/types'
@@ -40,6 +39,10 @@ import { ErrorAlert } from '@/components/ui/ErrorAlert'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { EngineTaskStatus } from '@/components/tasks/EngineTaskStatus'
 import { CredentialsForm } from '@/components/CredentialsForm'
+import { Field } from '@/components/ui/Field'
+import { Select } from '@/components/ui/Select'
+import { findProvider, productLabelFor, providerProductLabel } from '@/lib/providers'
+import { useProxyStore } from '@/stores/proxy'
 import { PathRow } from '@/components/SecurityHealthCard'
 import { toAppError } from '@/lib/api'
 import { KEY_BACKEND_SHORT, KEY_BACKEND_VARIANT, MACHINE_DERIVED_NOTE, securityHealthMeta } from '@/lib/security'
@@ -192,7 +195,7 @@ function WelcomeStep({ security, browsersPath, bundled, onNext, onReveal }: Welc
             <div className="min-w-0">
               <p className="text-sm font-medium">2. Store proxy credentials</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Your DataImpulse login is encrypted into a local vault with a per-machine key. The password is never
+                Your proxy provider login is encrypted into a local vault with a per-machine key. The password is never
                 shown again after saving.
               </p>
             </div>
@@ -428,10 +431,10 @@ function BrowsersStep({
 interface CredentialsStepProps {
   proxy: ProxyConfigStatus
   security: SecurityStatus
-  /** Residential credentials were saved in this step (Mobile alone does not unlock Continue). */
+  /** The provider's primary product was saved in this step (an optional product alone does not unlock Continue). */
   saved: boolean
   onSaved: (status: SecurityStatus) => void
-  /** Optional Mobile credentials were saved: refresh the summary only. */
+  /** Optional product credentials were saved: refresh the summary only. */
   onOptionalSaved: () => void
   onBack: () => void
   onSkip: () => void
@@ -448,18 +451,31 @@ function CredentialsStep({
   onSkip,
   onNext,
 }: CredentialsStepProps): React.JSX.Element {
-  const residential = proxy.pools.find((pool) => pool.pool === 'residential') ?? null
-  const mobile = proxy.pools.find((pool) => pool.pool === 'mobile') ?? null
-  const residentialConfigured = residential?.configured ?? false
-  const mobileConfigured = mobile?.configured ?? false
-  const sourceMeta = credentialSourceMeta(residential?.source ?? proxy.source, residentialConfigured)
-  const [mobileOpen, setMobileOpen] = useState(mobileConfigured)
-  const canContinue = saved || residentialConfigured
+  const providers = useProxyStore((s) => s.providers)
+  // Start with a provider that already has keys, else the default provider (settings.defaultProviderId).
+  const [providerId, setProviderId] = useState<string>(() => providers?.find((candidate) => candidate.status.configured)?.id ?? proxy.provider)
+  const provider = findProvider(providers, providerId) ?? findProvider(providers, proxy.provider)
+  // The wizard's own status (setup.status) describes the default provider; other providers report through proxy.providers().
+  const status = !provider || provider.id === proxy.provider ? proxy : provider.status
+  const products = provider?.capabilities.products ?? status.pools.map((pool) => ({ key: pool.pool, label: productLabelFor(null, pool.pool) }))
+  // The provider's first product is required; any others are optional extra plans.
+  const [primary, ...optional] = products
+  const primaryStatus = primary ? (status.pools.find((pool) => pool.pool === primary.key) ?? null) : null
+  const primaryConfigured = primaryStatus?.configured ?? false
+  const sourceMeta = credentialSourceMeta(primaryStatus?.source ?? status.source, primaryConfigured)
+  const [openOptional, setOpenOptional] = useState<Record<string, boolean>>({})
+  const canContinue = saved || primaryConfigured
+  const name = provider?.displayName ?? 'proxy'
+  const optionalText =
+    optional.length === 0
+      ? ''
+      : ` ${optional.map((product) => product.label).join(', ')} ${optional.length === 1 ? 'is an optional second plan' : 'are optional additional plans'}.`
+  const primaryLabel = primary ? providerProductLabel(provider, primary.key) : 'Proxy'
   return (
     <Card>
       <CardHeader
         title="Proxy credentials"
-        description="Your DataImpulse gateway logins. Residential is required; Mobile is an optional second plan. Saved credentials are encrypted with a per-machine key; the password is write-only."
+        description={`Your ${name} gateway logins. ${primary ? `${primary.label} is required;` : ''}${optionalText} Saved credentials are encrypted with a per-machine key; the password is write-only.`}
         actions={
           <Badge variant={sourceMeta.variant} dot>
             {sourceMeta.label}
@@ -467,18 +483,31 @@ function CredentialsStep({
         }
       />
       <CardBody className="flex flex-col gap-5">
-        {residentialConfigured && !saved ? (
+        {providers && providers.length > 0 ? (
+          <Field htmlFor="setup-provider" label="Proxy provider">
+            <Select
+              id="setup-provider"
+              value={provider?.id ?? providerId}
+              onChange={(e) => {
+                setProviderId(e.target.value)
+                setOpenOptional({})
+              }}
+              options={providers.map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+            />
+          </Field>
+        ) : null}
+        {primaryConfigured && !saved ? (
           <p role="note" className="rounded-md border border-info/30 bg-info/5 px-4 py-3 text-sm text-muted-foreground">
-            {PROXY_POOL_LABELS.residential} credentials are already available from{' '}
+            {primaryLabel} credentials are already available from{' '}
             <span className="font-medium text-foreground">{sourceMeta.label}</span>
-            {residential?.host ? (
+            {primaryStatus?.host ? (
               <>
                 {' '}
                 (
                 <span className="font-mono text-xs">
-                  {residential.host}:{residential.port}
+                  {primaryStatus.host}:{primaryStatus.port}
                 </span>
-                , user <span className="font-mono text-xs">{residential.usernameMasked}</span>)
+                , user <span className="font-mono text-xs">{primaryStatus.usernameMasked}</span>)
               </>
             ) : null}
             . Continue, or save new ones below to replace them.
@@ -486,53 +515,62 @@ function CredentialsStep({
         ) : null}
         {security.keyBackend === 'machine-derived' ? <MachineDerivedNote /> : null}
 
-        <section aria-labelledby="setup-residential-title" className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 id="setup-residential-title" className="text-sm font-medium">
-              {PROXY_POOL_LABELS.residential}
-            </h3>
-            <Badge variant="outline">Required</Badge>
-          </div>
-          <CredentialsForm
-            mode="setup"
-            pool="residential"
-            current={residential}
-            onSaved={onSaved}
-            idPrefix="setup-residential"
-          />
-        </section>
-
-        <div className="border-t border-border pt-4">
-          <button
-            type="button"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-expanded={mobileOpen}
-            aria-controls="setup-mobile-section"
-            className="focus-ring -ml-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-          >
-            <ChevronRight
-              className={cn('h-3.5 w-3.5 transition-transform', mobileOpen && 'rotate-90')}
-              aria-hidden="true"
+        {primary ? (
+          <section aria-labelledby="setup-primary-title" className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 id="setup-primary-title" className="text-sm font-medium">
+                {primaryLabel}
+              </h3>
+              <Badge variant="outline">Required</Badge>
+            </div>
+            <CredentialsForm
+              key={`${provider?.id ?? providerId}-${primary.key}`}
+              mode="setup"
+              provider={provider}
+              pool={primary.key}
+              current={primaryStatus}
+              onSaved={onSaved}
+              idPrefix={`setup-${primary.key}`}
             />
-            {mobileConfigured
-              ? `${PROXY_POOL_LABELS.mobile} credentials`
-              : `Add ${PROXY_POOL_LABELS.mobile} credentials`}
-            <Badge variant={mobileConfigured ? 'success' : 'muted'} className="ml-1">
-              {mobileConfigured ? 'Configured' : 'Optional'}
-            </Badge>
-          </button>
-          {mobileOpen ? (
-            <section id="setup-mobile-section" aria-label={`${PROXY_POOL_LABELS.mobile} credentials`} className="mt-4">
-              <CredentialsForm
-                mode="setup"
-                pool="mobile"
-                current={mobile}
-                onSaved={onOptionalSaved}
-                idPrefix="setup-mobile"
-              />
-            </section>
-          ) : null}
-        </div>
+          </section>
+        ) : null}
+
+        {optional.map((product) => {
+          const productStatus = status.pools.find((pool) => pool.pool === product.key) ?? null
+          const configured = productStatus?.configured ?? false
+          const open = openOptional[product.key] ?? configured
+          const label = providerProductLabel(provider, product.key)
+          const sectionId = `setup-${product.key}-section`
+          return (
+            <div key={`${provider?.id ?? providerId}-${product.key}`} className="border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setOpenOptional((current) => ({ ...current, [product.key]: !open }))}
+                aria-expanded={open}
+                aria-controls={sectionId}
+                className="focus-ring -ml-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} aria-hidden="true" />
+                {configured ? `${label} credentials` : `Add ${label} credentials`}
+                <Badge variant={configured ? 'success' : 'muted'} className="ml-1">
+                  {configured ? 'Configured' : 'Optional'}
+                </Badge>
+              </button>
+              {open ? (
+                <section id={sectionId} aria-label={`${label} credentials`} className="mt-4">
+                  <CredentialsForm
+                    mode="setup"
+                    provider={provider}
+                    pool={product.key}
+                    current={productStatus}
+                    onSaved={onOptionalSaved}
+                    idPrefix={`setup-${product.key}`}
+                  />
+                </section>
+              ) : null}
+            </div>
+          )
+        })}
       </CardBody>
       <CardFooter className="flex-wrap justify-between gap-3">
         <BackButton onClick={onBack} />
@@ -570,9 +608,11 @@ interface DoneStepProps {
 function DoneStep({ setup, browsers, security, completing, onBack, onFinish }: DoneStepProps): React.JSX.Element {
   const sourceMeta = credentialSourceMeta(setup.proxy.source, setup.proxy.configured)
   const health = securityHealthMeta(security)
+  const providers = useProxyStore((s) => s.providers)
+  const defaultProvider = findProvider(providers, setup.proxy.provider)
   const configuredPools = setup.proxy.pools
     .filter((pool) => pool.configured)
-    .map((pool) => PROXY_POOL_LABELS[pool.pool])
+    .map((pool) => providerProductLabel(defaultProvider, pool.pool))
   const proxySummary = setup.proxy.configured
     ? `${configuredPools.length > 0 ? configuredPools.join(' + ') : 'Configured'} · ${setup.proxy.host ?? '—'}:${setup.proxy.port ?? '—'}`
     : 'Add them later with Manage keys (Settings → Advanced)'
@@ -758,7 +798,7 @@ export function SetupPage(): React.JSX.Element {
         title="Set up Proxy QA Browser"
         description={
           (browsersStatus ?? setup?.browsers)?.source === 'bundled'
-            ? 'Store your DataImpulse credentials in an encrypted vault. The browser engines are bundled with this build.'
+            ? 'Store your proxy provider credentials in an encrypted vault. The browser engines are bundled with this build.'
             : 'Browser engines download automatically during setup. An internet connection is required. Proxy credentials are optional and can be added later.'
         }
         eyebrow={

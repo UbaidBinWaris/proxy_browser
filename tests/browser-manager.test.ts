@@ -246,11 +246,12 @@ const baseInput: ProfileInput = {
   userAgent: null,
   locale: 'en-US',
   timezone: 'America/New_York',
-  proxyMode: 'dataimpulse-sticky',
+  proxyMode: 'sticky',
   stickySessionId: 'qa-session-1',
   formUrlOverride: 'https://forms.example.com/qa',
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,
@@ -300,7 +301,7 @@ interface HarnessOptions {
   /** Replace the fake proxy manager (e.g. with a real one over a scripted IP checker). */
   makeProxy?: (db: Database, logger: Logger) => ProxyManager
   launchTimeoutMs?: number
-  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs'>
+  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess'>
 }
 
 async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null = null, options: HarnessOptions = {}): Promise<Harness> {
@@ -333,12 +334,13 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     delete: (id) => db.profiles.delete(id),
     presets: () => [],
     validateForLaunch: (profile) => {
-      if (profile.proxyMode === 'dataimpulse-sticky' && !profile.stickySessionId) {
+      if (profile.proxyMode === 'sticky' && !profile.stickySessionId) {
         throw new AppException('INVALID_PROFILE', 'Sticky proxy mode requires a session ID.')
       }
     },
   }
   const fakeProxy: ProxyManager = {
+    providers: () => [],
     getConfigStatus: () => ({
       configured: true,
       pools: [
@@ -371,7 +373,7 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     verifyForLaunch: async (profile) => {
       const result = proxyResult.current
       const targetMatch = profile.target && result.ip ? fakeProxy.compareTarget(profile.target, result.ip) : null
-      const sessionId = profile.proxyMode === 'dataimpulse-sticky' ? profile.stickySessionId : null
+      const sessionId = profile.proxyMode === 'sticky' ? profile.stickySessionId : null
       return { result, targetMatch, attempts: 1, maxAttempts: 1, sessionId, warning: null }
     },
     getCurrentIp: async () => ipInfo,
@@ -690,6 +692,28 @@ describe('createBrowserManager', () => {
     expect(again.id).not.toBe(first.id)
     await waitFor(() => h.manager.get(again.id)?.status === 'open', 'open again')
     await h.manager.close(again.id)
+  })
+
+  it('routes site access tokens into every manual context (bundled, installed and WebKit relay) and records only the evidence line', async () => {
+    const contexts: unknown[] = []
+    const siteAccess = {
+      attach: vi.fn(async (context: unknown, onNote?: (note: string) => void) => {
+        contexts.push(context)
+        onNote?.('site access token "Staging" applied to https://forms.example.com')
+      }),
+    }
+    h.db.close()
+    h = await buildHarness(200, null, { manager: { siteAccess } })
+    for (const [name, engine] of [['QA Chromium', 'chromium'], ['QA System Chromium', 'system-chromium'], ['QA WebKit', 'webkit']] as const) {
+      const session = await h.manager.launch(h.profile({ name, engine, stickySessionId: `sa-${engine}` }))
+      await waitFor(() => h.manager.get(session.id)?.status === 'open', `${engine} open`)
+      const line = h.logs.find((l) => l.message.includes(`${name} `) && l.message.includes('site access token "Staging" applied to https://forms.example.com'))
+      expect(line?.level).toBe('INFO')
+      expect(line?.meta).toMatchObject({ sessionId: session.id, runId: session.runId })
+      await h.manager.close(session.id)
+    }
+    expect(siteAccess.attach).toHaveBeenCalledTimes(3)
+    expect(new Set(contexts).size).toBe(3)
   })
 
   it('launches WebKit through the local auth relay and closes the relay with the session', async () => {

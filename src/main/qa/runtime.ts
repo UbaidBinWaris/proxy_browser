@@ -11,6 +11,8 @@ import type { ProxyRelay } from '../proxy/local-relay'
 import { executeScenario } from './executor'
 import { redactEvidence } from '../security/data-privacy'
 import type { VisualStore } from './visual'
+import { TRACE_SKIPPED_NOTE, shouldSkipTrace } from '../site-access'
+import type { SiteAccessAttacher } from '../site-access'
 
 export function createQaSessionFactory(
   provisioner: BrowserProvisioner,
@@ -18,6 +20,7 @@ export function createQaSessionFactory(
   _sanitize: (text: string) => string,
   logger: Logger,
   custom?: { resolve: (id: string) => ProxyConnection; checker: IpChecker },
+  siteAccess?: SiteAccessAttacher,
 ) {
   return async (profile: Profile, scenario: ScenarioInput, signal: AbortSignal, headless = true) => {
     const info = await provisioner.resolveEngine(profile.engine)
@@ -31,7 +34,7 @@ export function createQaSessionFactory(
     if (scenario.gatewayId) {
       if (!custom) throw new AppException('INVALID_INPUT', 'Custom gateway is not configured for this runner.')
       if (profile.target)
-        throw new AppException('INVALID_INPUT', 'Custom gateways do not support DataImpulse location targeting.')
+        throw new AppException('INVALID_INPUT', 'Custom gateways do not support provider location targeting; use a registered proxy provider for location matrices.')
       exitIp = (await custom.checker.lookup(connection)).ip
       if (connection?.server.startsWith('socks') && info.family === 'webkit')
         throw new AppException('INVALID_INPUT', 'WebKit custom gateways require an HTTP proxy.')
@@ -88,12 +91,14 @@ export function createQaSessionFactory(
         serviceWorkers: 'block',
         acceptDownloads: false,
       })
+      const siteAccessNotes: string[] = []
+      await siteAccess?.attach(context, (note) => siteAccessNotes.push(note))
       const close = async (): Promise<void> => {
         signal.removeEventListener('abort', abort)
         await browser?.close().catch(() => undefined)
         await relay?.close()
       }
-      return { context, exitIp, targetMatch, browserVersion: browser.version(), close }
+      return { context, exitIp, targetMatch, browserVersion: browser.version(), siteAccessNotes, close }
     } catch (err) {
       signal.removeEventListener('abort', abort)
       await browser?.close().catch(() => undefined)
@@ -110,8 +115,9 @@ export function createQaExecutor(
   logger: Logger,
   custom?: { resolve: (id: string) => ProxyConnection; checker: IpChecker },
   visuals?: VisualStore,
+  siteAccess?: SiteAccessAttacher,
 ) {
-  const open = createQaSessionFactory(provisioner, proxy, sanitize, logger, custom)
+  const open = createQaSessionFactory(provisioner, proxy, sanitize, logger, custom, siteAccess)
   return async (
     profile: Profile,
     scenario: ScenarioInput,
@@ -119,36 +125,41 @@ export function createQaExecutor(
     signal: AbortSignal,
   ): Promise<QaExecution & { exitIp?: string; targetMatch?: string | null }> => {
     const started = Date.now()
+    const traceSkipped = shouldSkipTrace(scenario.captureTrace, siteAccess)
     const session = await open(profile, scenario, signal)
     try {
+      const execution = await executeScenario(
+        session.context,
+        traceSkipped ? { ...scenario, captureTrace: false } : scenario,
+        dir,
+        signal,
+        (text) => redactEvidence(sanitize(text)),
+        visuals
+          ? {
+              store: visuals,
+              fingerprint: [
+                process.platform,
+                process.arch,
+                profile.engine,
+                session.browserVersion,
+                profile.devicePreset,
+                profile.viewportWidth,
+                profile.viewportHeight,
+                profile.locale,
+                profile.timezone,
+                profile.target,
+                new URL(scenario.startUrl).origin,
+              ],
+            }
+          : undefined,
+      )
+      // Token notes are recorded while the scenario navigates, so collect them only after it ran.
+      const notes = [...(traceSkipped ? [TRACE_SKIPPED_NOTE] : []), ...session.siteAccessNotes]
       return {
-        ...(await executeScenario(
-          session.context,
-          scenario,
-          dir,
-          signal,
-          (text) => redactEvidence(sanitize(text)),
-          visuals
-            ? {
-                store: visuals,
-                fingerprint: [
-                  process.platform,
-                  process.arch,
-                  profile.engine,
-                  session.browserVersion,
-                  profile.devicePreset,
-                  profile.viewportWidth,
-                  profile.viewportHeight,
-                  profile.locale,
-                  profile.timezone,
-                  profile.target,
-                  new URL(scenario.startUrl).origin,
-                ],
-              }
-            : undefined,
-        )),
+        ...execution,
         exitIp: session.exitIp,
         targetMatch: session.targetMatch,
+        ...(notes.length > 0 ? { notes } : {}),
         durationMs: Date.now() - started,
       }
     } finally {

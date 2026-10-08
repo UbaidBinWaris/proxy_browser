@@ -34,6 +34,7 @@ function run(id: string, startedAt: string, overrides: Partial<TestRun> = {}): T
     profileName: 'Profile',
     engine: 'chromium',
     devicePreset: 'windows-desktop',
+    provider: 'dataimpulse',
     proxyPool: 'residential',
     target: null,
     targetingString: null,
@@ -70,6 +71,7 @@ function session(id: string, overrides: Partial<BrowserSession> = {}): BrowserSe
     profileName: 'Profile',
     engine: 'chromium',
     devicePreset: 'windows-desktop',
+    provider: 'dataimpulse',
     proxyPool: 'residential',
     target: null,
     targetingString: null,
@@ -102,11 +104,12 @@ function profile(id: string, name: string): Profile {
     userAgent: null,
     locale: 'en-US',
     timezone: 'UTC',
-    proxyMode: 'dataimpulse-sticky',
+    proxyMode: 'sticky',
     stickySessionId: `profile-${id}`,
     formUrlOverride: null,
     notes: '',
     proxyPool: 'residential',
+    providerId: 'dataimpulse',
     target: null,
     stickyTtlMinutes: null,
     ephemeral: false,
@@ -343,7 +346,7 @@ describe('proxy sessions helpers', () => {
       ...overrides,
     })
     const sticky = profile('p1', 'Sticky one')
-    const rotating: Profile = { ...profile('p2', 'Rotating one'), proxyMode: 'dataimpulse-rotating', stickySessionId: null }
+    const rotating: Profile = { ...profile('p2', 'Rotating one'), proxyMode: 'rotating', stickySessionId: null }
     const direct: Profile = { ...profile('p3', 'Direct one'), proxyMode: 'none', stickySessionId: null }
     const gateway = row({ profileId: null, sessionId: null })
     const orphanSticky = row({ profileId: null, sessionId: 'leftover' })
@@ -506,7 +509,7 @@ describe('app store — browser availability and the download-page watcher', () 
 function securityStatus(overrides: Partial<SecurityStatus> = {}): SecurityStatus {
   return {
     source: 'vault',
-    configuredPools: ['residential'],
+    configuredProducts: { dataimpulse: ['residential'] },
     keyBackend: 'os-keychain',
     keyBackendLabel: 'GNOME Keyring / libsecret',
     keyPath: '/data/security/vault.key',
@@ -595,7 +598,7 @@ describe('security store', () => {
     const saved = securityStatus({ vaultUpdatedAt: '2026-02-01T00:00:00.000Z' })
     const saveCredentials = vi.fn(async () => ok(saved))
     const getConfigStatus = vi.fn(async () => ok(vaultConfig))
-    bridgeHolder.api = { security: { saveCredentials }, proxy: { getConfigStatus } } as unknown as ProxyQaApi
+    bridgeHolder.api = { security: { saveCredentials }, proxy: { getConfigStatus, providers: vi.fn(async () => ok([])) } } as unknown as ProxyQaApi
     const pending = useSecurityStore.getState().saveCredentials(credentialsInput)
     expect(useSecurityStore.getState().busy).toBe('saving')
     await expect(pending).resolves.toBe(saved)
@@ -613,12 +616,15 @@ describe('security store', () => {
         rotateKey: vi.fn(async () => fail<SecurityStatus>({ code: 'VAULT_ERROR', message: 'Cannot re-wrap the vault' })),
         clearCredentials,
       },
-      proxy: { getConfigStatus: vi.fn(async () => ok({ ...vaultConfig, configured: false, source: 'none' as const, missing: ['username', 'password'] })) },
+      proxy: {
+        getConfigStatus: vi.fn(async () => ok({ ...vaultConfig, configured: false, source: 'none' as const, missing: ['username', 'password'] })),
+        providers: vi.fn(async () => ok([])),
+      },
     } as unknown as ProxyQaApi
     await expect(useSecurityStore.getState().rotateKey()).rejects.toMatchObject({ code: 'VAULT_ERROR', message: 'Cannot re-wrap the vault' })
     expect(useSecurityStore.getState().busy).toBeNull()
-    await expect(useSecurityStore.getState().clearCredentials('mobile')).resolves.toBe(clearedStatus)
-    expect(clearCredentials).toHaveBeenCalledWith('mobile')
+    await expect(useSecurityStore.getState().clearCredentials('dataimpulse', 'mobile')).resolves.toBe(clearedStatus)
+    expect(clearCredentials).toHaveBeenCalledWith('dataimpulse', 'mobile')
     expect(useSecurityStore.getState().status?.vaultPresent).toBe(false)
     expect(useSecurityStore.getState().busy).toBeNull()
     await vi.waitFor(() => expect(useProxyStore.getState().config?.source).toBe('none'))

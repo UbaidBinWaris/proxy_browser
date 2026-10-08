@@ -38,6 +38,7 @@ const baseProfile: Profile = {
   formUrlOverride: null,
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,

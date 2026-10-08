@@ -4,11 +4,13 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import type { ProxyCredentials } from '../src/main/contracts'
+import type { StoredProxyCredentials } from '../src/main/contracts'
 import { isEmptyCredentialsUpdate, mergeCredentialsUpdate } from '../src/main/security/credentials-merge'
 
-const stored: ProxyCredentials = {
+const stored: StoredProxyCredentials = {
+  providerId: 'dataimpulse',
   pool: 'residential',
+  extras: {},
   host: 'gw.dataimpulse.com',
   port: 823,
   username: 'stored_login',
@@ -19,7 +21,9 @@ const stored: ProxyCredentials = {
 describe('mergeCredentialsUpdate', () => {
   it('rotates only the password and keeps every stored value', () => {
     expect(mergeCredentialsUpdate(stored, { pool: 'residential', password: 'new-password' })).toEqual({
+      providerId: 'dataimpulse',
       pool: 'residential',
+      extras: {},
       host: 'gw.dataimpulse.com',
       port: 823,
       username: 'stored_login',
@@ -55,7 +59,9 @@ describe('mergeCredentialsUpdate', () => {
       expect(err).toMatchObject({ code: 'INVALID_INPUT' })
     }
     expect(mergeCredentialsUpdate(null, { pool: 'mobile', host: 'gw.dataimpulse.com', port: 823, username: 'm_login', password: 'p' })).toEqual({
+      providerId: 'dataimpulse',
       pool: 'mobile',
+      extras: {},
       host: 'gw.dataimpulse.com',
       port: 823,
       username: 'm_login',
@@ -67,11 +73,23 @@ describe('mergeCredentialsUpdate', () => {
   it('validates the update and the merged result with the shared schemas', () => {
     expect(() => mergeCredentialsUpdate(stored, { pool: 'residential', port: 0 })).toThrowError(/port/)
     expect(() => mergeCredentialsUpdate(stored, { pool: 'residential', sessionTemplate: 'no-placeholders' })).toThrowError(/Session template must contain/)
-    expect(() => mergeCredentialsUpdate(stored, { pool: 'datacenter' } as never)).toThrowError(/pool/)
+    expect(() => mergeCredentialsUpdate(stored, { pool: 'Data Center' } as never)).toThrowError(/pool/)
   })
 
-  it('refuses a stored entry of another pool', () => {
-    expect(() => mergeCredentialsUpdate(stored, { pool: 'mobile', password: 'x' })).toThrowError(/another pool/)
+  it('refuses a stored entry of another pool or provider', () => {
+    expect(() => mergeCredentialsUpdate(stored, { pool: 'mobile', password: 'x' })).toThrowError(/another provider or pool/)
+    expect(() => mergeCredentialsUpdate(stored, { providerId: 'acme', pool: 'residential', password: 'x' })).toThrowError(/another provider or pool/)
+  })
+
+  it('merges extra credential fields per field: absent or empty keeps the stored value', () => {
+    const withExtras: StoredProxyCredentials = { ...stored, providerId: 'acme', extras: { zone: 'z1', apiKey: 'Stored-Api-Key' } }
+    expect(mergeCredentialsUpdate(withExtras, { providerId: 'acme', pool: 'residential', password: 'p2' }).extras).toEqual({ zone: 'z1', apiKey: 'Stored-Api-Key' })
+    expect(mergeCredentialsUpdate(withExtras, { providerId: 'acme', pool: 'residential', extras: { zone: 'z2', apiKey: '' } }).extras).toEqual({ zone: 'z2', apiKey: 'Stored-Api-Key' })
+    expect(mergeCredentialsUpdate(null, { providerId: 'acme', pool: 'residential', host: 'gw.example.com', port: 1, username: 'u', password: 'p', extras: { zone: 'z9' } })).toMatchObject({
+      providerId: 'acme',
+      extras: { zone: 'z9' },
+    })
+    expect(() => mergeCredentialsUpdate(withExtras, { providerId: 'acme', pool: 'residential', extras: { 'bad key': 'x' } })).toThrowError(/extras/)
   })
 })
 
@@ -82,5 +100,7 @@ describe('isEmptyCredentialsUpdate', () => {
     expect(isEmptyCredentialsUpdate({ pool: 'residential', password: 'x' })).toBe(false)
     expect(isEmptyCredentialsUpdate({ pool: 'residential', sessionTemplate: null })).toBe(false)
     expect(isEmptyCredentialsUpdate({ pool: 'residential', port: 823 })).toBe(false)
+    expect(isEmptyCredentialsUpdate({ pool: 'residential', extras: { zone: '' } })).toBe(true)
+    expect(isEmptyCredentialsUpdate({ pool: 'residential', extras: { zone: 'z1' } })).toBe(false)
   })
 })

@@ -18,6 +18,7 @@ import { exportBatch } from '../qa/reports'
 import { writeFileAtomicSync } from '../util/atomic-file'
 import { redactEvidence } from '../security/data-privacy'
 import { approveBatchBaseline, batchVisualEvidence } from '../qa/visual'
+import { applyHealedSelector } from '../qa/healing'
 import type { IpcDeps } from './deps'
 import { IdArg, IdSchema, NoArgs, spec } from './handle'
 import type { HandlerSpec } from './handle'
@@ -77,6 +78,12 @@ export function qaHandlers(deps: IpcDeps): HandlerSpec[] {
         if (!deps.visuals) throw new AppException('INTERNAL', 'Visual comparisons are unavailable.')
         return approveBatchBaseline(store(), deps.visuals, join(deps.paths.data, 'qa-artifacts'), batch, caseId, index)
       },
+    ),
+    // Identifiers only: the new selector comes from the saved scenario's own fallback list.
+    spec(
+      IPC.qa.updateHealedSelector,
+      z.tuple([IdSchema, z.string().regex(/^\d+$/), z.int().min(0).max(99)]),
+      ([batch, caseId, index]) => applyHealedSelector(store(), batch, caseId, index),
     ),
     spec(IPC.qa.exportBaselines, IdArg, async ([id]) => {
       if (!deps.visuals) throw new AppException('INTERNAL', 'Visual comparisons are unavailable.')

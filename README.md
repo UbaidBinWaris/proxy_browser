@@ -13,8 +13,9 @@ testing of your own web forms**. It opens a real browser window — bundled
 Chromium, Firefox or WebKit, or a real Chrome, Edge, Brave, Opera, Opera GX,
 Vivaldi or Chromium installed on the machine — inside an isolated browser
 profile that emulates a chosen device (226 phone, tablet and desktop presets),
-and routes it through a **DataImpulse** proxy exit IP in the US state, city or
-ZIP code you pick (or connects directly). Before the window opens, the exit IP
+and routes it through a proxy exit IP of a built-in provider (currently
+**DataImpulse**) in the US state, city or ZIP code you pick (or connects
+directly). Before the window opens, the exit IP
 is checked and compared with the location you asked for. Every launch is
 recorded locally with its exit IP, location verdict, HTTP status, screenshot,
 captured network requests and any lead / certificate IDs the form returned.
@@ -32,7 +33,7 @@ captured network requests and any lead / certificate IDs the form returned.
 - [Download and run](#download-and-run)
 - [First-run setup](#first-run-setup)
 - [Using the app](#using-the-app)
-- [Proxy and targeting (DataImpulse)](#proxy-and-targeting-dataimpulse)
+- [Proxy and targeting](#proxy-and-targeting)
 - [Browsers](#browsers)
 - [Devices](#devices)
 - [Browser sessions](#browser-sessions)
@@ -151,7 +152,7 @@ automatically. Nothing in it contacts the proxy unless you press **Test connecti
 | --- | --- | --- |
 | 1. **Welcome** | What will happen, how the vault key is protected on this machine (**Key protection**, e.g. *Windows DPAPI (current user)*, *GNOME Keyring / libsecret*), and the **Vault file** / **Key file** paths with **Reveal vault folder** / **Reveal key folder** | **Get started** |
 | 2. **Browsers** | Chromium (**Required**), Firefox and WebKit with their status. Entering this step queues every missing engine as a background download, one after another; each is verified with a headless test launch (no window) and shows **Verified ✓** with *Files found · Version … · Headless test launch* ticks | Wait for Chromium, then **Continue**; **Skip for now** appears when Chromium is there, no download is running and Firefox or WebKit is still missing. On a failure: **Retry install** |
-| 3. **Proxy credentials** | **DataImpulse Residential** (**Required**) form: **Proxy host** (default `gw.dataimpulse.com`), **Port** (`823`), **Username**, **Password**, and *Advanced: sticky session template*. Below it, **Add DataImpulse Mobile credentials** (**Optional**) opens the same form for a Mobile plan | **Test connection** (one request through the proxy, nothing saved), then **Save encrypted**; then **Continue**. Without credentials: **Skip for now** |
+| 3. **Proxy credentials** | **Proxy provider** (one entry per built-in provider; today **DataImpulse**), then the provider's first product as **Required** — for DataImpulse **DataImpulse Residential**: **Proxy host** (the provider's default gateway, `gw.dataimpulse.com`), **Port** (`823`), **Username**, **Password**, any provider-specific fields, and *Advanced: sticky session template* (providers that support templates). Below it, each further product is **Optional**, e.g. **Add DataImpulse Mobile credentials** | **Test connection** (one request through the proxy, nothing saved), then **Save encrypted**; then **Continue**. Without credentials: **Skip for now** |
 | 4. **Done** (*"You're set"*) | Summary of browsers, proxy credentials and vault health, plus anything still pending | **Open launcher** |
 
 - The **AppImage** ships its browsers, so its wizard has nothing to install:
@@ -195,8 +196,11 @@ pool is Direct) a random location, all at once.
 
 **Connection** card
 
-- **Proxy pool** — three one-line choices with a status dot: **Residential**,
-  **Mobile** and **Direct** (no proxy, this machine's own IP). A pool without
+- **Proxy provider** — the providers that have keys (all of them while none
+  has); with one provider this select has a single entry.
+- **Proxy pool** — one-line choices with a status dot: the provider's products
+  (for DataImpulse **Residential** and **Mobile**) and **Direct** (no proxy,
+  this machine's own IP). A pool without
   keys shows **Not set up** and cannot be selected; a **Manage keys** link
   under the row opens the [Manage keys window](#manage-keys-window). The
   shuffle icon (**Random pool**) picks one of the configured pools.
@@ -344,8 +348,8 @@ Profiles page.
 **Result** tab
 
 - **Test result** — Profile (with **Edit profile**), Browser, Device, Public
-  IP, Pool, Requested, Connection (*DataImpulse · sticky / rotating* or *Direct
-  (no proxy)*), Proxy session, Targeting string, Requested vs. verified,
+  IP, Pool, Requested, Connection (*<Provider> · sticky / rotating*, e.g.
+  *DataImpulse · sticky*, or *Direct (no proxy)*), Proxy session, Targeting string, Requested vs. verified,
   Country, State, City / ZIP, Location, Start time, Duration, HTTP status, Form
   URL and Final URL.
 - **Outcome** — **Lead ID** and **Certificate ID** (*"Auto-filled when found in
@@ -408,12 +412,15 @@ here unless saved.
     (px)** and **height** (320–7680 × 320–4320), **User agent** (empty = the
     preset's), **Locale** (BCP 47, e.g. `en-US`), **Timezone** (IANA, e.g.
     `America/Chicago`; filled from the target state until you edit it).
-  - **Proxy** — **Proxy mode** (**Direct (no proxy)**, **DataImpulse ·
-    sticky**, **DataImpulse · rotating**), **Proxy pool**, **Sticky session
-    ID** (required in sticky mode; letters, digits, `-` and `_`, max 64; it
+  - **Proxy** — **Proxy mode** (**Direct (no proxy)**, **<Provider> ·
+    sticky**, **<Provider> · rotating**, e.g. *DataImpulse · sticky*), **Proxy
+    provider** (providers with keys, plus the profile's own), **Proxy pool**
+    (the provider's products), **Sticky session ID** (required in sticky mode; letters, digits, `-` and `_`, max 64; it
     follows the name as `profile-<name>` until you edit it), **Target
-    location** (Country / State / City / ZIP, clearable) and **Sticky TTL
-    (minutes)** (1–1440).
+    location** (Country / State / City / ZIP — only the modes the provider
+    supports; clearable) and **Sticky TTL (minutes)** (1–1440). A profile
+    that names a provider this version does not have is never switched to
+    another one: launching it fails with `INVALID_INPUT` naming the provider.
   - **Form & notes** — **Form URL override** (empty = the default start URL),
     **Notes**; for a quick-launch profile, **Show this quick-launch profile on
     the Profiles page**.
@@ -451,12 +458,13 @@ section and gets the focus. Every key is listed in the
   *"Bundled engines live in … (read-only)"*) with **Reveal Folder**.
 
 **Advanced** — collapsible sections; only **Proxy keys** is open by default,
-and a link such as `#logs` opens its section:
+and a link such as `#logs` (or `#site-access`) opens its section:
 
 | Section | Contents |
 | --- | --- |
-| **Proxy keys** | One row per pool (**Residential**, **Mobile**): **Configured** / **Not set up**, masked username, source (*Encrypted vault* or *Development .env*), *last tested …*, and **Test** (one request through that pool's gateway). **Manage keys…** opens the [Manage keys window](#manage-keys-window). **Security health** (*Healthy*, *Reduced protection*, *No vault yet* or *Attention needed*) with **Details**: Key protection, Key present, Vault present, Decrypts OK, Permissions OK, Install id, Key created, Vault updated, Last local check, Last proxy test, Warnings, **Reveal key folder**, **Reveal vault folder**, **Re-check** and **Rotate key** |
-| **Targeting & location match** | **Default proxy pool**, **Default country**, **Place name encoding** (with a live example), **Location match** and **Attempts** |
+| **Proxy keys** | One row per provider product (DataImpulse: **Residential**, **Mobile**; with several providers they are grouped under each provider's name): **Configured** / **Not set up**, masked username, source (*Encrypted vault* or *Development .env*), *last tested …*, and **Test** (one request through that product's gateway). **Manage keys…** opens the [Manage keys window](#manage-keys-window). **Security health** (*Healthy*, *Reduced protection*, *No vault yet* or *Attention needed*) with **Details**: Key protection, Key present, Vault present, Decrypts OK, Permissions OK, Install id, Key created, Vault updated, Last local check, Last proxy test, Warnings, **Reveal key folder**, **Reveal vault folder**, **Re-check** and **Rotate key** |
+| **Site access tokens** | Your own allowlisting header for your own site: name, exact origins, header name, masked value and an enabled switch per token; **Add Token** / **Edit** / **Delete** (with confirmation). See [Site access tokens](#site-access-tokens-allowlisting-your-own-qa-traffic) |
+| **Targeting & location match** | **Default proxy provider**, **Default proxy pool** (that provider's products), **Default country**, **Place name encoding** (one per provider that offers encodings, with a live example; labelled *(Provider)* once there are several), **Location match** and **Attempts** |
 | **Browser flags** | **Extra Chromium flags**, one per line |
 | **IP verification** | **Provider**, **Timeout (ms)**, **Retries** |
 | **Network inspector** | **Capture requests and extract lead / certificate ids**, **Navigation timeout (ms)** |
@@ -487,16 +495,20 @@ edited in a separate, temporary window, opened with **Manage keys…**
 
 - Title **Manage proxy keys**, header **Proxy keys** — *"Encrypted on this
   machine. Passwords are write-only and never shown again."*
-- Tabs **Residential** and **Mobile**, each with its status (**Configured** /
-  **Not set up**, **User** (masked, e.g. `ab****yz`), **Source**, **Last
-  test**) and the credentials form (**Proxy host**, **Port**, **Username**,
-  **Password**, *Advanced: sticky session template*) with **Test connection**
-  and **Save encrypted**.
-- For a pool already in the vault, **empty fields keep the stored value**
+- **Provider** comes first (a select with every built-in provider and a link
+  to its parameter documentation). Its products are the tabs — for
+  DataImpulse **Residential** and **Mobile** — each with its status
+  (**Configured** / **Not set up**, **User** (masked, e.g. `ab****yz`),
+  **Source**, **Last test**) and the credentials form (**Proxy host** and
+  **Port** pre-filled with the provider's default gateway, **Username**,
+  **Password**, the provider's extra credential fields — secret ones as
+  password inputs — and, for providers that support it, *Advanced: sticky
+  session template*) with **Test connection** and **Save encrypted**.
+- For a product already in the vault, **empty fields keep the stored value**
   (placeholders *"unchanged: ab****yz"* / *"unchanged"*), so a password can be
   changed without retyping the username. **Test connection** tests the merged
   result without saving anything.
-- **Remove keys** (with confirmation) deletes a pool's encrypted entry.
+- **Remove keys** (with confirmation) deletes a product's encrypted entry.
 - The window is modal on Windows and Linux, fixed in size, has no taskbar
   entry, blocks screenshots/screen recording on Windows (no effect on Linux),
   **closes itself after 5 minutes without input** (the footer counts down in
@@ -504,7 +516,16 @@ edited in a separate, temporary window, opened with **Manage keys…**
   it at once. Typed values live only in that window and are gone when it
   closes; only one such window can be open.
 
-## Proxy and targeting (DataImpulse)
+## Proxy and targeting
+
+Proxy providers are built into the app (no plug-ins are loaded at runtime: a
+provider sees the credentials). Each one declares what it supports — its
+products (plans), target modes, sticky sessions, default gateway and any extra
+credential fields — and the Launch page, profile editor, keys window and
+Settings are built from that. Profiles, quick launches, CLI runs, proxy
+sessions and run history record which provider they used; everything created
+before providers were selectable is a **DataImpulse** record. Today DataImpulse
+is the only provider; the rest of this section describes it.
 
 ### Pools and logins
 
@@ -544,7 +565,8 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sesst
   parsed: its `cr`/`state`/`city`/`zip` are **replaced** by the launch's target
   (never duplicated), other parameters are kept, and its `sessid`/`sessttl` are
   replaced in sticky mode.
-- **Encoding of place names** (Settings → Advanced → **Place name encoding**):
+- **Encoding of place names** (Settings → Advanced → **Place name encoding**,
+  stored per provider as `providerOptions.dataimpulse.encoding`):
   accents and punctuation are removed and the text is lower-cased; `&` becomes
   `and`. Words are then joined according to the setting: **Remove spaces
   (DataImpulse default)** → `newjersey`, `stlouis`, `winstonsalem`; **Replace
@@ -886,7 +908,29 @@ number changes when Playwright adds devices):
   `<userData>/vault/proxy-credentials.vault` with **AES-256-GCM** (random
   12-byte IV, 16-byte tag; the header `{v, alg, installId}` is authenticated,
   so a vault cannot be moved to another installation). It holds one entry per
-  pool. A vault from an older version (one login) is migrated automatically.
+  provider product (payload v3:
+  `{ v: 3, providers: { <id>: { products: { <key>: { host, port, username,
+  password, sessionTemplate, extras } } } } }`); provider-specific extra
+  fields are encrypted exactly like passwords. Vaults from older versions
+  (payload v2 — one login per DataImpulse pool — or the single-login v1 shape)
+  are migrated to `providers.dataimpulse` on the first start.
+- **Before that rewrite the old file is copied, still encrypted, to
+  `proxy-credentials.vault.v2.bak`** in the same folder with the same
+  permissions. If the copy or the rewrite fails, both files are left as they
+  were, the credentials keep working for that session, Security health shows
+  the problem (naming the backup) and the upgrade is retried on the next start
+  or save; nothing overwrites a v2 vault that has no backup.
+- **Downgrading** to a version older than this one after the vault was
+  migrated: older builds cannot read a v3 vault (they report it as
+  undecryptable). Close the app and copy
+  `proxy-credentials.vault.v2.bak` over `proxy-credentials.vault` (keys
+  saved after the upgrade are then lost), or re-enter the keys in the older
+  version. The backup is encrypted with the key in use at upgrade time, so it
+  only restores if **Rotate key** has not been used since; after a rotation,
+  re-enter the keys instead. Do not use *Clear* in the older version before
+  restoring — it deletes the vault file. Sticky profiles also need a look after
+  a downgrade: older versions read the new `sticky` mode as rotating until the
+  profile is saved again with a sticky session.
 - The 256-bit vault key is never stored in clear. The key file
   `<installId>.key` holds it **wrapped** by one of two backends; the UI shows
   which:
@@ -967,6 +1011,88 @@ credentials never reach the browser process. Each session has its own relay,
 closed with the session. Chromium and Firefox authenticate to the proxy
 directly.
 
+### Site access tokens (allowlisting your own QA traffic)
+
+If **your own** site's bot protection (Cloudflare / Akamai WAF rules,
+reCAPTCHA / Turnstile / hCaptcha, internal fraud scoring) blocks your QA runs,
+do not try to get past it — allowlist your test traffic on that site instead.
+A site access token is a secret header **you** define (for example
+`X-QA-Access: <long random value>`) that your site or WAF accepts as "this is
+our QA traffic". The app attaches it **only to the exact origins you list**.
+It is not an evasion feature: it cannot change the user agent, cookies, client
+IP or any browser-controlled header, and it sends nothing to sites you did not
+list.
+
+**Set it up** in Settings → Advanced → **Site access tokens** → **Add Token**:
+
+| Field | Rules |
+| --- | --- |
+| Name | Free text, shown in lists and evidence |
+| Origins | 1–20 exact origins, one per line: scheme + host + port (`https://staging.example.com`, `https://staging.example.com:8443`). https only; plain http only for `localhost`, `127.0.0.1` and `[::1]`. No wildcards, subdomains or paths. Case, IDN (punycode) and default ports are normalised |
+| Header name | An HTTP token such as `X-QA-Access`. Refused: `Host`, `Cookie`, `Authorization`, `Proxy-Authorization`, `Content-Length`, `Content-Type`, `Origin`, `Referer`, `User-Agent`, connection headers, every `Sec-*` / `Proxy-*` / `X-Forwarded-*` header and client-IP headers (`Forwarded`, `X-Real-IP`, `True-Client-IP`, `CF-Connecting-IP`) |
+| Secret value | 1–4096 printable ASCII characters. Write-only: after saving, the app only shows `••••••••` plus the last 4 characters of a value of 16+ characters. Editing without a new value keeps the saved one |
+| Enabled | Only enabled tokens are applied |
+
+Two tokens may not send the same header name to the same origin (refused at
+save). Changes apply to sessions and QA runs **started afterwards**.
+
+**What is sent where**
+
+- Matching is **exact origin only**: a request gets the header only when its
+  own origin (scheme + host + port) is in the list. Third-party scripts,
+  images, APIs and analytics on the same page never get it.
+- **Redirects never carry it to another origin.** All three engines re-send a
+  header added through Playwright's request interception on the redirect hop
+  (verified for Chromium, Firefox and WebKit; see
+  `tests/site-access-browser.test.ts`), so the app does not let the browser
+  follow redirects of tokenized requests: it performs those requests itself
+  (Playwright's request client, through the same proxy and cookie jar) with
+  redirects disabled. A **page** redirect becomes a fresh navigation to the
+  new URL, which gets the header only if that origin is listed (so
+  `POST /submit → 303 /thanks` on your site keeps it). A 307/308 redirect of a
+  form POST is blocked (the body cannot be re-sent safely). A **sub-resource**
+  redirect is followed by Chromium and Firefox without the header; WebKit
+  cannot do that, so there the sub-resource fails instead.
+- Not covered (the header is simply absent): requests answered by a service
+  worker, WebSockets, and the very first request of a pop-up in a QA run.
+- Side effects of interception while a token is enabled: the HTTP cache of that
+  browser context is disabled, tokenized responses are buffered before the page
+  sees them (no streaming / server-sent events from those origins), and in
+  Chromium a page served this way counts as "public network" for Local Network
+  Access, so it may need permission to call `localhost` / private-network
+  hosts on **other** origins.
+
+**Where it is stored** — per device, in `<userData>/data/site-access-tokens.json`
+(owner-only). Names, origins and header names are plain; the value is
+encrypted with the OS keychain (Electron `safeStorage`: Windows DPAPI, GNOME
+Keyring / libsecret, KWallet). Without a usable keychain (Linux `basic_text`
+or unknown backends) tokens can be neither saved nor applied. Tokens are
+**not** synced, not part of the encrypted configuration backup, suite /
+scenario exports or the CI runner, and a file copied to another machine does
+not decrypt there (the list shows *Re-enter value*). Every value is registered
+with the log redactor the moment it is loaded or saved; logs, IPC responses,
+reports and diagnostics never contain it. Playwright traces record raw request
+headers, so while any token is enabled a QA run skips its opt-in trace and
+records *"Trace capture skipped: site access tokens are enabled…"* in the
+case notes instead.
+
+**Evidence** — runs record only *"site access token "<name>" applied to
+<origin>"*: as an INFO log line with the session and run id for launches, and
+in the case's `notes` for QA automation results. Never the value.
+
+**Recommended server-side setup (on your staging / QA environment)**
+
+1. A WAF rule that skips bot and challenge rules **only** when the header
+   matches the secret and the host is your staging host (Cloudflare: *WAF
+   custom rules* with the *Skip* action; Akamai: a request-header match in a
+   security-policy exception). Rotate the value like any other secret.
+2. CAPTCHA vendor **test keys** on staging instead of solving challenges
+   (reCAPTCHA FAQ *test keys*, Cloudflare Turnstile *testing* dummy keys,
+   hCaptcha *test keys*).
+3. Tag every submission that carries the header as a **test lead** in your
+   form backend, so it is never sold, billed, routed to sales or counted in
+   metrics.
+
 ### Network connections
 
 The app only talks to:
@@ -1003,6 +1129,7 @@ listed under Settings → App & updates.
 | Open-sessions record | `<userData>\data\live-sessions.json` | `<userData>/data/live-sessions.json` |
 | Browser version cache | `<userData>\data\engine-versions.json` | `<userData>/data/engine-versions.json` |
 | Finished-task history | `<userData>\data\task-history.json` | `<userData>/data/task-history.json` |
+| Site access tokens (values encrypted with the OS keychain) | `<userData>\data\site-access-tokens.json` | `<userData>/data/site-access-tokens.json` |
 | App's own UI storage (last Launch form, recent/favorite devices, recent locations) | Electron storage inside `<userData>` | same |
 | Temporary unpacked program | `%TEMP%` (portable EXE, every launch) | AppImage mount (`/tmp/.mount_…`) |
 
@@ -1023,9 +1150,10 @@ All settings are stored in the database (`app_settings`) and validated with Zod
 | `screenshotDir` | General → **Screenshot folder** (read-only) | `<userData>/data/screenshots` | Where screenshots are written |
 | `browserExecutables` | Browsers → row **…** → **Set custom path** | `{}` | Executable path per installed browser (yours or saved automatically) |
 | `browserExecutableOrigins` | Browsers (chips **custom** / **auto**) | `{}` | Who set each path: `user` (never overwritten while it exists) or `auto` (dropped when the file disappears) |
-| `defaultProxyPool` | Advanced → Targeting → **Default proxy pool** | `residential` | Pool pre-selected on Launch; pool for raw gateway tests |
+| `defaultProviderId` | Advanced → Targeting → **Default proxy provider** | `dataimpulse` | Provider pre-selected on Launch and for new profiles; provider of raw gateway tests |
+| `defaultProxyPool` | Advanced → Targeting → **Default proxy pool** | `residential` | Product of the default provider pre-selected on Launch; product for raw gateway tests |
 | `defaultTargetCountry` | Advanced → Targeting → **Default country** | `us` | Country pre-filled on Launch (`cr.<code>`) |
-| `targetingEncoding` | Advanced → Targeting → **Place name encoding** | `remove-spaces` | How multi-word places are written: `remove-spaces`, `underscore`, `keep` |
+| `providerOptions` | Advanced → Targeting → **Place name encoding** | `{}` (each provider's default) | Per-provider options keyed by provider id; `encoding` is how multi-word places are written (DataImpulse: `remove-spaces`, `underscore`, `keep`). Replaces the global `targetingEncoding` of earlier versions, whose value is moved to `providerOptions.dataimpulse.encoding` on the first start |
 | `locationMatchPolicy` | Advanced → Targeting → **Location match** | `state` (*Same state*) | `off`, `state` or `exact` — see [policy](#location-match-policy-and-re-rolls) |
 | `locationMatchAttempts` | Advanced → Targeting → **Attempts** | `3` | Total IP checks for the policy (1–8) |
 | `extraChromiumArgs` | Advanced → Browser flags → **Extra Chromium flags** | none | Extra command-line flags (`--flag` or `--flag=value`, one per line) for every Chromium-family launch, bundled and installed; Firefox and WebKit ignore them |
@@ -1049,12 +1177,13 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 | Linux: AppImage fails with a `chrome-sandbox` / namespace error | Unprivileged user namespaces disabled | Enable them (e.g. `sudo sysctl kernel.unprivileged_userns_clone=1` where that sysctl exists, or your distribution's AppArmor/userns setting) |
 | Linux: WebKit does not start from the AppImage, Chromium/Firefox do | glibc older than 2.38 | Use a newer distribution (Ubuntu 24.04+, Debian 13+, Fedora 39+) or other engines |
 | No window opens, Node-style output in the terminal | `ELECTRON_RUN_AS_NODE` is set (editor terminals) | `env -u ELECTRON_RUN_AS_NODE …` |
-| `PROXY_AUTH_FAILED` / HTTP 407 | Wrong username or password, plan inactive, or the plan does not allow the requested option | Re-enter the keys in **Manage keys**, **Test connection** first, then **Save encrypted**. Check the plan in your DataImpulse account |
+| `PROXY_AUTH_FAILED` / HTTP 407 | Wrong username or password, plan inactive, or the plan does not allow the requested option | Re-enter the keys in **Manage keys** (the message names the provider), **Test connection** first, then **Save encrypted**. Check the plan in your provider account |
+| `INVALID_INPUT` *"… uses the proxy provider "x", which this version does not support"* | The profile (or a restored backup / CLI manifest) names a provider this build does not include | Edit the profile and pick a provider, or use a version that includes it. The app never switches a profile to another provider by itself |
 | `PROXY_DEAD` with *"…no exit IP available… (HTTP 503)"* | The gateway has no free exit IP for this new sticky session and location (typical for thin ZIPs) | Launch again later (≈30 min), use rotating mode, or target the city/state — see [ZIP caveat](#zip-targeting-caveat) |
 | `PROXY_DEAD` / `PROXY_TIMEOUT` (other) | Gateway unreachable, port 823 blocked, exit node offline | **Test** the pool under Settings → Advanced → Proxy keys; check firewall/VPN; rotate the session; raise the IP-check timeout |
 | `DNS_FAILURE` | Gateway host or start URL does not resolve | Check the proxy host in **Manage keys**, the start URL and your DNS |
 | `IP_VERIFY_FAILED` | The IP-check service failed or answered strangely | Pick another **Provider** under Advanced → IP verification, raise timeout/retries |
-| `PROXY_NOT_CONFIGURED` / pool shows **Not set up** | No login saved for that pool (Mobile needs its own Mobile-plan login) | **Manage keys** → the pool's tab → enter and save |
+| `PROXY_NOT_CONFIGURED` / pool shows **Not set up** | No login saved for that provider product (DataImpulse Mobile needs its own Mobile-plan login), or the provider does not offer that product | **Manage keys** → the provider → the product's tab → enter and save |
 | Location badge **Mismatch** / **Partial** | Exit IP geolocates elsewhere (carrier IPs, thin pools) | Use **Same state** or **Exact** with more **Attempts**, or a broader target. The run's warning says what was used |
 | Targeted launches rejected or more expensive than expected | State/city/ZIP targeting needs `cr` and is billed 2×; unusual spellings are refused | Keep **Remove spaces (DataImpulse default)**; confirm your plan allows geo targeting |
 | `BROWSER_MISSING` (Chromium/Firefox/WebKit) | Engine not downloaded yet (Windows) | Settings → Browsers → **Install**. The AppImage never needs this |
@@ -1068,7 +1197,8 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 | `SITE_TIMEOUT` | The start URL did not load in time | Raise **Navigation timeout (ms)**; check proxy latency |
 | `SITE_HTTP_ERROR` | The page answered with HTTP 400 or higher | Check the URL; the window stays open for inspection |
 | `SSL_ERROR` | Invalid TLS certificate | Check the domain; try Direct to isolate the proxy |
-| *"Vault could not be decrypted with the current key"* | Key file replaced, vault copied from another PC, keyring changed, or `install.json` recreated | Re-enter and save the credentials |
+| *"Vault could not be decrypted with the current key"* | Key file replaced, vault copied from another PC, keyring changed, or `install.json` recreated — or an **older version** opening a vault this version upgraded | Re-enter and save the credentials; after a downgrade, restore `proxy-credentials.vault.v2.bak` (see [Credential vault](#credential-vault)) |
+| `VAULT_ERROR` *"The credential vault could not be upgraded … backup … .v2.bak"* | The one-time vault upgrade could not write the backup or the new file (disk full, permissions) | Free space / fix permissions on the vault folder and restart; the old vault and its backup are untouched and the keys still work meanwhile |
 | Security health shows *Reduced protection* | No usable OS keychain (Linux without GNOME Keyring/KWallet) | Install and unlock a keyring, restart, then **Rotate key** |
 | A session stays open after closing its window | Older versions kept a windowless browser running | Update: closing the last tab ends the session within about 5 s |
 | Developer: `npm run build:linux` fails with `EACCES` in `~/.cache/electron-builder` | An earlier Docker build left the cache root-owned | `sudo chown -R "$USER:$USER" ~/.cache/electron ~/.cache/electron-builder release`, or build with `ELECTRON_BUILDER_CACHE=$HOME/.cache/electron-builder-local` |
@@ -1079,8 +1209,8 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 
 | Code | Meaning |
 | --- | --- |
-| `PROXY_NOT_CONFIGURED` | No credentials for the selected pool |
-| `VAULT_ERROR` | Vault key or vault file missing, corrupt or not decryptable |
+| `PROXY_NOT_CONFIGURED` | No credentials for the selected provider product (or the provider does not offer it) |
+| `VAULT_ERROR` | Vault key or vault file missing, corrupt or not decryptable, or the vault upgrade failed (the message names the backup) |
 | `PROXY_AUTH_FAILED` | The proxy rejected the credentials (HTTP 407) |
 | `PROXY_TIMEOUT` | The proxy did not answer in time |
 | `PROXY_DEAD` | Could not connect through the gateway, or it refused the session (HTTP 502/503/504) |
@@ -1252,15 +1382,20 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 ```
 
 - **`.env` (development only).** Packaged builds never read a `.env` file or the
-  `DATAIMPULSE_PROXY_*` variables. In development the first existing file wins
+  proxy variables. In development the first existing file wins
   — `<electron executable dir>/.env`, then `<project>/.env`, then
   `<userData>/.env` — and variables already in the environment are not
-  overridden. `.env` credentials map to the **Residential** pool with source
-  *Development .env*; anything saved in the vault takes precedence.
+  overridden. `.env` credentials apply to one provider product with source
+  *Development .env* (`DATAIMPULSE_PROXY_*`: DataImpulse **Residential**);
+  anything saved in the vault takes precedence. The same `QA_PROVIDER*`
+  variables as the CLI runner are accepted (see
+  [docs/ENTERPRISE-DESKTOP.md](docs/ENTERPRISE-DESKTOP.md#ci-command-line-runner));
+  they win over `DATAIMPULSE_PROXY_*`.
 
   | Variable | Purpose |
   | --- | --- |
-  | `DATAIMPULSE_PROXY_HOST`, `DATAIMPULSE_PROXY_PORT`, `DATAIMPULSE_PROXY_USERNAME`, `DATAIMPULSE_PROXY_PASSWORD` | Development Residential login |
+  | `QA_PROVIDER`, `QA_PROVIDER_PRODUCT`, `QA_PROVIDER_HOST`, `QA_PROVIDER_PORT`, `QA_PROVIDER_USERNAME`, `QA_PROVIDER_PASSWORD`, `QA_PROVIDER_EXTRA_<KEY>` | Development login of any provider product (host/port default to the provider's gateway, the product to its first one) |
+  | `DATAIMPULSE_PROXY_HOST`, `DATAIMPULSE_PROXY_PORT`, `DATAIMPULSE_PROXY_USERNAME`, `DATAIMPULSE_PROXY_PASSWORD` | Alias of `QA_PROVIDER=dataimpulse`: development Residential login |
   | `DATAIMPULSE_SESSION_TEMPLATE` | Default sticky-session template (read from the process environment in every build; a template saved with credentials wins) |
   | `PLAYWRIGHT_BROWSERS_PATH` | Override the browsers directory (any build) |
   | `PROXY_QA_DEFAULT_FORM_URL` | Default start URL while none has been saved in Settings (any build) |
@@ -1296,6 +1431,8 @@ Other scripts: `scripts/build-all.sh` (Bash version of `build:all`, always uses
 Docker for Windows), `node scripts/bundle-browsers.mjs --platform linux|win64
 [--webkit-libs] [--force]`, `node scripts/make-icons.mjs` (icons) and
 `node scripts/windows-smoke.cjs` (Windows smoke test).
+
+Headless CI: the `npm run qa` runner, its Docker image (`docker/runner/`) and the reusable GitHub Action (`action/`) are documented in [CI runner](docs/CI-RUNNER.md).
 
 ### Project structure
 
@@ -1392,6 +1529,10 @@ add a new one.
 | 2 | `proxy-sessions-cascade-and-country-code` | `proxy_sessions` rebuilt with `ON DELETE CASCADE` and `country_code` (runs keep `SET NULL`) |
 | 3 | `proxy-pools-and-geo-targeting` | `profiles.proxy_pool`, `target_json`, `sticky_ttl_minutes`, `ephemeral`; `proxy_sessions` and `test_runs`: `pool`, `target_json`, `targeting_string`, `target_match` |
 | 4 | `postal-code-and-location-attempts` | `proxy_sessions.postal_code`; `test_runs.postal_code`, `location_attempts`, `location_max_attempts`, `location_warning` |
+| 5 | `qa-automation-and-workspaces` | QA tables (`qa_workspaces`, `qa_scenarios`, `qa_batches`, `qa_policy`, `qa_schedules`, `qa_gateways`, `qa_audit`) |
+| 6 | `redact-existing-captured-urls` | Redacts query strings already stored in `network_entries` and `test_runs` |
+| 7 | `qa-suites-and-environments` | `qa_suites`, `qa_environments` |
+| 8 | `proxy-providers` | `profiles.proxy_mode` rewritten `dataimpulse-sticky` → `sticky`, `dataimpulse-rotating` → `rotating`; `profiles.provider_id` (`dataimpulse` default); `test_runs.provider` (`dataimpulse` default, NULL for direct runs); `proxy_sessions.provider` is now written per session |
 
 No column ever holds a login or password.
 
@@ -1614,8 +1755,9 @@ GitHub Actions smoke test; as of this README that run is **still pending**.
 
 ## Credits and licences
 
-- **Proxy QA Browser** — © 2026 Ubaid Bin Waris. Private project; the
-  `package.json` licence is `UNLICENSED`.
+- **Proxy QA Browser** — © 2026 Ubaid Bin Waris. Licensed under the
+  [Apache License 2.0](LICENSE); see [NOTICE](NOTICE). An independent open-source
+  project, not affiliated with or endorsed by any employer or customer.
 - **Location data** — postal code data © [GeoNames](https://www.geonames.org),
   licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
   (`resources/geonames/US.txt`; see

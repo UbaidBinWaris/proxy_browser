@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, ChevronRight, Eye, EyeOff, Lock, PlugZap } from 'lucide-react'
-import type { AppError, ProxyCredentialsInput, ProxyCredentialsUpdate, ProxyPool, ProxyPoolStatus, ProxyTestResult, SecurityStatus } from '@shared/types'
-import { PROXY_POOL_LABELS } from '@shared/types'
+import type { AppError, ProductKey, ProxyCredentialsInput, ProxyCredentialsUpdate, ProxyPoolStatus, ProxyTestResult, SecurityStatus } from '@shared/types'
+import { DEFAULT_PRODUCT_KEY, DEFAULT_PROVIDER_ID } from '@shared/types'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -11,7 +11,9 @@ import { Input } from '@/components/ui/Input'
 import { ProxyStatusCard } from '@/components/ProxyStatusCard'
 import { BoolFact, PathRow } from '@/components/SecurityHealthCard'
 import { toAppError } from '@/lib/api'
-import { DEFAULT_PROXY_HOST, emptyCredentialsForm, validateCredentialsForm, validateCredentialsUpdateForm } from '@/lib/credentialsForm'
+import { emptyCredentialsForm, validateCredentialsForm, validateCredentialsUpdateForm } from '@/lib/credentialsForm'
+import { providerProductLabel } from '@/lib/providers'
+import type { ProviderLike } from '@/lib/providers'
 import type { CredentialsFormErrors, CredentialsFormState } from '@/lib/credentialsForm'
 import { unchangedPlaceholder } from '@/lib/proxyKeys'
 import { KEY_BACKEND_VARIANT } from '@/lib/security'
@@ -22,8 +24,13 @@ import { toast } from '@/stores/toasts'
 export interface CredentialsFormProps {
   /** 'setup' = first-run wizard copy; 'update' = Manage keys window copy (talks about replacing stored values). */
   mode: 'setup' | 'update'
-  /** DataImpulse plan these credentials belong to; each pool has its own login on the same gateway. */
-  pool?: ProxyPool
+  /**
+   * Provider the credentials belong to: its capabilities supply the default gateway, the extra
+   * credential fields and the labels. Null while the provider list is loading.
+   */
+  provider: ProviderLike | null
+  /** Product (plan) of the provider these credentials belong to; each product has its own login. */
+  pool?: ProductKey
   /** Active configuration of this pool: pre-fills host/port and shows the masked username. Never carries the password. */
   current?: Pick<ProxyPoolStatus, 'host' | 'port' | 'usernameMasked' | 'configured'> | null
   onSaved?: (status: SecurityStatus) => void
@@ -87,8 +94,12 @@ function SavedSummary({ status }: { status: SecurityStatus }): React.JSX.Element
  * "Test connection" sends one live request through the proxy without persisting anything;
  * "Save encrypted" persists to the vault and activates the credentials immediately.
  */
-export function CredentialsForm({ mode, pool = 'residential', current = null, onSaved, idPrefix = 'credentials', partial = false, compactSuccess = false, className }: CredentialsFormProps): React.JSX.Element {
-  const [form, setForm] = useState<CredentialsFormState>(() => emptyCredentialsForm(current))
+export function CredentialsForm({ mode, provider, pool = DEFAULT_PRODUCT_KEY, current = null, onSaved, idPrefix = 'credentials', partial = false, compactSuccess = false, className }: CredentialsFormProps): React.JSX.Element {
+  const defaults = provider?.capabilities.defaults ?? null
+  const extraFields = provider?.capabilities.extraCredentialFields ?? []
+  const target = { providerId: provider?.id ?? DEFAULT_PROVIDER_ID, exampleHost: defaults?.host ?? null }
+  const label = providerProductLabel(provider, pool)
+  const [form, setForm] = useState<CredentialsFormState>(() => emptyCredentialsForm(current, defaults))
   const [errors, setErrors] = useState<CredentialsFormErrors>({})
   const [showPassword, setShowPassword] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -108,16 +119,26 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
   const saving = busy === 'saving'
   const locked = busy !== null
 
-  // The active configuration usually arrives after mount: adopt its host/port unless the user already typed there.
+  // The active configuration (or the provider's default gateway) usually arrives after mount: adopt its host/port
+  // unless the user already typed there.
   const currentHost = current?.host ?? null
   const currentPort = current?.port ?? null
+  const fillHost = currentHost ?? defaults?.host ?? null
+  const fillPort = currentPort ?? defaults?.port ?? null
   useEffect(() => {
     setForm((f) => ({
       ...f,
-      host: currentHost && !touched.current.has('host') ? currentHost : f.host,
-      port: currentPort !== null && !touched.current.has('port') ? String(currentPort) : f.port,
+      host: fillHost && !touched.current.has('host') ? fillHost : f.host,
+      port: fillPort !== null && !touched.current.has('port') ? String(fillPort) : f.port,
     }))
-  }, [currentHost, currentPort])
+  }, [fillHost, fillPort])
+
+  const setExtra = (key: string, value: string): void => {
+    touched.current.add('extras')
+    setForm((f) => ({ ...f, extras: { ...(f.extras ?? {}), [key]: value } }))
+    setErrors((e) => (e.extras ? { ...e, extras: undefined } : e))
+    setEditedSinceSave(true)
+  }
 
   const set = <K extends keyof CredentialsFormState>(key: K, value: CredentialsFormState[K]): void => {
     touched.current.add(key)
@@ -138,7 +159,7 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
 
   const validate = (): Validated | null => {
     if (partial) {
-      const result = validateCredentialsUpdateForm(form, pool, { current: { host: currentHost, port: currentPort }, templateTouched: touched.current.has('sessionTemplate') })
+      const result = validateCredentialsUpdateForm(form, pool, { current: { host: currentHost, port: currentPort }, templateTouched: touched.current.has('sessionTemplate') }, target)
       if (result.errors) {
         reportErrors(result.errors)
         return null
@@ -146,7 +167,7 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
       setErrors({})
       return { kind: 'partial', update: result.input }
     }
-    const result = validateCredentialsForm(form, pool)
+    const result = validateCredentialsForm(form, pool, target)
     if (result.errors) {
       reportErrors(result.errors)
       return null
@@ -163,8 +184,8 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
     setTestResult(result)
     // The keys window shows the result inline only; elsewhere a toast confirms it too.
     if (compactSuccess) return
-    if (result.status === 'working' && result.ip) toast.success(`${PROXY_POOL_LABELS[pool]} ready`, `Exit IP ${result.ip.ip}`)
-    else if (result.error) toast.error(`${PROXY_POOL_LABELS[pool]} test failed`, `${result.error.code}: ${result.error.message}`)
+    if (result.status === 'working' && result.ip) toast.success(`${label} ready`, `Exit IP ${result.ip.ip}`)
+    else if (result.error) toast.error(`${label} test failed`, `${result.error.code}: ${result.error.message}`)
   }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -176,10 +197,11 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
       const status = validated.kind === 'partial' ? await updateCredentials(validated.update) : await saveCredentials(validated.input)
       setSaved(status)
       setEditedSinceSave(false)
-      // Write-only: the password never stays in the DOM once it is in the vault.
-      setForm((f) => ({ ...f, password: '' }))
+      // Write-only: the password and secret extra fields never stay in the DOM once they are in the vault.
+      const secretKeys = new Set(extraFields.filter((field) => field.secret).map((field) => field.key))
+      setForm((f) => ({ ...f, password: '', extras: Object.fromEntries(Object.entries(f.extras ?? {}).filter(([key]) => !secretKeys.has(key))) }))
       setShowPassword(false)
-      if (!compactSuccess) toast.success(`${PROXY_POOL_LABELS[pool]} credentials saved`, 'Encrypted in the local vault and active now.')
+      if (!compactSuccess) toast.success(`${label} credentials saved`, 'Encrypted in the local vault and active now.')
       onSaved?.(status)
     } catch (err) {
       setSaveError(toAppError(err))
@@ -198,13 +220,14 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
     : mode === 'update' && current?.configured
       ? 'Stored encrypted and never shown again. Enter a password to replace the stored one.'
       : 'Stored encrypted on this machine and never shown again after saving.'
-  const templateHint = 'Optional. Overrides how the sticky session id is appended to the username; must contain {username} and {session}. Leave empty for the DataImpulse default.'
+  const templateDefault = provider?.sessionTemplate ?? null
+  const templateHint = `Optional. Overrides how the sticky session id is appended to the username; must contain {username} and {session}. Leave empty for the ${provider?.displayName ?? 'provider'} default.`
 
   return (
     <form
       onSubmit={(event) => void handleSubmit(event)}
       noValidate
-      aria-label={mode === 'setup' ? `${PROXY_POOL_LABELS[pool]} credentials` : `Update ${PROXY_POOL_LABELS[pool]} credentials`}
+      aria-label={mode === 'setup' ? `${label} credentials` : `Update ${label} credentials`}
       className={cn('flex flex-col gap-5', className)}
     >
       {saveError ? <ErrorAlert error={saveError} title="Could not save credentials" /> : null}
@@ -218,7 +241,7 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
             mono
             autoComplete="off"
             spellCheck={false}
-            placeholder={DEFAULT_PROXY_HOST}
+            placeholder={defaults?.host ?? 'proxy.example.com'}
             invalid={!!errors.host}
             aria-describedby={fieldDescribedBy(hostId, false, !!errors.host)}
           />
@@ -276,37 +299,65 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
             </button>
           </div>
         </Field>
-      </div>
-
-      <div>
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((v) => !v)}
-          aria-expanded={advancedOpen}
-          aria-controls={`${idPrefix}-advanced`}
-          className="focus-ring -ml-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', advancedOpen && 'rotate-90')} aria-hidden="true" />
-          Advanced: sticky session template
-        </button>
-        {advancedOpen ? (
-          <div id={`${idPrefix}-advanced`} className="mt-3">
-            <Field htmlFor={templateId} label="Sticky session template" error={errors.sessionTemplate} hint={templateHint}>
+        {extraFields.map((field) => {
+          const fieldId = `${idPrefix}-extra-${field.key}`
+          const hint = field.secret
+            ? partial
+              ? 'Leave empty to keep the stored value. Stored encrypted and never shown again.'
+              : 'Stored encrypted on this machine and never shown again after saving.'
+            : partial
+              ? 'Leave empty to keep the stored value.'
+              : undefined
+          return (
+            <Field key={field.key} htmlFor={fieldId} label={field.label} error={errors.extras} hint={hint} className="md:col-span-3">
               <Input
-                id={templateId}
-                value={form.sessionTemplate}
-                onChange={(e) => set('sessionTemplate', e.target.value)}
+                id={fieldId}
+                type={field.secret ? 'password' : 'text'}
+                value={form.extras?.[field.key] ?? ''}
+                onChange={(e) => setExtra(field.key, e.target.value)}
                 mono
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="{username}__{session}"
-                invalid={!!errors.sessionTemplate}
-                aria-describedby={fieldDescribedBy(templateId, true, !!errors.sessionTemplate)}
+                placeholder={partial ? 'unchanged' : undefined}
+                invalid={!!errors.extras}
+                aria-describedby={fieldDescribedBy(fieldId, !!hint, !!errors.extras)}
               />
             </Field>
-          </div>
-        ) : null}
+          )
+        })}
       </div>
+
+      {templateDefault !== null ? (
+        <div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            aria-expanded={advancedOpen}
+            aria-controls={`${idPrefix}-advanced`}
+            className="focus-ring -ml-2 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', advancedOpen && 'rotate-90')} aria-hidden="true" />
+            Advanced: sticky session template
+          </button>
+          {advancedOpen ? (
+            <div id={`${idPrefix}-advanced`} className="mt-3">
+              <Field htmlFor={templateId} label="Sticky session template" error={errors.sessionTemplate} hint={templateHint}>
+                <Input
+                  id={templateId}
+                  value={form.sessionTemplate}
+                  onChange={(e) => set('sessionTemplate', e.target.value)}
+                  mono
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={templateDefault}
+                  invalid={!!errors.sessionTemplate}
+                  aria-describedby={fieldDescribedBy(templateId, true, !!errors.sessionTemplate)}
+                />
+              </Field>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {testing || testResult ? (
         <ProxyStatusCard
@@ -314,6 +365,7 @@ export function CredentialsForm({ mode, pool = 'residential', current = null, on
           error={testResult?.error ?? null}
           sessionId={null}
           kind="rotating"
+          provider={provider}
           testing={testing}
           onRetry={locked ? undefined : () => void handleTest()}
           retryLabel="Test again"

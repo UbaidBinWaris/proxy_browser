@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, BookmarkPlus, Camera, MonitorUp, FolderOpen, ImageOff, Save, Trash2, X } from 'lucide-react'
 import type { AppError, NetworkEntry, Profile, RunStatus } from '@shared/types'
-import { BROWSER_ENGINE_LABELS } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, DEFAULT_PROVIDER_ID } from '@shared/types'
 import { EVENTS } from '@shared/ipc'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardBody, CardFooter, CardHeader } from '@/components/ui/Card'
@@ -23,6 +23,8 @@ import { LocationAttemptsNote } from '@/components/LocationAttemptsNote'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { useEvent } from '@/hooks/useEvent'
 import { useLaunch } from '@/hooks/useLaunch'
+import { useProviders } from '@/hooks/useProviders'
+import { findProvider } from '@/lib/providers'
 import { getApi, toAppError, unwrap } from '@/lib/api'
 import { connectionKindForRecord, isBrowserWindowOpen, sessionLabelFor } from '@/lib/launch'
 import { settingsPath } from '@/lib/navigation'
@@ -58,6 +60,7 @@ export function RunDetailPage(): React.JSX.Element {
   const { id = '' } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const run = useRunsStore((s) => selectRunById(s.runs, id))
+  const providers = useProviders()
   const fetchRun = useRunsStore((s) => s.fetch)
   const updateRun = useRunsStore((s) => s.update)
   const removeRun = useRunsStore((s) => s.remove)
@@ -299,6 +302,10 @@ export function RunDetailPage(): React.JSX.Element {
   const proxySessionId = run.proxySessionId ?? session?.proxySessionId ?? null
   const proxyPool = run.proxyPool ?? session?.proxyPool ?? null
   const connection = connectionKindForRecord({ proxyPool, proxySessionId }, profile?.proxyMode ?? null)
+  // Runs recorded before providers were selectable carry no provider: they went through DataImpulse.
+  const providerId = run.provider ?? session?.provider ?? profile?.providerId ?? null
+  const provider = findProvider(providers, providerId ?? DEFAULT_PROVIDER_ID)
+  const providerName = provider?.displayName ?? providerId ?? 'Proxy'
   const sessionLabel = sessionLabelFor(connection, proxySessionId)
   const target = run.target ?? session?.target ?? null
   const targetingString = run.targetingString ?? session?.targetingString ?? null
@@ -441,9 +448,9 @@ export function RunDetailPage(): React.JSX.Element {
                   <Fact label="Browser" value={BROWSER_ENGINE_LABELS[run.engine]} />
                   <Fact label="Device" value={presetLabel} />
                   <Fact label="Public IP" value={orDash(run.publicIp)} mono />
-                  <Fact label="Pool" value={connection === 'direct' ? 'Direct (no proxy)' : poolLabel(proxyPool)} />
+                  <Fact label="Pool" value={connection === 'direct' ? 'Direct (no proxy)' : poolLabel(proxyPool, provider)} />
                   <Fact label="Requested" value={connection === 'direct' ? '—' : describeTarget(target)} />
-                  <Fact label="Connection" value={connection === 'direct' ? 'Direct (no proxy)' : connection === 'unknown' ? '—' : `DataImpulse · ${connection}`} />
+                  <Fact label="Connection" value={connection === 'direct' ? 'Direct (no proxy)' : connection === 'unknown' ? '—' : `${providerName} · ${connection}`} />
                   <Fact label="Proxy session" value={sessionLabel} mono />
                   <div className="col-span-2 min-w-0">
                     <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Targeting string</dt>

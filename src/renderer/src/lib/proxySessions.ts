@@ -13,7 +13,7 @@ export function rotateDisabledReason(session: ProxySession, profile: Profile | n
   if (!session.profileId) return isGatewaySession(session) ? 'The gateway has no sticky session to rotate.' : 'This session is not assigned to a profile.'
   if (!profile) return 'The profile for this session was deleted.'
   if (profile.proxyMode === 'none') return 'This profile connects directly (no proxy).'
-  if (profile.proxyMode === 'dataimpulse-rotating') return 'Rotating profiles get a new exit IP on every connection; there is no sticky session to rotate.'
+  if (profile.proxyMode === 'rotating') return 'Rotating profiles get a new exit IP on every connection; there is no sticky session to rotate.'
   return null
 }
 
@@ -28,7 +28,7 @@ export function testDisabledReason(session: ProxySession, profile: Profile | nul
 /** Session id column: the sticky id, "rotating" for the gateway and rotating profiles, "none" for direct, otherwise a dash. */
 export function proxySessionIdLabel(session: ProxySession, profile: Profile | null): string {
   if (session.sessionId) return session.sessionId
-  if (isGatewaySession(session) || profile?.proxyMode === 'dataimpulse-rotating') return 'rotating'
+  if (isGatewaySession(session) || profile?.proxyMode === 'rotating') return 'rotating'
   if (profile?.proxyMode === 'none') return 'none'
   return '—'
 }

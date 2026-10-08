@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { QaStepSchema, ScenarioInputSchema } from '@shared/qa'
-import type { QaRecording, ScenarioInput } from '@shared/qa'
+import type { QaRecording, QaStep, ScenarioInput } from '@shared/qa'
 import type { BrowserContext } from 'playwright-core'
 import type { Profile, ProfileInput } from '@shared/types'
 import type { ProfileManager } from '../contracts'
 import { AppException } from '../contracts'
 import { navigationGuard } from './navigation'
+import { isHealableStep, normalizeFallbacks } from './healing'
 import { resolveScenario } from './variables'
 import { redactUrl } from '../security/data-privacy'
 
@@ -23,9 +24,13 @@ export async function attachRecorder(
       !allowedOrigins.includes(new URL(frame.url()).origin)
     )
       return
-    const parsed = QaStepSchema.safeParse(raw)
-    if (!parsed.success || !['fill', 'click', 'select', 'check', 'uncheck'].includes(parsed.data.action)) return
-    const step = parsed.data
+    // Fallbacks are validated one by one so a malformed candidate from the page never drops the step.
+    const { fallbacks: rawFallbacks, ...rest } =
+      raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : ({} as Record<string, unknown>)
+    const parsed = QaStepSchema.safeParse(rest)
+    if (!parsed.success || !isHealableStep(parsed.data)) return
+    const fallbacks = normalizeFallbacks(parsed.data.selector, rawFallbacks)
+    const step: QaStep = fallbacks.length ? { ...parsed.data, fallbacks } : parsed.data
     const previous = recording.steps.at(-1)
     if (step.action === 'fill' && previous?.action === 'fill' && previous.selector === step.selector) {
       recording.steps[recording.steps.length - 1] = step
@@ -43,14 +48,7 @@ export async function attachRecorder(
           () => undefined,
         )
       }
-      const selector = (element: Element): string => {
-        if (element.id && document.querySelectorAll(`#${CSS.escape(element.id)}`).length === 1)
-          return `#${CSS.escape(element.id)}`
-        const testId = element.getAttribute('data-testid')
-        if (testId) {
-          const candidate = `[data-testid="${CSS.escape(testId)}"]`
-          if (document.querySelectorAll(candidate).length === 1) return candidate
-        }
+      const path = (element: Element): string => {
         const parts: string[] = []
         let current: Element | null = element
         while (current) {
@@ -65,6 +63,82 @@ export async function attachRecorder(
         }
         return parts.join(' > ')
       }
+      const selector = (element: Element): string => {
+        if (element.id && document.querySelectorAll(`#${CSS.escape(element.id)}`).length === 1)
+          return `#${CSS.escape(element.id)}`
+        const testId = element.getAttribute('data-testid')
+        if (testId) {
+          const candidate = `[data-testid="${CSS.escape(testId)}"]`
+          if (document.querySelectorAll(candidate).length === 1) return candidate
+        }
+        return path(element)
+      }
+      // Self-healing fallbacks. Only attributes, labels and button/link captions are read; never the value
+      // of a text field. Password and data-qa-sensitive fields are excluded before this runs. Long values
+      // are skipped rather than truncated, because a truncated value could never match exactly.
+      const short = (text: string | null | undefined, max: number): string => {
+        const value = (text ?? '').replace(/\s+/g, ' ').trim()
+        return value.length <= max ? value : ''
+      }
+      const isButtonInput = (element: Element): element is HTMLInputElement =>
+        element instanceof HTMLInputElement && ['submit', 'button', 'reset'].includes(element.type)
+      const role = (element: Element): string => {
+        const explicit = element.getAttribute('role')?.trim().split(/\s+/)[0]
+        if (explicit) return explicit
+        if (element instanceof HTMLButtonElement || isButtonInput(element)) return 'button'
+        if (element instanceof HTMLAnchorElement && element.hasAttribute('href')) return 'link'
+        if (element instanceof HTMLSelectElement) return element.multiple || element.size > 1 ? 'listbox' : 'combobox'
+        if (element instanceof HTMLTextAreaElement) return 'textbox'
+        if (element instanceof HTMLInputElement) {
+          if (element.type === 'checkbox' || element.type === 'radio') return element.type
+          if (['text', 'email', 'tel', 'url', 'search'].includes(element.type))
+            return element.hasAttribute('list') ? 'combobox' : element.type === 'search' ? 'searchbox' : 'textbox'
+        }
+        return ''
+      }
+      const labelText = (element: Element): string => {
+        const label = 'labels' in element ? (element as HTMLInputElement).labels?.[0] : undefined
+        // A label wrapping a select or text area also contains option text, so it cannot match exactly.
+        if (label && !label.querySelector('select, textarea, button')) return short(label.textContent, 200)
+        return short(element.getAttribute('aria-label'), 200)
+      }
+      const caption = (element: Element): string =>
+        isButtonInput(element) ? short(element.value, 80) : short(element.textContent, 80)
+      const accessibleName = (element: Element): string => {
+        const aria = short(element.getAttribute('aria-label'), 200)
+        if (aria) return aria
+        const labelledBy = element.getAttribute('aria-labelledby')
+        if (labelledBy)
+          return short(labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent ?? '').join(' '), 200)
+        const label = labelText(element)
+        if (label) return label
+        if (['button', 'link'].includes(role(element))) return caption(element)
+        return short(element.getAttribute('title'), 200)
+      }
+      const fallbacks = (element: Element): unknown[] => {
+        const found: Array<{ kind: string; value: string; name?: string }> = []
+        for (const attribute of ['data-testid', 'data-test', 'data-qa']) {
+          const value = short(element.getAttribute(attribute), 200)
+          if (!value) continue
+          found.push({ kind: 'testid', value, ...(attribute === 'data-testid' ? {} : { name: attribute }) })
+          break
+        }
+        const elementRole = role(element)
+        const name = accessibleName(element)
+        if (elementRole && name) found.push({ kind: 'role', value: elementRole, name })
+        const label = labelText(element)
+        if (label) found.push({ kind: 'label', value: label })
+        if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+          const placeholder = short(element.getAttribute('placeholder'), 200)
+          if (placeholder) found.push({ kind: 'placeholder', value: placeholder })
+        }
+        if (['button', 'link'].includes(elementRole)) {
+          const text = caption(element)
+          if (text) found.push({ kind: 'text', value: text })
+        }
+        found.push({ kind: 'css', value: path(element) })
+        return found
+      }
       document.addEventListener(
         'input',
         (event) => {
@@ -76,7 +150,7 @@ export async function attachRecorder(
           )
             return
           if (target.closest('[data-qa-sensitive]')) return
-          send({ action: 'fill', selector: selector(target), value: target.value })
+          send({ action: 'fill', selector: selector(target), value: target.value, fallbacks: fallbacks(target) })
         },
         true,
       )
@@ -86,9 +160,13 @@ export async function attachRecorder(
           const target = event.target
           if (!event.isTrusted || !(target instanceof Element) || target.closest('[data-qa-sensitive]')) return
           if (target instanceof HTMLSelectElement && !target.multiple)
-            send({ action: 'select', selector: selector(target), value: target.value })
+            send({ action: 'select', selector: selector(target), value: target.value, fallbacks: fallbacks(target) })
           if (target instanceof HTMLInputElement && ['checkbox', 'radio'].includes(target.type))
-            send({ action: target.checked ? 'check' : 'uncheck', selector: selector(target) })
+            send({
+              action: target.checked ? 'check' : 'uncheck',
+              selector: selector(target),
+              fallbacks: fallbacks(target),
+            })
         },
         true,
       )
@@ -99,7 +177,8 @@ export async function attachRecorder(
           const target = event.target.closest(
             'button, a[href], [role="button"], input[type="submit"], input[type="button"]',
           )
-          if (target && !target.closest('[data-qa-sensitive]')) send({ action: 'click', selector: selector(target) })
+          if (target && !target.closest('[data-qa-sensitive]'))
+            send({ action: 'click', selector: selector(target), fallbacks: fallbacks(target) })
         },
         true,
       )

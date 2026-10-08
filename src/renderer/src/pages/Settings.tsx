@@ -2,8 +2,8 @@ import { DesktopSetupCard } from '@/components/DesktopSetupCard'
 import { useEffect, useState } from 'react'
 import { NavLink, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Save } from 'lucide-react'
-import type { AppError, InstalledBrowserEngine, IpCheckProvider, LocationMatchPolicy, ProxyPool } from '@shared/types'
-import { BROWSER_ENGINE_LABELS, IP_CHECK_PROVIDERS, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, PROXY_POOLS, PROXY_POOL_LABELS } from '@shared/types'
+import type { AppError, InstalledBrowserEngine, IpCheckProvider, LocationMatchPolicy, ProductKey } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, IP_CHECK_PROVIDERS, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN } from '@shared/types'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -22,6 +22,7 @@ import { LogsPanel } from '@/components/LogsPanel'
 import { CollapsibleSection } from '@/components/settings/CollapsibleSection'
 import { ProxyKeysSection } from '@/components/settings/ProxyKeysSection'
 import { ProxySessionsTable } from '@/components/settings/ProxySessionsTable'
+import { SiteAccessSection } from '@/components/settings/SiteAccessSection'
 import { useEngineInstallActions } from '@/hooks/useEngineInstall'
 import { shortEngineName } from '@/lib/engines'
 import { toAppError } from '@/lib/api'
@@ -41,14 +42,13 @@ import {
   LOCATION_MATCH_POLICY_HINTS,
   LOCATION_MATCH_POLICY_LABELS,
   LOCATION_MATCH_POLICY_OPTIONS,
-  TARGETING_ENCODINGS,
-  TARGETING_ENCODING_LABELS,
   settingsFormFrom,
   validateSettingsForm,
   withBrowserExecutable,
 } from '@/lib/settingsForm'
-import type { SettingsFormErrors, SettingsFormState, TargetingEncoding } from '@/lib/settingsForm'
+import type { SettingsFormErrors, SettingsFormState } from '@/lib/settingsForm'
 import { encodePlaceName } from '@/lib/targeting'
+import { encodingOptionsFor, findProvider, productKeys, productLabelFor, providerProductLabel, providersWithEncodings } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import type { InstallTarget } from '@/stores/app'
@@ -315,9 +315,18 @@ interface AdvancedTabProps extends FormProps {
 
 function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSection }: AdvancedTabProps): React.JSX.Element {
   const proxySessions = useProxyStore((s) => s.sessions)
+  const providers = useProxyStore((s) => s.providers)
   const liveFlags = parseChromiumArgs(form.extraChromiumArgs)
   const flagsError = errors.extraChromiumArgs ?? flagsErrorMessage(liveFlags.errors) ?? undefined
-  const encodingExample = `cr.us;state.${encodePlaceName('New Jersey', form.targetingEncoding)}`
+  const defaultProvider = findProvider(providers, form.defaultProviderId)
+  const encodingProviders = providersWithEncodings(providers)
+  const productOptions = (defaultProvider ? productKeys(defaultProvider) : [form.defaultProxyPool]).map((pool) => ({ value: pool, label: providerProductLabel(defaultProvider, pool) }))
+  const selectDefaultProvider = (id: string): void => {
+    set('defaultProviderId', id)
+    const chosen = findProvider(providers, id)
+    const offered = productKeys(chosen)
+    if (chosen && !offered.includes(form.defaultProxyPool) && offered[0]) set('defaultProxyPool', offered[0])
+  }
   const section = (id: AdvancedSection, summary: React.ReactNode, children: React.ReactNode): React.JSX.Element => (
     <CollapsibleSection id={id} title={ADVANCED_SECTION_LABELS[id]} summary={summary} open={openSections.has(id)} onToggle={() => onToggleSection(id)}>
       {children}
@@ -328,20 +337,31 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
     <div className="flex flex-col gap-3">
       {section('proxy-keys', null, <ProxyKeysSection />)}
 
+      {section('site-access', null, <SiteAccessSection />)}
+
       {section(
         'targeting',
-        `${PROXY_POOL_LABELS[form.defaultProxyPool].replace('DataImpulse ', '')} · ${form.defaultTargetCountry} · match ${LOCATION_MATCH_POLICY_LABELS[form.locationMatchPolicy].toLowerCase()}`,
+        `${(providers?.length ?? 0) > 1 ? `${defaultProvider?.displayName ?? form.defaultProviderId} ` : ''}${productLabelFor(defaultProvider, form.defaultProxyPool)} · ${form.defaultTargetCountry} · match ${LOCATION_MATCH_POLICY_LABELS[form.locationMatchPolicy].toLowerCase()}`,
         <SettingsForm onSubmit={onSubmit} className="grid grid-cols-1 gap-5 md:grid-cols-2">
+          <Field htmlFor="settings-defaultProviderId" label="Default proxy provider" error={errors.defaultProviderId} hint="Pre-selected for new profiles and on Launch." required>
+            <Select
+              id="settings-defaultProviderId"
+              value={form.defaultProviderId}
+              onChange={(e) => selectDefaultProvider(e.target.value)}
+              options={(providers ?? [{ id: form.defaultProviderId, displayName: form.defaultProviderId }]).map((provider) => ({ value: provider.id, label: provider.displayName }))}
+              aria-describedby={fieldDescribedBy('settings-defaultProviderId', true, !!errors.defaultProviderId)}
+            />
+          </Field>
           <Field htmlFor="settings-defaultProxyPool" label="Default proxy pool" error={errors.defaultProxyPool} hint="Pre-selected on Launch." required>
             <Select
               id="settings-defaultProxyPool"
               value={form.defaultProxyPool}
-              onChange={(e) => set('defaultProxyPool', e.target.value as ProxyPool)}
-              options={PROXY_POOLS.map((pool) => ({ value: pool, label: PROXY_POOL_LABELS[pool] }))}
+              onChange={(e) => set('defaultProxyPool', e.target.value as ProductKey)}
+              options={productOptions}
               aria-describedby={fieldDescribedBy('settings-defaultProxyPool', true, !!errors.defaultProxyPool)}
             />
           </Field>
-          <Field htmlFor="settings-defaultTargetCountry" label="Default country" error={errors.defaultTargetCountry} hint="ISO-2, sent as cr.<code>." required>
+          <Field htmlFor="settings-defaultTargetCountry" label="Default country" error={errors.defaultTargetCountry} hint="ISO-2 code, e.g. US." required>
             <Input
               id="settings-defaultTargetCountry"
               value={form.defaultTargetCountry}
@@ -353,26 +373,35 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
               aria-describedby={fieldDescribedBy('settings-defaultTargetCountry', true, !!errors.defaultTargetCountry)}
             />
           </Field>
-          <Field
-            htmlFor="settings-targetingEncoding"
-            label="Place name encoding"
-            error={errors.targetingEncoding}
-            hint={
-              <>
-                Example: <code className="font-mono text-foreground">{encodingExample}</code>
-              </>
-            }
-            required
-            className="md:col-span-2"
-          >
-            <Select
-              id="settings-targetingEncoding"
-              value={form.targetingEncoding}
-              onChange={(e) => set('targetingEncoding', e.target.value as TargetingEncoding)}
-              options={TARGETING_ENCODINGS.map((encoding) => ({ value: encoding, label: TARGETING_ENCODING_LABELS[encoding] }))}
-              aria-describedby={fieldDescribedBy('settings-targetingEncoding', true, !!errors.targetingEncoding)}
-            />
-          </Field>
+          {encodingProviders.map((provider) => {
+            const fieldId = `settings-encoding-${provider.id}`
+            const options = encodingOptionsFor(provider)
+            const value = form.providerEncodings[provider.id] ?? options[0]?.value ?? ''
+            return (
+              <Field
+                key={provider.id}
+                htmlFor={fieldId}
+                label={encodingProviders.length > 1 ? `Place name encoding (${provider.displayName})` : 'Place name encoding'}
+                error={errors.providerEncodings}
+                hint={
+                  <>
+                    How {provider.displayName} receives multi-word places. Example: New Jersey →{' '}
+                    <code className="font-mono text-foreground">{encodePlaceName('New Jersey', value)}</code>
+                  </>
+                }
+                required
+                className="md:col-span-2"
+              >
+                <Select
+                  id={fieldId}
+                  value={value}
+                  onChange={(e) => set('providerEncodings', { ...form.providerEncodings, [provider.id]: e.target.value })}
+                  options={options}
+                  aria-describedby={fieldDescribedBy(fieldId, true, !!errors.providerEncodings)}
+                />
+              </Field>
+            )
+          })}
           <Field htmlFor="settings-locationMatchPolicy" label="Location match" error={errors.locationMatchPolicy} hint={LOCATION_MATCH_POLICY_HINTS[form.locationMatchPolicy]} required>
             <Select
               id="settings-locationMatchPolicy"
@@ -669,7 +698,7 @@ export function SettingsPage(): React.JSX.Element {
 
   const handleSave = async (): Promise<void> => {
     if (!form || !settings || saving) return
-    const result = validateSettingsForm(form, settings.screenshotDir, settings.browserExecutables)
+    const result = validateSettingsForm(form, settings.screenshotDir, settings.browserExecutables, settings.providerOptions)
     if (result.errors) {
       setErrors(result.errors)
       const first = firstSettingsError(result.errors)

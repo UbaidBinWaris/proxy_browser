@@ -7,13 +7,9 @@ import { EngineIcon } from '@/components/icons/BrandIcon'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { DropdownMenu } from '@/components/ui/DropdownMenu'
 import { describeTarget, poolShortLabel, targetLabel } from '@/lib/targeting'
+import { proxyModeLabel } from '@/lib/providers'
 import { formatDate } from '@/lib/utils'
-
-export const PROXY_MODE_LABELS: Record<Profile['proxyMode'], string> = {
-  none: 'Direct (no proxy)',
-  'dataimpulse-sticky': 'DataImpulse · sticky',
-  'dataimpulse-rotating': 'DataImpulse · rotating',
-}
+import { useProvider } from '@/hooks/useProviders'
 
 export interface ProfileCardProps {
   profile: Profile
@@ -47,6 +43,7 @@ export function ProfileCard({
   onDelete,
 }: ProfileCardProps): React.JSX.Element {
   const usesProxy = profile.proxyMode !== 'none'
+  const provider = useProvider(profile.providerId)
   const proxyStatus = testing ? 'testing' : (proxySession?.status ?? 'untested')
   // Installed browsers show the version read from the binary; bundled engines are described by the Browsers settings.
   const engineVersion = engineInfo?.kind === 'installed' && engineInfo.version ? ` · v${engineInfo.version}` : ''
@@ -99,13 +96,13 @@ export function ProfileCard({
           <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
           <dt className="sr-only">Proxy</dt>
           <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <span>{PROXY_MODE_LABELS[profile.proxyMode]}</span>
+            <span>{proxyModeLabel(profile.proxyMode, provider?.displayName ?? profile.providerId)}</span>
             {usesProxy ? (
-              <Badge variant="default" className="text-[11px]" title="Provider pool">
-                {poolShortLabel(profile.proxyPool)}
+              <Badge variant="default" className="text-[11px]" title="Provider product">
+                {poolShortLabel(profile.proxyPool, provider)}
               </Badge>
             ) : null}
-            {profile.proxyMode === 'dataimpulse-sticky' && profile.stickySessionId ? (
+            {profile.proxyMode === 'sticky' && profile.stickySessionId ? (
               <Badge variant="muted" className="font-mono text-[11px]" title="Sticky session id">
                 {profile.stickySessionId}
               </Badge>
@@ -118,7 +115,7 @@ export function ProfileCard({
             <dt className="sr-only">Requested location</dt>
             <dd className="truncate" title={profile.target ? targetLabel(profile.target) : 'Provider default (no geo target)'}>
               {profile.target ? describeTarget(profile.target) : <span className="text-muted-foreground">Any location (provider default)</span>}
-              {profile.stickyTtlMinutes !== null && profile.proxyMode === 'dataimpulse-sticky' ? <span className="text-muted-foreground"> · TTL {profile.stickyTtlMinutes} min</span> : null}
+              {profile.stickyTtlMinutes !== null && profile.proxyMode === 'sticky' ? <span className="text-muted-foreground"> · TTL {profile.stickyTtlMinutes} min</span> : null}
             </dd>
           </div>
         ) : null}

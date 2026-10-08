@@ -9,19 +9,31 @@ import { DEFAULT_SETTINGS, STICKY_SESSION_ID_PATTERN } from '../src/shared/types
 import { AppException } from '../src/main/contracts'
 import type { BrowserManager, Launcher, Logger, ProfileManager } from '../src/main/contracts'
 import { DEVICE_PRESETS } from '../src/main/browser/device-presets'
-import { DOUBLE_RATE_WARNING, DIRECT_TARGET_WARNING, createLauncher, describeTarget, generateQuickLaunchSessionId, quickLaunchProfileName } from '../src/main/launcher/launcher'
-import { buildTargetingString } from '../src/main/proxy/providers/dataimpulse'
+import { DIRECT_TARGET_WARNING, createLauncher, describeTarget, generateQuickLaunchSessionId, quickLaunchProfileName } from '../src/main/launcher/launcher'
+import type { LauncherProvider } from '../src/main/launcher/launcher'
+import { GEO_TARGETING_BILLING_NOTE as DOUBLE_RATE_WARNING, buildTargetingString, dataImpulseDialect } from '../src/main/proxy/providers/dataimpulse'
 
 const NJ: GeoTarget = { mode: 'state', country: 'us', state: 'New Jersey', stateCode: 'NJ', city: null, zip: null }
 const NEWARK: GeoTarget = { mode: 'city', country: 'us', state: 'New Jersey', stateCode: 'NJ', city: 'Newark', zip: null }
 const ZIP: GeoTarget = { mode: 'zip', country: 'us', state: 'New Jersey', stateCode: 'NJ', city: 'Newark', zip: '07102' }
 const US: GeoTarget = { mode: 'country', country: 'us', state: null, stateCode: null, city: null, zip: null }
 
+/** A resolver over one fake provider; any other id fails like the registry (INVALID_INPUT naming it). */
+function providerResolver(provider: LauncherProvider): { get(id: string): LauncherProvider } {
+  return {
+    get: (id) => {
+      if (id !== provider.name) throw new AppException('INVALID_INPUT', `Unknown proxy provider "${id}".`)
+      return provider
+    },
+  }
+}
+
 const baseInput: QuickLaunchInput = {
   startUrl: 'https://example.com/',
   engine: 'chromium',
   devicePreset: 'iphone-15',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: NJ,
   sticky: true,
   stickyTtlMinutes: null,
@@ -54,6 +66,7 @@ function session(id: string, status: SessionStatus, profileId = `p-${id}`): Brow
     engine: 'chromium',
     devicePreset: 'iphone-15',
     proxyPool: 'residential',
+    provider: 'dataimpulse',
     target: null,
     targetingString: null,
     targetMatch: null,
@@ -148,7 +161,13 @@ function buildHarness(settingsOverrides: Partial<AppSettings> = {}, configured: 
   const launcher = createLauncher({
     profiles,
     browser,
-    targeting: { buildTargetingString: (request) => buildTargetingString(request), isPoolConfigured: (pool) => configuredSet.has(pool) },
+    targeting: providerResolver({
+      name: 'dataimpulse',
+      displayName: dataImpulseDialect.displayName,
+      capabilities: dataImpulseDialect.capabilities,
+      buildTargetingString: (request) => buildTargetingString(request),
+      isPoolConfigured: (pool) => configuredSet.has(pool),
+    }),
     locations: { timezoneForState: (code) => ({ NJ: 'America/New_York', TX: 'America/Chicago' })[code.toUpperCase()] ?? null },
     getSettings: () => settings,
     logger,
@@ -191,6 +210,7 @@ describe('launcher.preview', () => {
     const h = buildHarness()
     const preview = h.launcher.preview(baseInput)
     expect(preview).toEqual({
+      providerId: 'dataimpulse',
       pool: 'residential',
       targetingString: 'cr.us;state.newjersey;sessid.ql-20261005-ssss',
       poolConfigured: true,
@@ -210,8 +230,18 @@ describe('launcher.preview', () => {
       poolConfigured: false,
       warnings: ['DataImpulse Mobile credentials are not configured. Add them under Settings → Advanced → Proxy keys.', DOUBLE_RATE_WARNING],
     })
-    expect(h.launcher.preview({ ...baseInput, proxyPool: 'none' })).toEqual({ pool: 'none', targetingString: null, poolConfigured: true, warnings: [DIRECT_TARGET_WARNING] })
-    expect(h.launcher.preview({ ...baseInput, proxyPool: 'none', target: null })).toEqual({ pool: 'none', targetingString: null, poolConfigured: true, warnings: [] })
+    expect(h.launcher.preview({ ...baseInput, proxyPool: 'none' })).toEqual({ providerId: null, pool: 'none', targetingString: null, poolConfigured: true, warnings: [DIRECT_TARGET_WARNING] })
+    expect(h.launcher.preview({ ...baseInput, proxyPool: 'none', target: null })).toEqual({ providerId: null, pool: 'none', targetingString: null, poolConfigured: true, warnings: [] })
+  })
+
+  it('resolves the provider by id: unknown ids fail with INVALID_INPUT naming them, unsupported requests are flagged', () => {
+    const h = buildHarness()
+    expect(() => h.launcher.preview({ ...baseInput, providerId: 'brightdata' })).toThrowError('Unknown proxy provider "brightdata".')
+    expect(h.launcher.preview({ ...baseInput, proxyPool: 'datacenter' })).toMatchObject({
+      providerId: 'dataimpulse',
+      poolConfigured: false,
+      warnings: [expect.stringMatching(/^DataImpulse does not offer a "datacenter" product \(available: Residential, Mobile\)/), DOUBLE_RATE_WARNING],
+    })
   })
 
   it('validates the input', () => {
@@ -241,7 +271,7 @@ describe('launcher.quickLaunch', () => {
       userAgent: null,
       locale: 'en-US',
       timezone: 'America/New_York',
-      proxyMode: 'dataimpulse-sticky',
+      proxyMode: 'sticky',
       stickySessionId: 'ql-20261005-ssss',
       formUrlOverride: 'https://example.com/',
       notes: 'Quick Launch',
@@ -260,13 +290,13 @@ describe('launcher.quickLaunch', () => {
   it('honours overrides: saveAsProfile, profileName, locale, timezone, TTL, rotating and direct', async () => {
     const h = buildHarness({ singleSessionMode: false })
     await h.launcher.quickLaunch({ ...baseInput, saveAsProfile: true, profileName: 'My NJ run', locale: 'en-GB', timezone: 'Europe/London', stickyTtlMinutes: 90 })
-    expect(h.launches[0]).toMatchObject({ name: 'My NJ run', ephemeral: false, locale: 'en-GB', timezone: 'Europe/London', stickyTtlMinutes: 90, proxyMode: 'dataimpulse-sticky' })
+    expect(h.launches[0]).toMatchObject({ name: 'My NJ run', ephemeral: false, locale: 'en-GB', timezone: 'Europe/London', stickyTtlMinutes: 90, proxyMode: 'sticky' })
 
     await h.launcher.quickLaunch({ ...baseInput, sticky: true, proxyPool: 'residential', target: null, devicePreset: 'windows-desktop', engine: 'firefox', startUrl: null })
     expect(h.launches[1]).toMatchObject({ name: 'Residential · US · Windows · Chrome · 1920×1080', deviceType: 'desktop', engine: 'firefox', timezone: 'America/New_York', formUrlOverride: null, target: null })
 
     await h.launcher.quickLaunch({ ...baseInput, sticky: false, target: { ...NJ, state: 'Texas', stateCode: 'TX' } })
-    expect(h.launches[2]).toMatchObject({ proxyMode: 'dataimpulse-rotating', stickySessionId: null, stickyTtlMinutes: null, timezone: 'America/Chicago' })
+    expect(h.launches[2]).toMatchObject({ proxyMode: 'rotating', stickySessionId: null, stickyTtlMinutes: null, timezone: 'America/Chicago' })
 
     await h.launcher.quickLaunch({ ...baseInput, proxyPool: 'none' })
     expect(h.launches[3]).toMatchObject({ proxyMode: 'none', stickySessionId: null, target: null, proxyPool: 'residential', name: 'Direct · Apple iPhone 15', timezone: 'America/New_York' })

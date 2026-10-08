@@ -1,32 +1,35 @@
-import type { AppSettings, GeoTarget, IpInfo, LocationEntry, LocationMatchPolicy, ProxyPool, TargetMatch, TargetMode } from '@shared/types'
-import { PROXY_POOL_LABELS, TARGET_MODES } from '@shared/types'
+import type { GeoTarget, IpInfo, LocationEntry, LocationMatchPolicy, ProductKey, TargetMatch, TargetMode } from '@shared/types'
+import { TARGET_MODES } from '@shared/types'
+import { productLabelFor, providerProductLabel } from './providers'
+import type { ProviderLike } from './providers'
 import type { StatusTone } from './security'
 
 // ---------------------------------------------------------------------------
-// Pools
+// Products ("pools")
 // ---------------------------------------------------------------------------
 
-/** What the launcher lets the user pick: a provider pool or a direct connection. */
-export type PoolChoice = ProxyPool | 'none'
-export const POOL_CHOICES: readonly PoolChoice[] = ['residential', 'mobile', 'none']
+/** What the launcher lets the user pick: a product of the selected provider, or a direct connection. */
+export type PoolChoice = ProductKey | 'none'
 
-/** Compact labels for radios, badges and table cells. */
-export const POOL_SHORT_LABELS: Record<PoolChoice, string> = {
-  residential: 'Residential',
-  mobile: 'Mobile',
-  none: 'Direct (no proxy)',
+export const DIRECT_LABEL = 'Direct (no proxy)'
+
+/** The launcher's choices for a provider: its products in capability order, then a direct connection. */
+export function poolChoicesFor(provider: Pick<ProviderLike, 'capabilities'> | null | undefined): PoolChoice[] {
+  return [...(provider?.capabilities.products.map((product) => product.key) ?? []), 'none']
 }
 
-/** Full provider label ("DataImpulse Residential"), "Direct (no proxy)" for none, em dash when unknown. */
-export function poolLabel(pool: PoolChoice | null | undefined): string {
+/** Full label ("DataImpulse Residential"), "Direct (no proxy)" for none, em dash when unknown. */
+export function poolLabel(pool: PoolChoice | null | undefined, provider?: Pick<ProviderLike, 'displayName' | 'capabilities'> | null): string {
   if (pool === null || pool === undefined) return '—'
-  if (pool === 'none') return POOL_SHORT_LABELS.none
-  return PROXY_POOL_LABELS[pool]
+  if (pool === 'none') return DIRECT_LABEL
+  return providerProductLabel(provider, pool)
 }
 
-export function poolShortLabel(pool: PoolChoice | null | undefined): string {
+/** Compact label for radios, badges and table cells ("Residential", "Direct (no proxy)"). */
+export function poolShortLabel(pool: PoolChoice | null | undefined, provider?: Pick<ProviderLike, 'capabilities'> | null): string {
   if (pool === null || pool === undefined) return '—'
-  return POOL_SHORT_LABELS[pool]
+  if (pool === 'none') return DIRECT_LABEL
+  return productLabelFor(provider, pool)
 }
 
 // ---------------------------------------------------------------------------
@@ -112,18 +115,18 @@ export function timezoneForState(states: readonly LocationEntry[], stateCode: st
 }
 
 /**
- * How a multi-word place is written in the provider targeting string.
- * DataImpulse publishes `state.newjersey`, i.e. the 'remove-spaces' default.
+ * How a multi-word place is written in the provider targeting string for a provider `encoding`
+ * option ('remove-spaces', 'underscore', 'keep'); unknown values use 'remove-spaces'.
  */
-export function encodePlaceName(name: string, encoding: AppSettings['targetingEncoding']): string {
+export function encodePlaceName(name: string, encoding: string | undefined): string {
   const collapsed = name.trim().toLowerCase().replace(/\s+/g, ' ')
   switch (encoding) {
-    case 'remove-spaces':
-      return collapsed.replace(/ /g, '')
     case 'underscore':
       return collapsed.replace(/ /g, '_')
     case 'keep':
       return collapsed
+    default:
+      return collapsed.replace(/ /g, '')
   }
 }
 

@@ -1,9 +1,11 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BrowserContext, ConsoleMessage, Request, Response } from 'playwright-core'
+import type { BrowserContext, ConsoleMessage, Locator, Request, Response } from 'playwright-core'
 import type { QaExecution, QaStepResult, ScenarioInput } from '@shared/qa'
 import type { VisualStore } from './visual'
 import { visualKey } from './visual'
+import { healingFailureMessage, healingVerdict, locateWithHealing } from './healing'
+import type { HealableStep } from './healing'
 import { navigationGuard } from './navigation'
 import { DEFAULT_MASK_SELECTORS, redactEvidence, redactUrl } from '../security/data-privacy'
 import { compileSecrets, redactString } from '../logging/redact'
@@ -19,6 +21,8 @@ export async function executeScenario(
   const testValues = compileSecrets(scenario.steps.filter((step) => step.action === 'fill').map((step) => step.value))
   const sanitize = (text: string): string => redactString(externalSanitize(text), testValues)
   const started = Date.now()
+  // Scenarios saved before self-healing existed have no mode; the schema default is 'warn'.
+  const healing = scenario.healing ?? 'warn'
   const result: QaExecution = {
     status: 'passed',
     steps: [],
@@ -73,6 +77,28 @@ export async function executeScenario(
       return undefined
     }
   }
+  // Action steps may heal; assertions and navigation always use their selector/value as written.
+  const target = async (step: HealableStep, entry: QaStepResult): Promise<{ locator: Locator; timeout: number }> => {
+    const found = await locateWithHealing(page, step, healing, scenario.timeoutMs)
+    if (found.healed) {
+      const { usedFallback } = found.healed
+      entry.healed = {
+        originalSelector: sanitize(found.healed.originalSelector),
+        usedFallback: {
+          ...usedFallback,
+          value: sanitize(usedFallback.value),
+          ...(usedFallback.name ? { name: sanitize(usedFallback.name) } : {}),
+        },
+        fallbackIndex: found.healed.fallbackIndex,
+        suggestedSelector: sanitize(found.healed.suggestedSelector),
+      }
+      if (healingVerdict(healing) === 'failed') {
+        entry.healed.blocked = true
+        throw new Error(healingFailureMessage(entry.healed))
+      }
+    }
+    return { locator: found.locator, timeout: found.remainingMs }
+  }
   page.on('response', onResponse)
   page.on('console', onConsole)
   page.on('pageerror', onPageError)
@@ -97,21 +123,31 @@ export async function executeScenario(
           case 'goto':
             await page.goto(step.value, { waitUntil: 'domcontentloaded' })
             break
-          case 'fill':
-            await page.locator(step.selector).fill(step.value)
+          case 'fill': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.fill(step.value, { timeout })
             break
-          case 'click':
-            await page.locator(step.selector).click()
+          }
+          case 'click': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.click({ timeout })
             break
-          case 'select':
-            await page.locator(step.selector).selectOption(step.value)
+          }
+          case 'select': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.selectOption(step.value, { timeout })
             break
-          case 'check':
-            await page.locator(step.selector).check()
+          }
+          case 'check': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.check({ timeout })
             break
-          case 'uncheck':
-            await page.locator(step.selector).uncheck()
+          }
+          case 'uncheck': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.uncheck({ timeout })
             break
+          }
           case 'assertScreenshot': {
             if (!visual) throw new Error('Visual comparisons are unavailable for this runner.')
             await page.waitForFunction(() => document.fonts.status === 'loaded', undefined, { timeout: scenario.timeoutMs })

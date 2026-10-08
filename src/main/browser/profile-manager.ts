@@ -6,7 +6,7 @@
 import type { BrowserEngine, DevicePresetInfo, Profile, ProfileInput } from '@shared/types'
 import { BROWSER_ENGINES, BROWSER_ENGINE_LABELS, ProfileInputSchema, STICKY_SESSION_ID_MAX_LENGTH } from '@shared/types'
 import { AppException } from '../contracts'
-import type { Logger, ProfileManager, ProfileRepository } from '../contracts'
+import type { Logger, ProfileManager, ProfileRepository, ProxyProviderResolver } from '../contracts'
 import { DEVICE_PRESETS } from './device-presets'
 
 const SCOPE = 'profiles'
@@ -16,6 +16,30 @@ const COPY_SUFFIX_PATTERN = /\s\(copy(?: \d+)?\)$/
 export interface ProfileManagerOptions {
   repo: ProfileRepository
   logger: Logger
+  /**
+   * Registered proxy providers. When present, create/update check a proxied profile's provider id,
+   * product, target mode and sticky mode against the provider's capabilities (INVALID_INPUT naming
+   * what is unsupported). Stored profiles are checked again when they are resolved for a launch.
+   */
+  providers?: Pick<ProxyProviderResolver, 'has' | 'get' | 'ids'>
+}
+
+/** The first reason the provider cannot serve this proxied profile, or null (always null for a direct profile). */
+export function providerProblem(input: Pick<ProfileInput, 'proxyMode' | 'providerId' | 'proxyPool' | 'target'>, providers: Pick<ProxyProviderResolver, 'has' | 'get' | 'ids'>): string | null {
+  if (input.proxyMode === 'none') return null
+  if (!providers.has(input.providerId)) {
+    return `providerId: the proxy provider "${input.providerId}" is not supported by this version (available: ${providers.ids().join(', ') || 'none'}).`
+  }
+  const provider = providers.get(input.providerId)
+  const { capabilities } = provider
+  if (!capabilities.products.some((product) => product.key === input.proxyPool)) {
+    return `proxyPool: ${provider.displayName} does not offer a "${input.proxyPool}" product (available: ${capabilities.products.map((product) => product.key).join(', ')}).`
+  }
+  if (input.target && !capabilities.targetModes.includes(input.target.mode)) {
+    return `target: ${provider.displayName} does not support ${input.target.mode} targeting (supported: ${capabilities.targetModes.join(', ')}).`
+  }
+  if (input.proxyMode === 'sticky' && !capabilities.sticky.supported) return `proxyMode: ${provider.displayName} does not support sticky sessions.`
+  return null
 }
 
 function parseInput(input: unknown): ProfileInput {
@@ -86,7 +110,7 @@ function collectConsistencyProblems(input: ProfileInput, preset: DevicePresetInf
       `${BROWSER_ENGINE_LABELS[input.engine]} cannot emulate "${preset.label}". Supported engines: ${supported}.`,
     )
   }
-  if (input.proxyMode === 'dataimpulse-sticky' && !input.stickySessionId) {
+  if (input.proxyMode === 'sticky' && !input.stickySessionId) {
     problems.push('Sticky proxy mode requires a session ID. Set one on the profile or switch to rotating.')
   }
   if (!isValidTimezone(input.timezone)) {
@@ -142,6 +166,8 @@ export function createProfileManager(opts: ProfileManagerOptions): ProfileManage
     const problems = collectConsistencyProblems(input, preset)
     const first = problems[0]
     if (first) throw new AppException('INVALID_INPUT', first)
+    const providerIssue = opts.providers ? providerProblem(input, opts.providers) : null
+    if (providerIssue) throw new AppException('INVALID_INPUT', providerIssue)
     return input
   }
 
@@ -159,6 +185,7 @@ export function createProfileManager(opts: ProfileManagerOptions): ProfileManage
         engine: profile.engine,
         devicePreset: profile.devicePreset,
         proxyMode: profile.proxyMode,
+        providerId: profile.providerId,
         proxyPool: profile.proxyPool,
         target: profile.target,
         ephemeral: profile.ephemeral,
@@ -197,6 +224,7 @@ export function createProfileManager(opts: ProfileManagerOptions): ProfileManage
         formUrlOverride: source.formUrlOverride,
         notes: source.notes,
         proxyPool: source.proxyPool,
+        providerId: source.providerId,
         target: source.target ? { ...source.target } : null,
         stickyTtlMinutes: source.stickyTtlMinutes,
         // A copy is always a regular, visible profile.

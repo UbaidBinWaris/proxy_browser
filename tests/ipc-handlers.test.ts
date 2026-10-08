@@ -24,6 +24,7 @@ import type {
   IpInfo,
   LocationEntry,
   Profile,
+  ProviderInfo,
   ProfileInput,
   ProxyCredentialsInput,
   ProxySession,
@@ -43,7 +44,7 @@ import { openDatabase } from '../src/main/database/index'
 import { currentIpFromSessions } from '../src/main/ipc/dashboard'
 import { createLauncher } from '../src/main/launcher/launcher'
 import { createLocationsService } from '../src/main/locations/locations-service'
-import { buildTargetingString } from '../src/main/proxy/providers/dataimpulse'
+import { buildTargetingString, dataImpulseDialect } from '../src/main/proxy/providers/dataimpulse'
 import { allIpcChannels, createBroadcaster, registerIpcHandlers } from '../src/main/ipc/index'
 import type { IpcDeps } from '../src/main/ipc/index'
 import type { InvokeHandler, IpcRegistrar } from '../src/main/ipc/handle'
@@ -84,6 +85,7 @@ const profileInput: ProfileInput = {
   formUrlOverride: null,
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,
@@ -96,6 +98,7 @@ const quickLaunchInput: QuickLaunchInput = {
   engine: 'chromium',
   devicePreset: 'iphone-15',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: NJ,
   sticky: true,
   stickyTtlMinutes: null,
@@ -249,7 +252,21 @@ async function buildHarness(): Promise<Harness> {
     const on = proxyConfigured.current && configuredPools.has(pool)
     return { pool, configured: on, host: on ? 'gw' : null, port: on ? 823 : null, usernameMasked: on ? 'ab****yz' : null, source: on ? ('vault' as const) : ('none' as const) }
   }
+  const configStatus = (): ReturnType<ProxyManager['getConfigStatus']> =>
+    proxyConfigured.current
+      ? { configured: true, pools: [poolStatus('residential'), poolStatus('mobile')], provider: 'dataimpulse', host: 'gw', port: 823, usernameMasked: 'ab****yz', missing: [], source: 'vault' }
+      : { configured: false, pools: [poolStatus('residential'), poolStatus('mobile')], provider: 'dataimpulse', host: null, port: null, usernameMasked: null, missing: ['host', 'port', 'username', 'password'], source: 'none' }
   const proxy: ProxyManager = {
+    providers: () => [
+      {
+        id: 'dataimpulse',
+        displayName: dataImpulseDialect.displayName,
+        docsUrl: dataImpulseDialect.docsUrl,
+        capabilities: structuredClone(dataImpulseDialect.capabilities),
+        sessionTemplate: '{username}{sep}sessid.{session}',
+        status: configStatus(),
+      },
+    ],
     getConfigStatus: () =>
       proxyConfigured.current
         ? { configured: true, pools: [poolStatus('residential'), poolStatus('mobile')], provider: 'dataimpulse', host: 'gw', port: 823, usernameMasked: 'ab****yz', missing: [], source: 'vault' }
@@ -288,6 +305,7 @@ async function buildHarness(): Promise<Harness> {
         engine: profile.engine,
         devicePreset: profile.devicePreset,
         proxyPool: profile.proxyMode === 'none' ? null : profile.proxyPool,
+        provider: 'dataimpulse',
         target: profile.proxyMode === 'none' ? null : profile.target,
         targetingString: null,
         targetMatch: null,
@@ -423,7 +441,18 @@ async function buildHarness(): Promise<Harness> {
   const launcher = createLauncher({
     profiles,
     browser,
-    targeting: { buildTargetingString: (request) => buildTargetingString(request), isPoolConfigured: (pool) => proxyConfigured.current && configuredPools.has(pool) },
+    targeting: {
+      get: (id) => {
+        if (id !== 'dataimpulse') throw new AppException('INVALID_INPUT', `Unknown proxy provider "${id}".`)
+        return {
+          name: 'dataimpulse',
+          displayName: dataImpulseDialect.displayName,
+          capabilities: dataImpulseDialect.capabilities,
+          buildTargetingString: (request) => buildTargetingString(request),
+          isPoolConfigured: (pool) => proxyConfigured.current && configuredPools.has(pool),
+        }
+      },
+    },
     locations,
     getSettings: () => db.settings.get(),
     logger,
@@ -558,15 +587,28 @@ describe('registerIpcHandlers', () => {
     expect(h.deps.proxy.testConnection).toHaveBeenLastCalledWith(null)
     // A raw gateway test may name its pool; a profile test ignores it.
     expect(await h.registrar.invoke(IPC.proxy.testConnection, null, 'mobile')).toMatchObject({ ok: true, data: { sessionId: null } })
-    expect(h.deps.proxy.testConnection).toHaveBeenLastCalledWith(null, 'mobile')
+    expect(h.deps.proxy.testConnection).toHaveBeenLastCalledWith(null, 'mobile', undefined)
+    // …and its provider.
+    await h.registrar.invoke(IPC.proxy.testConnection, null, 'mobile', 'dataimpulse')
+    expect(h.deps.proxy.testConnection).toHaveBeenLastCalledWith(null, 'mobile', 'dataimpulse')
+    expect(await h.registrar.invoke(IPC.proxy.testConnection, null, 'mobile', 'Not A Provider')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
     await h.registrar.invoke(IPC.proxy.testConnection, created.data.id, 'mobile')
     expect(h.deps.proxy.testConnection).toHaveBeenLastCalledWith(expect.objectContaining({ id: created.data.id }))
-    expect(await h.registrar.invoke(IPC.proxy.testConnection, null, 'datacenter')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
+    expect(await h.registrar.invoke(IPC.proxy.testConnection, null, 'Data Center')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
     expect(await h.registrar.invoke(IPC.proxy.testConnection, 'does-not-exist')).toMatchObject({
       ok: false,
       error: { code: 'NOT_FOUND' },
     })
     expect(await h.registrar.invoke(IPC.proxy.getCurrentIp, null)).toMatchObject({ ok: true, data: { ip: ipInfo.ip } })
+  })
+
+  it('proxy.providers lists registered providers with capabilities and status, never credentials', async () => {
+    const res = (await h.registrar.invoke(IPC.proxy.providers)) as { ok: true; data: ProviderInfo[] }
+    expect(res.ok).toBe(true)
+    expect(res.data.map((p) => p.id)).toEqual(['dataimpulse'])
+    expect(res.data[0]).toMatchObject({ displayName: 'DataImpulse', capabilities: { defaults: { host: 'gw.dataimpulse.com', port: 823 } }, status: { provider: 'dataimpulse' } })
+    expect(await h.registrar.invoke(IPC.proxy.providers, 'extra')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
+    expect(await h.registrar.invoke(IPC.proxy.getConfigStatus, 'dataimpulse')).toMatchObject({ ok: true, data: { provider: 'dataimpulse' } })
   })
 
   it('browser.launch resolves the profile and returns the starting session; progress arrives as events', async () => {
@@ -691,6 +733,7 @@ describe('registerIpcHandlers', () => {
       engine: 'chromium',
       devicePreset: 'windows-desktop',
       proxyPool: null,
+      provider: null,
       target: null,
       targetingString: null,
       targetMatch: null,
@@ -923,13 +966,13 @@ describe('registerIpcHandlers', () => {
 
   it('profiles.list hides ephemeral profiles; dashboard counts only saved ones; profiles.update can save an ephemeral one', async () => {
     const saved = (await h.registrar.invoke(IPC.profiles.create, profileInput)) as { data: Profile }
-    const quick = (await h.registrar.invoke(IPC.profiles.create, { ...profileInput, name: 'Quick', ephemeral: true, target: NJ, proxyMode: 'dataimpulse-sticky', stickySessionId: 'ql-1' })) as { data: Profile }
+    const quick = (await h.registrar.invoke(IPC.profiles.create, { ...profileInput, name: 'Quick', ephemeral: true, target: NJ, proxyMode: 'sticky', stickySessionId: 'ql-1' })) as { data: Profile }
     expect(quick.data).toMatchObject({ ephemeral: true, target: NJ, proxyPool: 'residential' })
     expect(((await h.registrar.invoke(IPC.profiles.list)) as { data: Profile[] }).data.map((p) => p.id)).toEqual([saved.data.id])
     expect(((await h.registrar.invoke(IPC.dashboard.stats)) as { data: DashboardStats }).data.totalProfiles).toBe(1)
     expect(await h.registrar.invoke(IPC.profiles.get, quick.data.id)).toMatchObject({ ok: true, data: { id: quick.data.id } })
 
-    const promoted = await h.registrar.invoke(IPC.profiles.update, quick.data.id, { ...profileInput, name: 'Quick', ephemeral: false, target: NJ, proxyMode: 'dataimpulse-sticky', stickySessionId: 'ql-1' })
+    const promoted = await h.registrar.invoke(IPC.profiles.update, quick.data.id, { ...profileInput, name: 'Quick', ephemeral: false, target: NJ, proxyMode: 'sticky', stickySessionId: 'ql-1' })
     expect(promoted).toMatchObject({ ok: true, data: { ephemeral: false } })
     expect(((await h.registrar.invoke(IPC.profiles.list)) as { data: Profile[] }).data).toHaveLength(2)
     expect(((await h.registrar.invoke(IPC.dashboard.stats)) as { data: DashboardStats }).data.totalProfiles).toBe(2)
@@ -985,7 +1028,7 @@ describe('registerIpcHandlers', () => {
     expect(launched.data).toMatchObject({ status: 'starting', engine: 'chromium', devicePreset: 'iphone-15', proxyPool: 'residential', target: NJ })
     expect(h.deps.browser.launch).toHaveBeenCalledTimes(1)
     const profile = h.db.profiles.get(launched.data.profileId)
-    expect(profile).toMatchObject({ ephemeral: true, proxyMode: 'dataimpulse-sticky', target: NJ, timezone: 'America/New_York', locale: 'en-US', formUrlOverride: 'https://example.com/' })
+    expect(profile).toMatchObject({ ephemeral: true, proxyMode: 'sticky', target: NJ, timezone: 'America/New_York', locale: 'en-US', formUrlOverride: 'https://example.com/' })
     expect(profile?.stickySessionId).toMatch(/^ql-\d{8}-[a-z0-9]{4}$/)
     expect(((await h.registrar.invoke(IPC.profiles.list)) as { data: Profile[] }).data).toEqual([])
 
@@ -1029,7 +1072,7 @@ describe('registerIpcHandlers', () => {
   it('security.testCredentials validates the input, delegates to the proxy manager and returns a credential-free result', async () => {
     const res = await h.registrar.invoke(IPC.security.testCredentials, credentials)
     expect(res).toEqual({ ok: true, data: { status: 'working', sessionId: null, ip: ipInfo, error: null } })
-    expect(h.deps.proxy.testCredentials).toHaveBeenCalledWith(credentials)
+    expect(h.deps.proxy.testCredentials).toHaveBeenCalledWith({ ...credentials, providerId: 'dataimpulse', extras: {} })
     expect(JSON.stringify(res)).not.toContain(PASSWORD)
 
     expect(await h.registrar.invoke(IPC.security.testCredentials, { ...credentials, password: '' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
@@ -1045,10 +1088,10 @@ describe('registerIpcHandlers', () => {
     h.sent.length = 0
     const res = (await h.registrar.invoke(IPC.security.saveCredentials, credentials)) as { ok: true; data: SecurityStatus }
     expect(res.ok).toBe(true)
-    expect(res.data).toMatchObject({ vaultPresent: true, decryptOk: true, permissionsOk: true, warnings: [], configuredPools: ['residential'] })
+    expect(res.data).toMatchObject({ vaultPresent: true, decryptOk: true, permissionsOk: true, warnings: [], configuredProducts: { dataimpulse: ['residential'] } })
     expect(res.data.vaultUpdatedAt).not.toBeNull()
-    expect(h.vault.get('residential')).toEqual({ ...credentials, sessionTemplate: null })
-    expect(h.vault.get('mobile')).toBeNull()
+    expect(h.vault.get('dataimpulse', 'residential')).toEqual({ ...credentials, providerId: 'dataimpulse', extras: {}, sessionTemplate: null })
+    expect(h.vault.get('dataimpulse', 'mobile')).toBeNull()
 
     await flush()
     const updates = h.sent.filter((e) => e.channel === EVENTS.securityUpdate)
@@ -1066,25 +1109,26 @@ describe('registerIpcHandlers', () => {
     expect(await h.registrar.invoke(IPC.security.saveCredentials, { ...credentials, host: '' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
   })
 
-  it('security.clearCredentials(pool) removes one pool, the vault file once empty, and broadcasts', async () => {
+  it('security.clearCredentials(provider, product) removes one product, the vault file once empty, and broadcasts', async () => {
     await h.registrar.invoke(IPC.security.saveCredentials, credentials)
     await h.registrar.invoke(IPC.security.saveCredentials, { ...credentials, pool: 'mobile', username: 'ipc_mobile' })
     expect(h.vault.getAll().map((c) => c.pool)).toEqual(['residential', 'mobile'])
     h.sent.length = 0
-    const partial = (await h.registrar.invoke(IPC.security.clearCredentials, 'residential')) as { ok: true; data: SecurityStatus }
-    expect(partial.data).toMatchObject({ vaultPresent: true, configuredPools: ['mobile'] })
-    expect(h.vault.get('residential')).toBeNull()
-    expect(h.vault.get('mobile')?.username).toBe('ipc_mobile')
+    const partial = (await h.registrar.invoke(IPC.security.clearCredentials, 'dataimpulse', 'residential')) as { ok: true; data: SecurityStatus }
+    expect(partial.data).toMatchObject({ vaultPresent: true, configuredProducts: { dataimpulse: ['mobile'] } })
+    expect(h.vault.get('dataimpulse', 'residential')).toBeNull()
+    expect(h.vault.get('dataimpulse', 'mobile')?.username).toBe('ipc_mobile')
 
-    const res = (await h.registrar.invoke(IPC.security.clearCredentials, 'mobile')) as { ok: true; data: SecurityStatus }
-    expect(res.data).toMatchObject({ vaultPresent: false, keyPresent: true, decryptOk: true, configuredPools: [] })
+    const res = (await h.registrar.invoke(IPC.security.clearCredentials, 'dataimpulse', 'mobile')) as { ok: true; data: SecurityStatus }
+    expect(res.data).toMatchObject({ vaultPresent: false, keyPresent: true, decryptOk: true, configuredProducts: {} })
     expect(existsSync(h.vault.vaultPath)).toBe(false)
     expect(h.vault.getAll()).toEqual([])
     await flush()
     expect(h.sent.filter((e) => e.channel === EVENTS.securityUpdate)).toHaveLength(2)
-    expect(await h.registrar.invoke(IPC.security.clearCredentials, 'datacenter')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
-    // Older callers without a pool argument clear residential.
-    expect(await h.registrar.invoke(IPC.security.clearCredentials)).toMatchObject({ ok: true })
+    expect(await h.registrar.invoke(IPC.security.clearCredentials, 'dataimpulse', 'Data Center')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
+    // Both the provider and the product must be named.
+    expect(await h.registrar.invoke(IPC.security.clearCredentials, 'residential')).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
+    expect(await h.registrar.invoke(IPC.security.clearCredentials)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
   })
 
   it('security.updateCredentials merges a partial update with the stored entry (password rotation keeps the username)', async () => {
@@ -1092,8 +1136,8 @@ describe('registerIpcHandlers', () => {
     h.sent.length = 0
     const res = (await h.registrar.invoke(IPC.security.updateCredentials, { pool: 'residential', password: 'rotated-Pass-42' })) as { ok: true; data: SecurityStatus }
     expect(res.ok).toBe(true)
-    expect(res.data.configuredPools).toEqual(['residential'])
-    expect(h.vault.get('residential')).toEqual({ ...credentials, password: 'rotated-Pass-42', sessionTemplate: null })
+    expect(res.data.configuredProducts).toEqual({ dataimpulse: ['residential'] })
+    expect(h.vault.get('dataimpulse', 'residential')).toEqual({ ...credentials, providerId: 'dataimpulse', extras: {}, password: 'rotated-Pass-42', sessionTemplate: null })
     expect(JSON.stringify(res)).not.toContain('rotated-Pass-42')
     await flush()
     expect(h.sent.filter((e) => e.channel === EVENTS.securityUpdate)).toHaveLength(1)
@@ -1101,7 +1145,10 @@ describe('registerIpcHandlers', () => {
 
     // Nothing stored for mobile: the update must be complete.
     expect(await h.registrar.invoke(IPC.security.updateCredentials, { pool: 'mobile', password: 'x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
-    expect(h.vault.get('mobile')).toBeNull()
+    expect(h.vault.get('dataimpulse', 'mobile')).toBeNull()
+    // A provider this build does not know, or a product the provider does not offer, never reaches the vault.
+    expect(await h.registrar.invoke(IPC.security.updateCredentials, { providerId: 'brightdata', pool: 'residential', password: 'x' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: 'Unknown proxy provider "brightdata".' } })
+    expect(await h.registrar.invoke(IPC.security.saveCredentials, { ...credentials, pool: 'datacenter' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT', message: 'DataImpulse does not offer a "datacenter" product.' } })
     expect(await h.registrar.invoke(IPC.security.updateCredentials, { pool: 'residential', port: 'abc' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
     expect(await h.registrar.invoke(IPC.security.updateCredentials)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
   })
@@ -1111,9 +1158,9 @@ describe('registerIpcHandlers', () => {
     const vaultBefore = readFileSync(h.vault.vaultPath, 'utf8')
     const res = await h.registrar.invoke(IPC.security.testCredentialsPartial, { pool: 'residential', password: 'candidate-pass' })
     expect(res).toEqual({ ok: true, data: { status: 'working', sessionId: null, ip: ipInfo, error: null } })
-    expect(h.deps.proxy.testCredentials).toHaveBeenLastCalledWith({ ...credentials, password: 'candidate-pass', sessionTemplate: null })
+    expect(h.deps.proxy.testCredentials).toHaveBeenLastCalledWith({ ...credentials, providerId: 'dataimpulse', extras: {}, password: 'candidate-pass', sessionTemplate: null })
     expect(readFileSync(h.vault.vaultPath, 'utf8')).toBe(vaultBefore)
-    expect(h.vault.get('residential')?.password).toBe(credentials.password)
+    expect(h.vault.get('dataimpulse', 'residential')?.password).toBe(credentials.password)
     expect(await h.registrar.invoke(IPC.security.testCredentialsPartial, { pool: 'mobile' })).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } })
   })
 
@@ -1131,7 +1178,7 @@ describe('registerIpcHandlers', () => {
     expect(res.ok).toBe(true)
     expect(res.data).toMatchObject({ decryptOk: true, vaultPresent: true, keyBackend: 'os-keychain' })
     expect(readFileSync(h.vault.keyPath, 'utf8')).not.toBe(keyBefore)
-    expect(h.vault.get('residential')).toEqual({ ...credentials, sessionTemplate: null })
+    expect(h.vault.get('dataimpulse', 'residential')).toEqual({ ...credentials, providerId: 'dataimpulse', extras: {}, sessionTemplate: null })
   })
 
   it('security.revealLocations opens only the key or vault directory', async () => {

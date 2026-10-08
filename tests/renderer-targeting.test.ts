@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GeoTarget, LocationEntry } from '../src/shared/types'
 import {
-  POOL_SHORT_LABELS,
   TARGET_MATCH_META,
   TARGET_MODE_LABELS,
   countryTarget,
@@ -22,6 +21,10 @@ import {
   timezoneForState,
 } from '../src/renderer/src/lib/targeting'
 import { connectionKindForRecord } from '../src/renderer/src/lib/launch'
+import { dataImpulseDialect } from '../src/main/proxy/providers/dataimpulse'
+
+/** The provider as the renderer receives it from proxy.providers() (capabilities, no credentials). */
+const dataimpulse = { id: 'dataimpulse', displayName: 'DataImpulse', capabilities: dataImpulseDialect.capabilities }
 import { shortId } from '../src/renderer/src/lib/utils'
 
 const state: LocationEntry = { kind: 'state', label: '', country: 'US', state: 'New Jersey', stateCode: 'NJ', city: null, zip: null, timezone: 'America/New_York' }
@@ -73,11 +76,14 @@ describe('location labels (old-tool style)', () => {
 
   it('maps modes and pools to labels', () => {
     expect(TARGET_MODE_LABELS).toEqual({ country: 'Country', state: 'State', city: 'City', zip: 'ZIP' })
-    expect(poolLabel('residential')).toBe('DataImpulse Residential')
-    expect(poolLabel('mobile')).toBe('DataImpulse Mobile')
+    expect(poolLabel('residential', dataimpulse)).toBe('DataImpulse Residential')
+    expect(poolLabel('mobile', dataimpulse)).toBe('DataImpulse Mobile')
+    // Without the provider (still loading) the product key is shown readably.
+    expect(poolLabel('mobile')).toBe('Mobile')
     expect(poolLabel('none')).toBe('Direct (no proxy)')
     expect(poolLabel(null)).toBe('—')
-    expect(poolShortLabel('mobile')).toBe(POOL_SHORT_LABELS.mobile)
+    expect(poolShortLabel('mobile', dataimpulse)).toBe('Mobile')
+    expect(poolShortLabel('none')).toBe('Direct (no proxy)')
     expect(poolShortLabel(undefined)).toBe('—')
   })
 
@@ -173,7 +179,7 @@ describe('run/session record helpers', () => {
     expect(connectionKindForRecord({ proxyPool: 'mobile', proxySessionId: null })).toBe('rotating')
     // A known profile mode wins over the record.
     expect(connectionKindForRecord({ proxyPool: 'residential', proxySessionId: null }, 'none')).toBe('direct')
-    expect(connectionKindForRecord({ proxyPool: null, proxySessionId: 'x' }, 'dataimpulse-sticky')).toBe('sticky')
+    expect(connectionKindForRecord({ proxyPool: null, proxySessionId: 'x' }, 'sticky')).toBe('sticky')
   })
 
   it('shortens ids for the sessions table', () => {

@@ -10,7 +10,9 @@ import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { isBrowserWindowOpen } from '@/lib/launch'
 import { historyRunPath } from '@/lib/navigation'
 import { relativeTime } from '@/lib/security'
-import { describeTarget, locationAttemptsLabel, poolShortLabel } from '@/lib/targeting'
+import { describeTarget, locationAttemptsLabel } from '@/lib/targeting'
+import { recordPoolLabel } from '@/lib/providers'
+import { useProviders } from '@/hooks/useProviders'
 import { describeVerifiedLocation, formatDate, orDash, shortId } from '@/lib/utils'
 
 export interface SessionsTableProps {
@@ -29,6 +31,7 @@ export interface SessionsTableProps {
 
 /** Live browser sessions with a selection column for bulk termination. */
 export function SessionsTable({ sessions, presets, selected, onToggle, onToggleAll, busy, statusBeforeError, onScreenshot, onFocus, onTerminate }: SessionsTableProps): React.JSX.Element {
+  const providers = useProviders()
   const allSelected = sessions.length > 0 && sessions.every((session) => selected.has(session.id))
   const someSelected = sessions.some((session) => selected.has(session.id))
 
@@ -92,7 +95,7 @@ export function SessionsTable({ sessions, presets, selected, onToggle, onToggleA
                 </span>
               </TableCell>
               <TableCell>
-                <Badge variant={session.proxyPool ? 'default' : 'info'}>{poolShortLabel(session.proxyPool ?? 'none')}</Badge>
+                <Badge variant={session.proxyPool ? 'default' : 'info'}>{recordPoolLabel(providers, session.provider, session.proxyPool)}</Badge>
               </TableCell>
               <TableCell className="max-w-[180px]">
                 <span className="block truncate" title={describeTarget(session.target)}>

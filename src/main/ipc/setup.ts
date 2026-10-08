@@ -12,8 +12,9 @@ import type { HandlerSpec } from './handle'
 const LOG_SCOPE = 'setup'
 
 /**
- * Chromium is the minimum browser; proxy credentials are required for every
- * proxy mode. Builds that bundle the browsers never have a pending 'browsers'
+ * Chromium is the minimum browser; proxy credentials (of any registered
+ * provider) are required for every proxy mode. `proxy` describes the default
+ * provider. Builds that bundle the browsers never have a pending 'browsers'
  * step: nothing can (or needs to) be installed.
  */
 export async function buildSetupStatus(deps: IpcDeps): Promise<SetupStatus> {
@@ -22,7 +23,7 @@ export async function buildSetupStatus(deps: IpcDeps): Promise<SetupStatus> {
   const state = deps.install.get()
   const pending: SetupStep[] = []
   if (browsers.source !== 'bundled' && !browsers.chromium) pending.push('browsers')
-  if (!proxy.configured) pending.push('credentials')
+  if (!deps.proxy.providers().some((provider) => provider.status.configured)) pending.push('credentials')
   return {
     firstRun: state.setupCompletedAt === null,
     completedAt: state.setupCompletedAt,

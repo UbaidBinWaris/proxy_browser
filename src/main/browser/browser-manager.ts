@@ -89,6 +89,7 @@ import { DEVICE_PRESETS, buildContextOptions } from './device-presets'
 import { mapLaunchError, mapNavigationError, sanitizeErrorText, shortErrorText } from './error-mapping'
 import { attachNetworkInspector } from './network-inspector'
 import { DEFAULT_MASK_SELECTORS, redactUrl } from '../security/data-privacy'
+import type { SiteAccessAttacher } from '../site-access'
 
 const SCOPE = 'browser'
 /** Per-session budget for `closeAll()` (app shutdown). */
@@ -141,6 +142,8 @@ export interface BrowserManagerOptions {
   /** Find a Chromium-family session's browser pid by its `--proxy-qa-session` marker. */
   findBrowserPid?: (sessionId: string) => Promise<number | null>
   heartbeatIntervalMs?: number
+  /** Site access tokens (src/main/site-access): routes enabled tokens into every new context. */
+  siteAccess?: SiteAccessAttacher
 }
 
 interface LiveSession {
@@ -186,7 +189,7 @@ interface VerifiedExit {
 
 /** Attempt budget for a launch: re-rolls only apply to a sticky session with a target and a policy other than 'off'. */
 export function locationAttemptBudget(profile: Profile, settings: Pick<AppSettings, 'locationMatchPolicy' | 'locationMatchAttempts'>): number {
-  const eligible = profile.proxyMode === 'dataimpulse-sticky' && profile.target !== null && settings.locationMatchPolicy !== 'off'
+  const eligible = profile.proxyMode === 'sticky' && profile.target !== null && settings.locationMatchPolicy !== 'off'
   return eligible ? Math.max(1, settings.locationMatchAttempts) : 1
 }
 
@@ -611,6 +614,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     }
     const context = await ls.browser.newContext(buildContextOptions(ls.profile, preset))
     ls.context = context
+    await opts.siteAccess?.attach(context, (note) => logger.info(SCOPE, `${label(ls)}: ${note}`, { sessionId: ls.session.id, runId: ls.runId }))
     context.on('close', () => finalize(ls, 'window closed'))
     // Tabs the user opens are watched too: the session ends when the last one closes.
     context.on('page', (opened: Page) => watchPage(ls, opened))
@@ -847,7 +851,12 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       // Keep the window open so the tester can inspect the error page; the run stays failed unless re-marked.
       failSession(
         ls,
-        mapNavigationError(err, { timeoutMs: settings.navigationTimeoutMs, viaProxy: ls.connection !== null, secrets: ls.secrets }),
+        mapNavigationError(err, {
+          timeoutMs: settings.navigationTimeoutMs,
+          viaProxy: ls.connection !== null,
+          secrets: ls.secrets,
+          ...(ls.connection ? { providerName: proxy.providers().find((candidate) => candidate.id === ls.profile.providerId)?.displayName } : {}),
+        }),
       )
       return
     }
@@ -884,7 +893,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     if (busy) throw new AppException('ENGINE_BUSY', busy)
     // Throws BROWSER_MISSING (with the engine's note) before any run is recorded.
     const engineInfo = await provisioner.resolveEngine(profile.engine)
-    // Throws PROXY_NOT_CONFIGURED (naming the pool) before any run is recorded.
+    // Throws PROXY_NOT_CONFIGURED (naming the product) or INVALID_INPUT (unknown provider) before any run is recorded.
     const connection = proxy.resolveForProfile(profile)
     const formUrl = resolveFormUrl(profile, settings)
     const startedAt = new Date().toISOString()
@@ -895,6 +904,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       profileName: profile.name,
       engine: profile.engine,
       devicePreset: profile.devicePreset,
+      provider: connection ? profile.providerId : null,
       proxyPool: connection?.pool ?? null,
       target: connection?.target ?? null,
       targetingString: connection?.targetingString || null,
@@ -930,6 +940,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         profileName: profile.name,
         engine: profile.engine,
         devicePreset: profile.devicePreset,
+        provider: connection ? profile.providerId : null,
         proxyPool: connection?.pool ?? null,
         target: connection?.target ?? null,
         targetingString: connection?.targetingString || null,
@@ -976,6 +987,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       executablePath: engineInfo.executablePath,
       devicePreset: profile.devicePreset,
       proxyMode: profile.proxyMode,
+      provider: connection ? profile.providerId : null,
       proxyPool: connection?.pool ?? null,
       targeting: connection?.targetingString || null,
       proxySessionId: connection?.sessionId ?? null,

@@ -27,6 +27,9 @@ import type {
   NetworkEntry,
   Profile,
   ProfileInput,
+  ProviderCapabilities,
+  ProviderId,
+  ProviderInfo,
   CredentialSource,
   GeoTarget,
   LocationEntry,
@@ -36,7 +39,7 @@ import type {
   LocationSearch,
   ProxyConfigStatus,
   ProxyCredentialsInput,
-  ProxyPool,
+  ProductKey,
   TargetingPreview,
   ProxySession,
   ProxyStatus,
@@ -104,9 +107,11 @@ export interface ProfileRepository {
   count(options?: ProfileListOptions): number
 }
 
-/** Pool/target context recorded on a proxy session row alongside the sticky id. */
+/** Provider/product/target context recorded on a proxy session row alongside the sticky id. */
 export interface ProxySessionContext {
-  pool: ProxyPool
+  /** Defaults to DataImpulse when omitted (callers written before providers existed). */
+  providerId?: ProviderId
+  pool: ProductKey
   target: GeoTarget | null
   targetingString: string | null
 }
@@ -178,19 +183,29 @@ export interface Database {
 // Credential vault
 // ---------------------------------------------------------------------------
 
-/** Decrypted proxy credentials. Main process memory only. */
+/** Decrypted credentials of one provider product. Main process memory only. */
 export interface ProxyCredentials {
-  pool: ProxyPool
+  /** Product key. */
+  pool: ProductKey
   host: string
   port: number
   username: string
   password: string
   sessionTemplate: string | null
+  /** Provider-specific extra fields (`capabilities.extraCredentialFields`); encrypted in the vault like the password. */
+  extras?: Record<string, string>
+}
+
+/** A vault entry: one product's credentials of one provider. */
+export interface StoredProxyCredentials extends ProxyCredentials {
+  providerId: ProviderId
+  extras: Record<string, string>
 }
 
 /** Everything the provider needs to build one connection. */
 export interface ProxyRequest {
-  pool: ProxyPool
+  /** Product key. */
+  pool: ProductKey
   /** Sticky session id, or null for a rotating connection. */
   sessionId: string | null
   target: GeoTarget | null
@@ -198,7 +213,7 @@ export interface ProxyRequest {
 }
 
 /**
- * Encrypted, per-machine credential store.
+ * Encrypted, per-machine credential store, keyed by (provider id, product).
  * - Vault file: AES-256-GCM, lives under <userData>/vault/.
  * - Key file: random 256-bit key wrapped by the OS keychain (Electron safeStorage:
  *   DPAPI / libsecret / kwallet) or, when no keychain is available, by a
@@ -207,23 +222,25 @@ export interface ProxyRequest {
  * - All methods are network-free except none; proxy tests live in ProxyManager.
  */
 export interface CredentialVault {
-  /** Current decrypted credentials for a pool (null when none/undecryptable). */
-  get(pool: ProxyPool): ProxyCredentials | null
-  /** Every configured pool. */
-  getAll(): ProxyCredentials[]
+  /** Current decrypted credentials of one provider product (null when none/undecryptable). */
+  get(providerId: ProviderId, product: ProductKey): StoredProxyCredentials | null
+  /** Every configured product of every provider. */
+  getAll(): StoredProxyCredentials[]
   /** Local health check: key readable, vault decrypts, integrity ok, permissions ok. */
   status(): Promise<SecurityStatus>
   /** Encrypt, write, read back and verify. Emits onChange. */
   save(input: ProxyCredentialsInput): Promise<SecurityStatus>
-  /** Remove one pool's credentials (key is kept). Emits onChange. */
-  clear(pool: ProxyPool): Promise<SecurityStatus>
+  /** Remove one provider product's credentials (key is kept). Emits onChange. */
+  clear(providerId: ProviderId, product: ProductKey): Promise<SecurityStatus>
   /** Generate a fresh key and re-encrypt the vault with it. */
   rotateKey(): Promise<SecurityStatus>
   /** Record the latest on-demand proxy test so health can show it without re-testing. */
   recordProxyTest(status: ProxyStatus, at: string): void
-  onChange(listener: (credentials: ProxyCredentials[]) => void): () => void
+  onChange(listener: (credentials: StoredProxyCredentials[]) => void): () => void
   readonly keyPath: string
   readonly vaultPath: string
+  /** Where the pre-v3 vault file is copied before it is rewritten in the v3 format. */
+  readonly backupPath: string
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +252,8 @@ export interface ProxyConnection {
   server: string
   username: string
   password: string
-  pool: ProxyPool
+  /** Product key. */
+  pool: ProductKey
   /** Sticky session id embedded in the username, if any. */
   sessionId: string | null
   target: GeoTarget | null
@@ -244,11 +262,20 @@ export interface ProxyConnection {
 }
 
 export interface ProxyProvider {
-  readonly name: 'dataimpulse'
+  readonly name: ProviderId
+  /** Human name for messages and labels ("DataImpulse"). */
+  readonly displayName: string
+  /** Official parameter documentation. */
+  readonly docsUrl: string
+  /** What the provider supports (products, target modes, sticky sessions, …). */
+  readonly capabilities: ProviderCapabilities
+  /** Default sticky-session template when the provider supports user templates; null/absent otherwise. */
+  readonly sessionTemplateDefault?: string | null
   isConfigured(): boolean
-  /** Swap the active credentials at runtime (vault saved/cleared). Replaces the whole pool set. */
+  /** Swap the active credentials at runtime (vault saved/cleared). Replaces the whole product set. */
   setCredentials(credentials: ProxyCredentials[], source: CredentialSource): void
-  isPoolConfigured(pool: ProxyPool): boolean
+  /** Product key → credentials present. */
+  isPoolConfigured(pool: ProductKey): boolean
   /** Test arbitrary credentials through the gateway WITHOUT changing the active ones. */
   testCredentials(input: ProxyCredentialsInput): Promise<ProxyTestResult>
   /** Public, password-free description of the configuration (per pool). */
@@ -264,6 +291,23 @@ export interface ProxyProvider {
   createSession(profileName: string): string
   /** Produce a new, different session id (e.g. suffix increment / random). */
   rotateSession(currentSessionId: string | null, profileName: string): string
+  /**
+   * Optional: is a failed exit-IP check worth re-rolling the sticky session for? False stops the
+   * location re-roll early (e.g. an exhausted location pool). Absent → every failure except
+   * rejected credentials is retried.
+   */
+  isRetryableLocationFailure?(error: AppError): boolean
+}
+
+/**
+ * Resolves proxy providers by id. Implemented by `ProviderRegistry`; `get` of an unknown id
+ * throws INVALID_INPUT naming it (never a silent fallback to another provider).
+ */
+export interface ProxyProviderResolver {
+  get(id: string): ProxyProvider
+  has(id: string): boolean
+  /** Registered provider ids, in picker order. */
+  ids(): ProviderId[]
 }
 
 /** A re-roll is about to start (reported before its IP check). */
@@ -307,7 +351,10 @@ export interface LaunchVerification {
 }
 
 export interface ProxyManager {
-  getConfigStatus(): ProxyConfigStatus
+  /** Password-free configuration of one provider (default: the settings' default provider). */
+  getConfigStatus(providerId?: ProviderId): ProxyConfigStatus
+  /** Every registered provider with its capabilities and configuration status (no secrets). */
+  providers(): ProviderInfo[]
   /** Live test of candidate credentials through the gateway; active credentials and ProxySession rows are untouched. */
   testCredentials(input: ProxyCredentialsInput): Promise<ProxyTestResult>
   /** Resolve the proxy connection for a profile according to its proxyMode/pool/target. Null when proxyMode is 'none'. */
@@ -316,9 +363,9 @@ export interface ProxyManager {
   compareTarget(target: GeoTarget | null, ip: IpInfo | null): TargetMatch | null
   /**
    * Test the proxy for a profile (or raw gateway when profile is null), persisting the ProxySession row.
-   * `pool` overrides the default pool of a raw gateway test; it is ignored for a profile.
+   * `pool` / `providerId` override the default product / provider of a raw gateway test; they are ignored for a profile.
    */
-  testConnection(profile: Profile | null, pool?: ProxyPool): Promise<ProxyTestResult>
+  testConnection(profile: Profile | null, pool?: ProductKey, providerId?: ProviderId): Promise<ProxyTestResult>
   /**
    * Pre-launch check of a proxied profile: test the exit IP and, for a sticky session with a target,
    * re-roll the sticky session id while the verified location falls short of `options.policy`.

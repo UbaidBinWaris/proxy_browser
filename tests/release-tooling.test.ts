@@ -3,10 +3,10 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { UsbReleaseSchema } from '../src/shared/desktop'
+import { DESKTOP_APP_ID, UsbReleaseSchema } from '../src/shared/desktop'
 // The publisher command is plain Node ESM and is also tested directly here.
 // @ts-expect-error Node scripts intentionally do not ship TypeScript declarations.
-import { bumpVersion, nextVersion, initializeKeys, createUsbRelease, createServerRelease, createServerReleaseFromMetadata } from '../scripts/release.mjs'
+import { bumpVersion, nextVersion, initializeKeys, createUsbRelease, createServerRelease, createServerReleaseFromMetadata, manifestAppId, syncRunnerPins } from '../scripts/release.mjs'
 
 const folders: string[] = []
 afterEach(async () => { await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))) })
@@ -32,6 +32,23 @@ it('increments semantic versions and synchronizes the package and lockfile', asy
   const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'))
   expect(lock.version).toBe('1.3.0')
   expect(lock.packages[''].version).toBe('1.3.0')
+})
+
+it('moves the CI runner image and action pins to the released version', async () => {
+  const root = await fixture()
+  await mkdir(join(root, 'action'), { recursive: true })
+  await writeFile(join(root, 'action', 'action.yml'), 'default: ghcr.io/ubaidbinwaris/proxy-qa-runner:1.2.0\n')
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(
+    join(root, 'docs', 'CI-RUNNER.md'),
+    'uses: UbaidBinWaris/proxy_browser/action@v1.2.0\nimage proxy-qa-runner:1.2.0 and playwright:v1.63.0\n',
+  )
+  expect(bumpVersion(root, 'minor')).toBe('1.3.0')
+  expect(await readFile(join(root, 'action', 'action.yml'), 'utf8')).toBe('default: ghcr.io/ubaidbinwaris/proxy-qa-runner:1.3.0\n')
+  expect(await readFile(join(root, 'docs', 'CI-RUNNER.md'), 'utf8')).toBe(
+    'uses: UbaidBinWaris/proxy_browser/action@v1.3.0\nimage proxy-qa-runner:1.3.0 and playwright:v1.63.0\n',
+  )
+  expect(syncRunnerPins(root, '1.3.0')).toEqual([])
 })
 
 it('refuses inconsistent versions before writing either file', async () => {
@@ -102,4 +119,11 @@ it('signs CI job metadata without trusting a server-provided hash or requiring l
   expect(await createServerReleaseFromMetadata(root, assets)).toBe('1.2.0')
   const envelope = JSON.parse(await readFile(join(root, 'release', 'update.json'), 'utf8'))
   expect(JSON.parse(envelope.payload).assets.map((a: { sha256: string }) => a.sha256)).toEqual(['a'.repeat(64), 'b'.repeat(64)])
+})
+
+it('writes the current app identity unless a valid legacy identity is configured', () => {
+  expect(manifestAppId(undefined)).toBe(DESKTOP_APP_ID)
+  expect(manifestAppId('  ')).toBe(DESKTOP_APP_ID)
+  expect(manifestAppId('com.example.legacy-app')).toBe('com.example.legacy-app')
+  expect(() => manifestAppId('not an id')).toThrow('reverse-DNS')
 })

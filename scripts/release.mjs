@@ -7,7 +7,19 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const APP_ID = 'com.letsscall.proxy-qa-browser'
+/**
+ * Identity written into release manifests. Set PROXY_QA_MANIFEST_APP_ID to the
+ * identity of an older release while copies of it still install USB updates:
+ * releases before 1.4.0 accept only their own identity, newer ones accept both.
+ */
+const APP_ID = manifestAppId(process.env.PROXY_QA_MANIFEST_APP_ID)
+
+export function manifestAppId(override) {
+  const value = override?.trim() || 'com.ubaidbinwaris.proxy-qa-browser'
+  if (!/^[a-z0-9]+(\.[a-z0-9-]+)+$/.test(value) || value.length > 200)
+    throw new Error('PROXY_QA_MANIFEST_APP_ID must be a reverse-DNS application identity.')
+  return value
+}
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const json = (path) => JSON.parse(readFileSync(path, 'utf8'))
 const writeJson = (path, value) => writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
@@ -43,7 +55,28 @@ export function bumpVersion(root, requested) {
   lock.packages[''].version = version
   writeJson(pkgPath, pkg)
   writeJson(lockPath, lock)
+  syncRunnerPins(root, version)
   return version
+}
+
+/** Files that pin the CI runner image or action to a release; the runner-image workflow refuses a mismatch. */
+export const RUNNER_PIN_FILES = ['action/action.yml', 'docs/CI-RUNNER.md', 'examples/ci/github-workflow.yml']
+
+export function syncRunnerPins(root, version) {
+  const changed = []
+  for (const file of RUNNER_PIN_FILES) {
+    const path = join(root, file)
+    if (!existsSync(path)) continue
+    const before = readFileSync(path, 'utf8')
+    const after = before
+      .replace(/(proxy-qa-runner:)\d+\.\d+\.\d+/g, `$1${version}`)
+      .replace(/(proxy_browser\/action@v)\d+\.\d+\.\d+/g, `$1${version}`)
+    if (after !== before) {
+      writeFileSync(path, after)
+      changed.push(file)
+    }
+  }
+  return changed
 }
 
 export function initializeKeys(root) {

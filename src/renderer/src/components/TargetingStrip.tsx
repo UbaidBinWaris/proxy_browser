@@ -5,6 +5,7 @@ import type { LoadStatus } from '@/lib/result'
 import { describeTarget, poolLabel } from '@/lib/targeting'
 import type { PoolChoice } from '@/lib/targeting'
 import { cn } from '@/lib/utils'
+import { useProvider } from '@/hooks/useProviders'
 
 export interface TargetingStripProps {
   pool: PoolChoice
@@ -25,6 +26,7 @@ export interface TargetingStripProps {
  * readers; a pool without keys is the one blocking problem and is spelled out under the line.
  */
 export function TargetingStrip({ pool, target, preview, status, error, blockedReason = null, policySummary = null, className }: TargetingStripProps): React.JSX.Element {
+  const provider = useProvider(preview?.providerId)
   const notConfigured = preview !== null && pool !== 'none' && !preview.poolConfigured
   const loading = status === 'loading' && preview === null
   const warnings = pool === 'none' ? [] : (preview?.warnings ?? [])
@@ -50,7 +52,7 @@ export function TargetingStrip({ pool, target, preview, status, error, blockedRe
   else if (preview?.targetingString)
     body = (
       <>
-        <code className="min-w-0 flex-1 truncate font-mono text-xs" title={`${poolLabel(pool)} · ${describeTarget(target)} · ${preview.targetingString}`}>
+        <code className="min-w-0 flex-1 truncate font-mono text-xs" title={`${poolLabel(pool, provider)} · ${describeTarget(target)} · ${preview.targetingString}`}>
           {preview.targetingString}
         </code>
         <CopyButton value={preview.targetingString} label="Copy targeting string" />
@@ -75,7 +77,7 @@ export function TargetingStrip({ pool, target, preview, status, error, blockedRe
       {notConfigured ? (
         <p role="alert" className="flex items-center gap-1.5 text-xs text-destructive">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {poolLabel(pool)} has no keys. Add them with “Manage keys” before connecting.
+          {poolLabel(pool, provider)} has no keys. Add them with “Manage keys” before connecting.
         </p>
       ) : null}
     </section>

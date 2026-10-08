@@ -1,8 +1,9 @@
 import { KeyRound, Shuffle } from 'lucide-react'
-import type { ProxyPool, ProxyPoolStatus } from '@shared/types'
-import { PROXY_POOLS, PROXY_POOL_LABELS } from '@shared/types'
+import type { ProductKey, ProxyPoolStatus } from '@shared/types'
 import { Button } from '@/components/ui/Button'
-import { POOL_TAB_LABELS, poolStatusFor, unconfiguredPools } from '@/lib/proxyKeys'
+import { productKeys, productLabelFor, providerProductLabel } from '@/lib/providers'
+import type { ProviderLike } from '@/lib/providers'
+import { poolStatusFor, unconfiguredPools } from '@/lib/proxyKeys'
 import type { PoolChoice } from '@/lib/targeting'
 import { cn } from '@/lib/utils'
 
@@ -10,7 +11,9 @@ export interface PoolPickerProps {
   id: string
   value: PoolChoice
   onChange: (pool: PoolChoice) => void
-  /** From `proxy.getConfigStatus().pools`; null while loading (nothing is disabled then). */
+  /** The selected provider: its products are the cards. Null while loading. */
+  provider: Pick<ProviderLike, 'displayName' | 'capabilities'> | null
+  /** The provider's per-product status; null while loading (nothing is disabled then). */
   pools: readonly ProxyPoolStatus[] | null
   onRandom: () => void
   /** Opens the secure "Manage proxy keys" window; offered while a pool is not set up. */
@@ -18,9 +21,9 @@ export interface PoolPickerProps {
   disabled?: boolean
 }
 
-/** Which pools can be picked at random: the configured ones. */
-export function configuredPools(pools: readonly ProxyPoolStatus[] | null | undefined): ProxyPool[] {
-  return PROXY_POOLS.filter((pool) => pools?.some((status) => status.pool === pool && status.configured) ?? false)
+/** Which products can be picked at random: the configured ones, in status order. */
+export function configuredPools(pools: readonly ProxyPoolStatus[] | null | undefined): ProductKey[] {
+  return (pools ?? []).filter((status) => status.configured).map((status) => status.pool)
 }
 
 type DotTone = 'success' | 'warning' | 'info' | 'muted'
@@ -32,8 +35,9 @@ const DOT_CLASSES: Record<DotTone, string> = {
   muted: 'bg-muted-foreground',
 }
 
-/** Compact one-line radio cards: Residential / Mobile / Direct, each with a status dot. */
-export function PoolPicker({ id, value, onChange, pools, onRandom, onManageKeys, disabled = false }: PoolPickerProps): React.JSX.Element {
+/** Compact one-line radio cards: the provider's products (e.g. Residential / Mobile) and Direct, each with a status dot. */
+export function PoolPicker({ id, value, onChange, provider, pools, onRandom, onManageKeys, disabled = false }: PoolPickerProps): React.JSX.Element {
+  const products = productKeys(provider)
   const configured = configuredPools(pools)
   const missing = unconfiguredPools(pools)
 
@@ -80,13 +84,20 @@ export function PoolPicker({ id, value, onChange, pools, onRandom, onManageKeys,
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <div role="radiogroup" aria-labelledby={`${id}-label`} className="grid min-w-0 flex-1 grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2">
-          {PROXY_POOLS.map((pool) => {
+        <div
+          role="radiogroup"
+          aria-labelledby={`${id}-label`}
+          className="grid min-w-0 flex-1 gap-2"
+          style={{ gridTemplateColumns: products.length > 0 ? `minmax(0,1.3fr) repeat(${products.length}, minmax(0,1fr))` : 'minmax(0,1fr)' }}
+        >
+          {products.map((pool) => {
             const status = poolStatusFor(pools, pool)
-            if (pools === null) return renderCard(pool, POOL_TAB_LABELS[pool], 'muted', null, true)
+            const title = productLabelFor(provider, pool)
+            const full = providerProductLabel(provider, pool)
+            if (pools === null) return renderCard(pool, title, 'muted', null, true)
             return status?.configured
-              ? renderCard(pool, POOL_TAB_LABELS[pool], 'success', null, true, `${PROXY_POOL_LABELS[pool]} · ${status.usernameMasked ?? 'configured'}`)
-              : renderCard(pool, POOL_TAB_LABELS[pool], 'warning', 'Not set up', false, `${PROXY_POOL_LABELS[pool]} has no keys yet. Use “Manage keys” to add them.`)
+              ? renderCard(pool, title, 'success', null, true, `${full} · ${status.usernameMasked ?? 'configured'}`)
+              : renderCard(pool, title, 'warning', 'Not set up', false, `${full} has no keys yet. Use “Manage keys” to add them.`)
           })}
           {renderCard('none', 'Direct', 'info', null, true, 'No proxy: this machine’s own IP')}
         </div>

@@ -12,7 +12,7 @@ after(async () => { await rm(root, { recursive: true, force: true }) })
 function envelope(payload: unknown) { const value = JSON.stringify(payload); return { payload: value, signature: sign(null, Buffer.from(value), keys.privateKey).toString('base64') } }
 function fixture(version = '1.3.0') {
   const assets = (['win32', 'linux'] as const).map(platform => { const bytes = Buffer.from(`fixture-${platform}-${version}`); return { platform, arch: 'x64', fileName: `Proxy-QA-Browser-${version}-${platform === 'win32' ? 'Windows-x64.exe' : 'x86_64.AppImage'}`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } })
-  const data = { format: 1, appId: 'com.letsscall.proxy-qa-browser', version, releasedAt: '2026-10-08T10:00:00.000Z', notes: ['Verified test release'], assets }
+  const data = { format: 1, appId: 'com.ubaidbinwaris.proxy-qa-browser', version, releasedAt: '2026-10-08T10:00:00.000Z', notes: ['Verified test release'], assets }
   const online = { version, releasedAt: data.releasedAt, notes: data.notes, assets: assets.map(a => ({ ...a, url: `${origin}/api/download/${version}/${a.fileName}` })) }
   return { data, online, usb: envelope(data), feed: envelope(online) }
 }

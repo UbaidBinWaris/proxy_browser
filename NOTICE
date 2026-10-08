@@ -1,0 +1,13 @@
+Proxy QA Browser
+Copyright 2026 Ubaid Bin Waris
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes postal code data from GeoNames (https://www.geonames.org),
+licensed under the Creative Commons Attribution 4.0 License (CC BY 4.0).
+See resources/geonames/ATTRIBUTION.md.
+
+Third-party components bundled in release builds (Electron, Chromium,
+Playwright browser builds and WebKit host libraries) are distributed under
+their own licences; see the "Credits and licences" section of README.md and
+the notices shipped next to the application binary.

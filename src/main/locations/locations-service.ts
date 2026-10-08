@@ -30,7 +30,7 @@ import { LocationSearchSchema } from '@shared/types'
 
 import { AppException } from '../contracts'
 import type { LocationsService, Logger } from '../contracts'
-import { encodeStateName } from '../proxy/providers/dataimpulse'
+import { encodeStateName } from '../proxy/targeting-text'
 import { DATAIMPULSE_STATES_FILE, US_DATASET_FILE, parseDataImpulseStates, parseGeoNamesUs } from './geonames-loader'
 import type { GeoNamesRow } from './geonames-loader'
 import { US_STATE_TIMEZONES, timezoneForStateCode } from './us-state-timezones'

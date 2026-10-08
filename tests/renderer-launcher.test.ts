@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BrowserEngine, BrowserEngineInfo, DevicePresetInfo, LocationEntry, ProxyPool } from '../src/shared/types'
+import type { BrowserEngine, BrowserEngineInfo, DevicePresetInfo, LocationEntry, ProductKey } from '../src/shared/types'
 import { BROWSER_ENGINES, BROWSER_ENGINE_FAMILY, BROWSER_ENGINE_KIND, BROWSER_ENGINE_LABELS, QuickLaunchInputSchema } from '../src/shared/types'
 import {
   COUNTRY_MESSAGE,
@@ -181,14 +181,14 @@ describe('launcher preferences persistence', () => {
     const current = form({ pool: 'mobile', mode: 'zip', engine: 'webkit', devicePreset: 'iphone-15', sticky: false, startUrl: 'https://not-persisted.example' })
     expect(writeLauncherPrefs(storage, prefsFromForm(current))).toBe(true)
     expect(Object.keys(storage.data)).toEqual([LAUNCHER_PREFS_KEY])
-    expect(JSON.parse(storage.data[LAUNCHER_PREFS_KEY] ?? '{}')).toEqual({ pool: 'mobile', mode: 'zip', engine: 'webkit', devicePreset: 'iphone-15', sticky: false })
+    expect(JSON.parse(storage.data[LAUNCHER_PREFS_KEY] ?? '{}')).toEqual({ providerId: 'dataimpulse', pool: 'mobile', mode: 'zip', engine: 'webkit', devicePreset: 'iphone-15', sticky: false })
     const restored = applyLauncherPrefs(defaultLauncherForm(), readLauncherPrefs(storage))
     expect(restored).toMatchObject({ pool: 'mobile', mode: 'zip', engine: 'webkit', devicePreset: 'iphone-15', sticky: false, startUrl: '', target: null })
   })
 
   it('ignores malformed or partially valid data instead of throwing', () => {
     expect(readLauncherPrefs(memoryStorage({ [LAUNCHER_PREFS_KEY]: 'not json' }))).toBeNull()
-    expect(readLauncherPrefs(memoryStorage({ [LAUNCHER_PREFS_KEY]: JSON.stringify({ pool: 'satellite' }) }))).toBeNull()
+    expect(readLauncherPrefs(memoryStorage({ [LAUNCHER_PREFS_KEY]: JSON.stringify({ pool: 'Sat Ellite' }) }))).toBeNull()
     const partial = readLauncherPrefs(memoryStorage({ [LAUNCHER_PREFS_KEY]: JSON.stringify({ mode: 'city' }) }))
     expect(partial).toEqual({ mode: 'city' })
     expect(applyLauncherPrefs(defaultLauncherForm(), partial)).toMatchObject({ mode: 'city', pool: 'residential' })
@@ -250,7 +250,7 @@ describe('compatibility and random pickers', () => {
   })
 
   it('random pool draws only from configured pools and falls back to direct', () => {
-    const configured: ProxyPool[] = ['residential', 'mobile']
+    const configured: ProductKey[] = ['residential', 'mobile']
     expect(pickRandomPool(configured, () => 0)).toBe('residential')
     expect(pickRandomPool(configured, () => 0.9)).toBe('mobile')
     expect(pickRandomPool(['mobile'], () => 0.1)).toBe('mobile')

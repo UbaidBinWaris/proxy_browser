@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 
 import { TestRunPatchSchema } from '@shared/types'
-import type { BrowserEngine, DevicePresetId, ProxyPool, RunStatus, TestRun } from '@shared/types'
+import type { BrowserEngine, DevicePresetId, RunStatus, TestRun } from '@shared/types'
 
 import { AppException } from '../../contracts'
 import type { TestRunRepository } from '../../contracts'
@@ -19,6 +19,7 @@ const COLUMN_OF: Record<RunField, string> = {
   profileName: 'profile_name',
   engine: 'engine',
   devicePreset: 'device_preset',
+  provider: 'provider',
   proxyPool: 'pool',
   target: 'target_json',
   targetingString: 'targeting_string',
@@ -54,7 +55,8 @@ function rowToRun(row: Row): TestRun {
     profileName: asString(row.profile_name),
     engine: asString(row.engine) as BrowserEngine,
     devicePreset: asString(row.device_preset) as DevicePresetId,
-    proxyPool: asStringOrNull(row.pool) as ProxyPool | null,
+    provider: asStringOrNull(row.provider),
+    proxyPool: asStringOrNull(row.pool),
     target: parseTargetJson(row.target_json),
     targetingString: asStringOrNull(row.targeting_string),
     targetMatch: parseTargetMatch(row.target_match),

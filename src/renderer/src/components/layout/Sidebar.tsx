@@ -8,7 +8,7 @@ import { useAppStore } from '@/stores/app'
 import { useProxyStore } from '@/stores/proxy'
 import { useSessionsStore, selectActiveSessions } from '@/stores/sessions'
 import { PROXY_KEYS_PATH } from '@/lib/navigation'
-import { proxyStatusPill } from '@/lib/proxyKeys'
+import { providersStatusPill } from '@/lib/proxyKeys'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -28,9 +28,10 @@ const NAV_ITEMS: readonly NavItem[] = [
 
 export function Sidebar(): React.JSX.Element {
   const info = useAppStore((s) => s.info)
-  const config = useProxyStore((s) => s.config)
+  const providers = useProxyStore((s) => s.providers)
   const liveCount = useSessionsStore((s) => selectActiveSessions(s.sessions).length)
-  const pill = proxyStatusPill(config)
+  // Ready when any registered provider has keys.
+  const pill = providersStatusPill(providers)
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">

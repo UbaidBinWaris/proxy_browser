@@ -12,5 +12,12 @@
     "Keep local profiles and proxy credentials on each device.",
     "Protected release uploads and atomic publishing with GitHub Actions deployment.",
     "Consistent browser branding across desktop, shortcuts, and the download website."
+  ],
+  "1.4.0": [
+    "Choose the proxy provider for each profile and launch; provider keys are stored per device in the encrypted vault, and existing keys move over automatically (a backup of the previous vault is kept).",
+    "Site access tokens: send a secret header only to your own listed sites so your WAF or CAPTCHA can allow QA traffic.",
+    "Self-healing selectors: recorded steps keep backup locators, healed steps are flagged in results, and one click updates the scenario.",
+    "Headless runner as a Docker image and a reusable GitHub Action for CI.",
+    "Now open source under the Apache License 2.0. Desktop and menu shortcuts are updated automatically; on Windows, unpin and re-pin a taskbar pin once if it opens a second taskbar button."
   ]
 }

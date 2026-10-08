@@ -87,9 +87,9 @@ if (BUNDLE_WINDOWS_BROWSERS && !existsSync(join(ROOT, 'build/browsers/win64'))) 
 
 /** @type {import('electron-builder').Configuration} */
 const config = {
-  appId: 'com.letsscall.proxy-qa-browser',
+  appId: 'com.ubaidbinwaris.proxy-qa-browser',
   productName: 'Proxy-QA-Browser',
-  copyright: 'Copyright © 2026',
+  copyright: 'Copyright © 2026 Ubaid Bin Waris',
   directories: {
     output: 'release',
     buildResources: 'build',
@@ -136,7 +136,7 @@ const config = {
   publish: null,
   ...(process.env.PROXY_QA_SIGNED_RELEASE === '1' ? { forceCodeSigning: true } : {}),
   extraMetadata: {
-    ...(buildingLinux ? { desktopName: 'com.letsscall.proxy-qa-browser.desktop' } : {}),
+    ...(buildingLinux ? { desktopName: 'com.ubaidbinwaris.proxy-qa-browser.desktop' } : {}),
     qaReleaseNotes: notes,
     ...(existsSync(publicKeyPath) ? { qaOfflineUpdates: { publicKey: readFileSync(publicKeyPath, 'utf8') } } : {}),
     ...(existsSync(publicKeyPath)

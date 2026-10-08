@@ -1,4 +1,4 @@
-import type { BrowserSession, ProxyMode, ProxyPool, SessionStatus } from '@shared/types'
+import type { BrowserSession, ProductKey, ProxyMode, SessionStatus } from '@shared/types'
 
 // ---------------------------------------------------------------------------
 // Connection kind (direct vs. proxied) and the session label shown with an IP
@@ -7,8 +7,8 @@ import type { BrowserSession, ProxyMode, ProxyPool, SessionStatus } from '@share
 /**
  * How a run reached the network.
  * - `direct`: profile has proxyMode 'none'; the exit IP is the machine's own.
- * - `sticky`: DataImpulse sticky session (session id known).
- * - `rotating`: DataImpulse rotating gateway (no session id).
+ * - `sticky`: the provider's sticky session (session id known).
+ * - `rotating`: the provider's rotating gateway (no session id).
  * - `unknown`: the profile is gone and no session id was recorded, so rotating vs. direct cannot be told apart.
  */
 export type ConnectionKind = 'direct' | 'sticky' | 'rotating' | 'unknown'
@@ -17,9 +17,9 @@ export function connectionKindFor(proxyMode: ProxyMode | null | undefined, sessi
   switch (proxyMode) {
     case 'none':
       return 'direct'
-    case 'dataimpulse-sticky':
+    case 'sticky':
       return 'sticky'
-    case 'dataimpulse-rotating':
+    case 'rotating':
       return 'rotating'
     default:
       return sessionId ? 'sticky' : 'unknown'
@@ -30,7 +30,7 @@ export function connectionKindFor(proxyMode: ProxyMode | null | undefined, sessi
  * Connection kind from what a run/session recorded, used when the owning profile is unknown (deleted or
  * ephemeral and not yet fetched): a null pool is a direct connection, a session id means sticky.
  */
-export function connectionKindForRecord(record: { proxyPool: ProxyPool | null; proxySessionId: string | null }, profileMode?: ProxyMode | null): ConnectionKind {
+export function connectionKindForRecord(record: { proxyPool: ProductKey | null; proxySessionId: string | null }, profileMode?: ProxyMode | null): ConnectionKind {
   if (profileMode !== null && profileMode !== undefined) return connectionKindFor(profileMode, record.proxySessionId)
   if (record.proxyPool === null) return 'direct'
   return record.proxySessionId ? 'sticky' : 'rotating'

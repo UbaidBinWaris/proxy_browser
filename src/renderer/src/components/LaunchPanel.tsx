@@ -12,6 +12,7 @@ import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { deriveLaunchSteps, failedStepFor, isBrowserWindowOpen, stepLabel } from '@/lib/launch'
 import type { ConnectionKind, LaunchStep } from '@/lib/launch'
 import { describeTarget, poolLabel } from '@/lib/targeting'
+import { useProvider } from '@/hooks/useProviders'
 import { isSessionLive } from '@/stores/sessions'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -84,6 +85,7 @@ export function LaunchPanel({
   const failedAtVerify = failedStep === 'verifying'
   const showProxyCard = session.ip !== null || verifying || failedAtVerify
   const direct = connection === 'direct'
+  const provider = useProvider(session.provider)
   const deviceLabel = preset?.label ?? session.devicePreset
   // Quick-launch profile names already contain the device ("Direct · Pixel 7"); do not repeat it.
   const deviceSuffix = session.profileName.includes(deviceLabel) ? '' : ` · ${deviceLabel}`
@@ -153,7 +155,7 @@ export function LaunchPanel({
           <div className="min-w-0">
             <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pool</dt>
             <dd className="mt-1">
-              <Badge variant={direct || !session.proxyPool ? 'info' : 'default'}>{direct ? 'Direct (no proxy)' : poolLabel(session.proxyPool)}</Badge>
+              <Badge variant={direct || !session.proxyPool ? 'info' : 'default'}>{direct ? 'Direct (no proxy)' : poolLabel(session.proxyPool, provider)}</Badge>
             </dd>
           </div>
           <div className="min-w-0">
@@ -195,6 +197,7 @@ export function LaunchPanel({
             sessionId={session.proxySessionId}
             kind={connection}
             pool={session.proxyPool}
+            provider={provider}
             target={session.target}
             targetMatch={session.targetMatch}
             targetingString={session.targetingString}

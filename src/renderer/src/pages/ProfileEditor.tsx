@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronRight, Save, Trash2, X } from 'lucide-react'
-import type { AppError, BrowserEngine, DevicePresetInfo, LocationEntry, Profile, ProxyMode, ProxyPool, TargetMode } from '@shared/types'
-import { DEVICE_TYPES, DEVICE_TYPE_LABELS, PROXY_MODES, PROXY_POOLS, PROXY_POOL_LABELS } from '@shared/types'
+import type { AppError, BrowserEngine, DevicePresetInfo, LocationEntry, ProductKey, Profile, ProxyMode, TargetMode } from '@shared/types'
+import { DEVICE_TYPES, DEVICE_TYPE_LABELS, PROXY_MODES, TARGET_MODES } from '@shared/types'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardBody, CardFooter, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -17,7 +17,6 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
 import { DevicePicker } from '@/components/DevicePicker'
 import { LocationCombobox, TARGET_MODE_ICONS } from '@/components/LocationCombobox'
-import { PROXY_MODE_LABELS } from '@/components/ProfileCard'
 import { EngineInstallHint } from '@/components/EngineInstallHint'
 import { toAppError } from '@/lib/api'
 import { PROXY_KEYS_PATH } from '@/lib/navigation'
@@ -36,6 +35,7 @@ import {
 } from '@/lib/profileForm'
 import type { ProfileFormErrors, ProfileFormState } from '@/lib/profileForm'
 import { TARGET_MODE_OPTIONS, countryTarget, describeTarget, geoTargetFromEntry, timezoneForState } from '@/lib/targeting'
+import { configuredProductKeys, findProvider, productKeys, providerProductLabel, proxyModeLabel, selectableProviders, supportedTargetModes } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useLocationsStore } from '@/stores/locations'
@@ -58,7 +58,7 @@ export function ProfileEditorPage(): React.JSX.Element {
   const removeProfile = useProfilesStore((s) => s.remove)
   const browsers = useAppStore((s) => s.browsers)
   const loadBrowsers = useAppStore((s) => s.loadBrowsers)
-  const config = useProxyStore((s) => s.config)
+  const providers = useProxyStore((s) => s.providers)
   const loadConfig = useProxyStore((s) => s.loadConfig)
   const settings = useSettingsStore((s) => s.settings)
   const states = useLocationsStore((s) => s.states)
@@ -66,7 +66,7 @@ export function ProfileEditorPage(): React.JSX.Element {
   /** Availability of every engine on this machine; null until `browsers.status` has answered. */
   const engines = browsers?.engines ?? null
 
-  const [form, setForm] = useState<ProfileFormState>(emptyProfileForm)
+  const [form, setForm] = useState<ProfileFormState>(() => emptyProfileForm())
   const [errors, setErrors] = useState<ProfileFormErrors>({})
   const [loadState, setLoadState] = useState<{ status: 'loading' } | { status: 'ready'; profile: Profile | null } | { status: 'error'; error: AppError }>(
     isNew ? { status: 'ready', profile: null } : { status: 'loading' },
@@ -117,6 +117,20 @@ export function ProfileEditorPage(): React.JSX.Element {
     }
   }, [id, isNew, fetchProfile])
 
+  const provider = findProvider(providers, form.providerId)
+  const targetModes = supportedTargetModes(provider, TARGET_MODES)
+
+  // A new profile starts from the settings' default provider and product once settings arrive (until the user picks).
+  const [providerDefaultsApplied, setProviderDefaultsApplied] = useState(false)
+  useEffect(() => {
+    if (isNew) setProviderDefaultsApplied(false)
+  }, [isNew, id])
+  useEffect(() => {
+    if (!isNew || !settings || providerDefaultsApplied) return
+    setProviderDefaultsApplied(true)
+    setForm((current) => ({ ...current, providerId: settings.defaultProviderId, proxyPool: settings.defaultProxyPool }))
+  }, [isNew, settings, providerDefaultsApplied])
+
   const preset = useMemo<DevicePresetInfo | null>(() => presets.find((p) => p.id === form.devicePreset) ?? null, [presets, form.devicePreset])
 
   // Apply preset defaults to a brand-new profile once, when presets first arrive.
@@ -145,13 +159,27 @@ export function ProfileEditorPage(): React.JSX.Element {
   const engineConflict = engineConflictMessage(preset, form.engine)
 
   const update = <K extends keyof ProfileFormState>(key: K, value: ProfileFormState[K]): void => {
+    if (key === 'providerId') setProviderDefaultsApplied(true)
     setForm((current) => {
       const next = { ...current, [key]: value }
-      if (key === 'name' && !sessionIdTouched && next.proxyMode === 'dataimpulse-sticky') {
+      if (key === 'providerId') {
+        // Keep the product and target mode valid for the newly selected provider.
+        const chosen = findProvider(providers, String(value))
+        if (chosen) {
+          const offered = productKeys(chosen)
+          if (!offered.includes(next.proxyPool)) next.proxyPool = configuredProductKeys(chosen)[0] ?? offered[0] ?? next.proxyPool
+          if (!chosen.capabilities.targetModes.includes(next.targetMode)) {
+            next.targetMode = chosen.capabilities.targetModes[0] ?? next.targetMode
+            next.target = null
+          }
+          if (next.proxyMode === 'sticky' && !chosen.capabilities.sticky.supported) next.proxyMode = 'rotating'
+        }
+      }
+      if (key === 'name' && !sessionIdTouched && next.proxyMode === 'sticky') {
         // Follow the name only while the field is empty or still holds the previous auto-suggestion.
         next.stickySessionId = nextSuggestedSessionId(current.stickySessionId, current.name, next.name)
       }
-      if (key === 'proxyMode' && value === 'dataimpulse-sticky' && next.stickySessionId === '') {
+      if (key === 'proxyMode' && value === 'sticky' && next.stickySessionId === '') {
         next.stickySessionId = suggestSessionId(next.name)
       }
       return next
@@ -161,6 +189,11 @@ export function ProfileEditorPage(): React.JSX.Element {
       const next = { ...current }
       if (next[key]) next[key] = undefined
       if (key === 'proxyMode' || key === 'name') next.stickySessionId = undefined
+      if (key === 'providerId') {
+        next.proxyPool = undefined
+        next.target = undefined
+        next.proxyMode = undefined
+      }
       return next
     })
   }
@@ -213,7 +246,7 @@ export function ProfileEditorPage(): React.JSX.Element {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     setSubmitError(null)
-    const result = validateProfileForm(form, preset)
+    const result = validateProfileForm(form, preset, provider)
     if (result.errors) {
       setErrors(result.errors)
       const firstKey = Object.keys(result.errors)[0]
@@ -254,16 +287,24 @@ export function ProfileEditorPage(): React.JSX.Element {
   const engineAvailability = engineAvailabilityMessage(engines, form.engine)
   const engineHint = `${engineAvailability ? `${engineAvailability} ` : ''}${engineFieldHint(engines, preset)}`
   const title = isNew ? 'New Profile' : loadState.status === 'ready' && loadState.profile ? `Edit “${loadState.profile.name}”` : 'Edit Profile'
-  const isSticky = form.proxyMode === 'dataimpulse-sticky'
+  const isSticky = form.proxyMode === 'sticky'
   const usesProxy = form.proxyMode !== 'none'
   const engineError = errors.engine ?? engineConflict ?? undefined
   const saveBlocked = engineConflict !== null
-  const poolOptions = PROXY_POOLS.map((pool) => {
-    const status = config?.pools.find((entry) => entry.pool === pool)
+  const providerName = provider?.displayName ?? form.providerId
+  // Only providers with saved credentials are offered (plus the profile's own, so it stays visible).
+  const providerOptions = selectableProviders(providers, form.providerId).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))
+  if (!providerOptions.some((option) => option.value === form.providerId)) providerOptions.push({ value: form.providerId, label: `${form.providerId} · not supported by this version` })
+  const modeOptions = PROXY_MODES.filter((mode) => mode !== 'sticky' || provider?.capabilities.sticky.supported !== false || form.proxyMode === 'sticky').map((mode) => ({
+    value: mode,
+    label: proxyModeLabel(mode, providerName),
+  }))
+  const poolOptions = (provider ? productKeys(provider) : [form.proxyPool]).map((pool) => {
+    const status = provider?.status.pools.find((entry) => entry.pool === pool)
     const configured = status?.configured ?? null
-    return { value: pool, label: `${PROXY_POOL_LABELS[pool]}${configured === false ? ' · not configured' : ''}` }
+    return { value: pool, label: `${providerProductLabel(provider, pool)}${configured === false ? ' · not configured' : ''}` }
   })
-  const poolConfigured = config ? (config.pools.find((entry) => entry.pool === form.proxyPool)?.configured ?? false) : null
+  const poolConfigured = provider ? (provider.status.pools.find((entry) => entry.pool === form.proxyPool)?.configured ?? false) : null
 
   return (
     <>
@@ -282,7 +323,7 @@ export function ProfileEditorPage(): React.JSX.Element {
           </>
         }
         title={title}
-        description="Define the browser identity used for QA runs. Device presets set the device type, viewport and user agent; the proxy pool, target location and session control the exit IP."
+        description="Define the browser identity used for QA runs. Device presets set the device type, viewport and user agent; the proxy provider, product, target location and session control the exit IP."
         actions={
           !isNew && loadState.status === 'ready' ? (
             <Button variant="outline" onClick={() => setConfirmDelete(true)} leftIcon={<Trash2 className="h-4 w-4 text-destructive" aria-hidden="true" />}>
@@ -453,10 +494,23 @@ export function ProfileEditorPage(): React.JSX.Element {
                   id="profile-proxyMode"
                   value={form.proxyMode}
                   onChange={(e) => update('proxyMode', e.target.value as ProxyMode)}
-                  options={PROXY_MODES.map((mode) => ({ value: mode, label: PROXY_MODE_LABELS[mode] }))}
+                  options={modeOptions}
                   invalid={!!errors.proxyMode}
+                  aria-describedby={fieldDescribedBy('profile-proxyMode', false, !!errors.proxyMode)}
                 />
               </Field>
+              {usesProxy ? (
+                <Field htmlFor="profile-providerId" label="Proxy provider" error={errors.providerId} hint="Providers with saved keys." required>
+                  <Select
+                    id="profile-providerId"
+                    value={form.providerId}
+                    onChange={(e) => update('providerId', e.target.value)}
+                    options={providerOptions}
+                    invalid={!!errors.providerId}
+                    aria-describedby={fieldDescribedBy('profile-providerId', true, !!errors.providerId)}
+                  />
+                </Field>
+              ) : null}
               {usesProxy ? (
                 <Field
                   htmlFor="profile-proxyPool"
@@ -465,14 +519,14 @@ export function ProfileEditorPage(): React.JSX.Element {
                   hint={
                     poolConfigured === false ? (
                       <>
-                        {PROXY_POOL_LABELS[form.proxyPool]} has no credentials yet —{' '}
+                        {providerProductLabel(provider, form.proxyPool)} has no credentials yet —{' '}
                         <Link to={PROXY_KEYS_PATH} className="focus-ring rounded text-primary hover:underline">
                           add them under Settings → Advanced → Proxy keys
                         </Link>
                         .
                       </>
                     ) : (
-                      'Each DataImpulse plan has its own login on the same gateway.'
+                      `Each ${providerName} product has its own login.`
                     )
                   }
                   required
@@ -480,7 +534,7 @@ export function ProfileEditorPage(): React.JSX.Element {
                   <Select
                     id="profile-proxyPool"
                     value={form.proxyPool}
-                    onChange={(e) => update('proxyPool', e.target.value as ProxyPool)}
+                    onChange={(e) => update('proxyPool', e.target.value as ProductKey)}
                     options={poolOptions}
                     invalid={!!errors.proxyPool || poolConfigured === false}
                     aria-describedby={fieldDescribedBy('profile-proxyPool', true, !!errors.proxyPool)}
@@ -519,7 +573,7 @@ export function ProfileEditorPage(): React.JSX.Element {
                   <SegmentedControl
                     id="profile-targetMode"
                     aria-labelledby="profile-targetMode-label"
-                    options={TARGET_MODE_OPTIONS.map((option) => ({ ...option, icon: TARGET_MODE_ICONS[option.value] }))}
+                    options={TARGET_MODE_OPTIONS.filter((option) => targetModes.includes(option.value)).map((option) => ({ ...option, icon: TARGET_MODE_ICONS[option.value] }))}
                     value={form.targetMode}
                     onChange={handleTargetMode}
                     fullWidth
@@ -527,7 +581,7 @@ export function ProfileEditorPage(): React.JSX.Element {
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       {form.targetMode === 'country' ? (
-                        <Field htmlFor="profile-target" label="Country" error={errors.target} hint="ISO-2 code sent as cr.<code>.">
+                        <Field htmlFor="profile-target" label="Country" error={errors.target} hint="ISO-2 code, e.g. US.">
                           <Input
                             id="profile-target"
                             value={(form.target?.country ?? defaultCountry).toUpperCase()}

@@ -3,14 +3,16 @@ import { createReadStream } from 'node:fs'
 import * as fileSystem from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
-import { DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
+import { AppIdSchema, DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
 import type { DesktopSetupOptions, DesktopStatus, UsbRelease, UsbUpdatePreview } from '@shared/desktop'
 import { AppException } from '../contracts'
 import type { UpdateManager } from '../releases/updates'
 import { newerVersion } from '../releases/updates'
+import { appIdMatcher as defaultAppIdMatcher, isLegacyDesktopEntryName } from './app-identity'
+import type { AppIdMatcher } from './app-identity'
 
 const InstallMarkerSchema = z.object({
-  appId: z.literal(DESKTOP_APP_ID),
+  appId: AppIdSchema,
   platform: z.enum(['win32', 'linux']),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   installedAt: z.string(),
@@ -73,11 +75,14 @@ export interface DesktopIntegrationOptions {
   reveal: (path: string) => void
   restart: (executable: string) => void
   onInstalled?: (executable: string) => void
+  /** Which identities count as this application; defaults to the current plus legacy identities. */
+  appIds?: AppIdMatcher
 }
 
 export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
-  const { chmod, copyFile, cp, lstat, mkdir, readFile, rename, rm, writeFile } = opts.fileSystem ?? fileSystem
+  const { chmod, copyFile, cp, lstat, mkdir, readdir, readFile, rename, rm, writeFile } = opts.fileSystem ?? fileSystem
   const windows = opts.platform === 'win32'
+  const appIds = opts.appIds ?? defaultAppIdMatcher
   const supported =
     opts.isPackaged && opts.arch === 'x64' && (windows || (opts.platform === 'linux' && !!opts.appImage))
   const application = join(opts.root, 'Application')
@@ -102,7 +107,9 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
   }
   const readMarker = async (folder = application) => {
     try {
-      return InstallMarkerSchema.parse(JSON.parse(await readFile(join(folder, MARKER), 'utf8')))
+      // Markers written by earlier releases carry a legacy identity and remain valid installs.
+      const marker = InstallMarkerSchema.parse(JSON.parse(await readFile(join(folder, MARKER), 'utf8')))
+      return appIds.isAccepted(marker.appId) ? marker : null
     } catch {
       return null
     }
@@ -135,7 +142,16 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       busy = false
     }
   }
+  /** Linux entries are named after the identity; remove ones a legacy identity left so the menu has one entry. */
+  const removeLegacyDesktopEntries = async (): Promise<void> => {
+    if (windows) return
+    for (const directory of new Set([opts.desktopDirectory, opts.menuDirectory])) {
+      const names = await readdir(directory).catch(() => [] as string[])
+      for (const name of names.filter((entry) => isLegacyDesktopEntryName(entry, appIds))) await rm(join(directory, name), { force: true })
+    }
+  }
   const writeShortcuts = async (options: DesktopSetupOptions): Promise<void> => {
+    await removeLegacyDesktopEntries()
     for (const [enabled, path, label] of [
       [options.desktop, desktopShortcut, 'Desktop'],
       [options.startMenu, menuShortcut, windows ? 'Start menu' : 'Applications menu'],
@@ -284,6 +300,8 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       )
         throw new AppException('INVALID_INPUT', 'This USB update is not signed by your publisher.')
       const release = UsbReleaseSchema.parse(JSON.parse(envelope.payload))
+      if (!appIds.isAccepted(release.appId))
+        throw new AppException('INVALID_INPUT', 'This USB update is for a different application.')
       if (!newerVersion(release.version, opts.version))
         throw new AppException('INVALID_INPUT', 'Choose a release newer than the version currently running.')
       const asset = release.assets.find((item) => item.platform === opts.platform && item.arch === opts.arch)

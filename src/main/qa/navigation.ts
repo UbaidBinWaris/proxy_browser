@@ -31,6 +31,8 @@ export function navigationGuard(
       }
       return
     }
-    await route.continue()
+    // fallback (not continue): with no other route this continues the request unchanged, and it lets an
+    // earlier-registered handler (site access tokens, src/main/site-access/attach.ts) perform it safely.
+    await route.fallback()
   }
 }

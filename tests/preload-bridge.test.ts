@@ -41,6 +41,7 @@ const quickLaunch: QuickLaunchInput = {
   engine: 'chromium',
   devicePreset: 'iphone-15',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   sticky: true,
   stickyTtlMinutes: null,
@@ -76,6 +77,7 @@ describe('preload bridge', () => {
       'security',
       'settings',
       'setup',
+      'siteAccess',
       'tasks',
     ])
     for (const group of Object.keys(IPC) as Array<keyof typeof IPC>) {
@@ -99,9 +101,12 @@ describe('preload bridge', () => {
       [() => api.profiles.duplicate('p1'), IPC.profiles.duplicate, ['p1']],
       [() => api.profiles.delete('p1'), IPC.profiles.delete, ['p1']],
       [() => api.profiles.presets(), IPC.profiles.presets, []],
+      [() => api.proxy.providers(), IPC.proxy.providers, []],
       [() => api.proxy.getConfigStatus(), IPC.proxy.getConfigStatus, []],
+      [() => api.proxy.getConfigStatus('dataimpulse'), IPC.proxy.getConfigStatus, ['dataimpulse']],
       [() => api.proxy.testConnection(null), IPC.proxy.testConnection, [null]],
       [() => api.proxy.testConnection(null, 'mobile'), IPC.proxy.testConnection, [null, 'mobile']],
+      [() => api.proxy.testConnection(null, 'mobile', 'dataimpulse'), IPC.proxy.testConnection, [null, 'mobile', 'dataimpulse']],
       [() => api.proxy.getCurrentIp('p1'), IPC.proxy.getCurrentIp, ['p1']],
       [() => api.proxy.listSessions(), IPC.proxy.listSessions, []],
       [() => api.proxy.rotateSession('p1'), IPC.proxy.rotateSession, ['p1']],
@@ -135,7 +140,7 @@ describe('preload bridge', () => {
       [() => api.security.status(), IPC.security.status, []],
       [() => api.security.testCredentials(credentials), IPC.security.testCredentials, [credentials]],
       [() => api.security.saveCredentials(credentials), IPC.security.saveCredentials, [credentials]],
-      [() => api.security.clearCredentials('mobile'), IPC.security.clearCredentials, ['mobile']],
+      [() => api.security.clearCredentials('dataimpulse', 'mobile'), IPC.security.clearCredentials, ['dataimpulse', 'mobile']],
       [() => api.locations.search({ mode: 'state', query: 'new j', limit: 10 }), IPC.locations.search, [{ mode: 'state', query: 'new j', limit: 10 }]],
       [() => api.locations.random('zip'), IPC.locations.random, ['zip']],
       [() => api.locations.random('city', 'NJ'), IPC.locations.random, ['city', 'NJ']],
@@ -154,6 +159,11 @@ describe('preload bridge', () => {
       [() => api.security.closeKeysWindow(), IPC.security.closeKeysWindow, []],
       [() => api.setup.status(), IPC.setup.status, []],
       [() => api.setup.complete(), IPC.setup.complete, []],
+      [() => api.siteAccess.status(), IPC.siteAccess.status, []],
+      [() => api.siteAccess.save({ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: true }), IPC.siteAccess.save, [{ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: true }]],
+      [() => api.siteAccess.save({ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: false }, 't1'), IPC.siteAccess.save, [{ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: false }, 't1']],
+      [() => api.siteAccess.setEnabled('t1', false), IPC.siteAccess.setEnabled, ['t1', false]],
+      [() => api.siteAccess.delete('t1'), IPC.siteAccess.delete, ['t1']],
     ]
     for (const [call, channel, args] of cases) {
       invoke.mockClear()

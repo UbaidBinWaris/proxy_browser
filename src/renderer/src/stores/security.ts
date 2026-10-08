@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppError, ProxyCredentialsInput, ProxyCredentialsUpdate, ProxyPool, ProxyTestResult, SecurityStatus } from '@shared/types'
+import type { AppError, ProductKey, ProviderId, ProxyCredentialsInput, ProxyCredentialsUpdate, ProxyTestResult, SecurityStatus } from '@shared/types'
 import { getApi, toAppError, unwrap } from '../lib/api'
 import type { LoadStatus } from '../lib/result'
 import { useProxyStore } from './proxy'
@@ -29,8 +29,8 @@ interface SecurityState {
   openKeysWindow: () => Promise<void>
   /** Close the "Manage proxy keys" window (from inside it). */
   closeKeysWindow: () => Promise<void>
-  /** Remove one pool's credentials from the vault. */
-  clearCredentials: (pool: ProxyPool) => Promise<SecurityStatus>
+  /** Remove one provider product's credentials from the vault. */
+  clearCredentials: (providerId: ProviderId, product: ProductKey) => Promise<SecurityStatus>
   rotateKey: () => Promise<SecurityStatus>
   reveal: (which: 'key' | 'vault') => Promise<void>
 }
@@ -113,10 +113,10 @@ export const useSecurityStore = create<SecurityState>((set) => ({
 
   closeKeysWindow: async () => unwrap(getApi().security.closeKeysWindow()),
 
-  clearCredentials: async (pool) => {
+  clearCredentials: async (providerId, product) => {
     set({ busy: 'clearing' })
     try {
-      const status = await unwrap(getApi().security.clearCredentials(pool))
+      const status = await unwrap(getApi().security.clearCredentials(providerId, product))
       set({ status, loadStatus: 'ready', error: null })
       void useProxyStore.getState().loadConfig()
       return status

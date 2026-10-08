@@ -37,6 +37,7 @@ function session(overrides: Partial<BrowserSession> = {}): BrowserSession {
     profileName: 'Profile',
     engine: 'chromium',
     devicePreset: 'windows-desktop',
+    provider: 'dataimpulse',
     proxyPool: 'residential',
     target: null,
     targetingString: null,
@@ -64,8 +65,8 @@ const states = (s: BrowserSession, before?: BrowserSession['status']) => deriveL
 describe('connection kind and session label', () => {
   it('derives direct / sticky / rotating from the profile mode and never calls an unknown mode "rotating"', () => {
     expect(connectionKindFor('none', null)).toBe('direct')
-    expect(connectionKindFor('dataimpulse-sticky', 'profile-x')).toBe('sticky')
-    expect(connectionKindFor('dataimpulse-rotating', null)).toBe('rotating')
+    expect(connectionKindFor('sticky', 'profile-x')).toBe('sticky')
+    expect(connectionKindFor('rotating', null)).toBe('rotating')
     expect(connectionKindFor(null, 'profile-x')).toBe('sticky')
     expect(connectionKindFor(undefined, null)).toBe('unknown')
     expect(sessionLabelFor('direct', null)).toBe('none')
@@ -158,6 +159,7 @@ describe('outcome form dirty tracking', () => {
     engine: 'chromium',
     devicePreset: 'windows-desktop',
     proxyPool: 'residential',
+    provider: 'dataimpulse',
     target: null,
     targetingString: null,
     targetMatch: null,

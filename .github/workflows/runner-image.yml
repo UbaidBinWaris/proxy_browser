@@ -1,0 +1,149 @@
+name: Runner image
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: runner-image-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  IMAGE_NAME: ghcr.io/ubaidbinwaris/proxy-qa-runner
+jobs:
+  smoke:
+    name: Build and smoke-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the action's default image matches the release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          expected="default: ${IMAGE_NAME}:${TAG#v}"
+          if ! grep -qF "$expected" action/action.yml; then
+            echo "::error file=action/action.yml::The image input default must be '${IMAGE_NAME}:${TAG#v}' for tag ${TAG}."
+            exit 1
+          fi
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image locally (not pushed)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/runner/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: proxy-qa-runner:smoke
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=proxy-qa-runner
+          cache-to: type=gha,mode=max,scope=proxy-qa-runner
+      - name: Check the image carries no credentials
+        run: |
+          if docker history --no-trunc proxy-qa-runner:smoke | grep -iE 'DATAIMPULSE_PROXY|QA_PROXY_|QA_PROVIDER|PASSWORD='; then
+            echo "::error::Credential-like names found in the image history."
+            exit 1
+          fi
+          if docker run --rm --entrypoint env proxy-qa-runner:smoke | grep -E '^(DATAIMPULSE_PROXY_|QA_PROXY_|QA_PROVIDER)'; then
+            echo "::error::Proxy variables are baked into the image environment."
+            exit 1
+          fi
+          docker image inspect proxy-qa-runner:smoke --format 'Image size: {{.Size}} bytes, user: {{.Config.User}}'
+      - name: Serve the sample site on 127.0.0.1:8080
+        run: |
+          python3 -m http.server 8080 --bind 127.0.0.1 --directory examples/ci/site >"$RUNNER_TEMP/site.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/ && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/site.log"
+          exit 1
+      - name: Passing sample through the action (expects exit 0)
+        id: pass
+        uses: ./action
+        with:
+          config: examples/ci/scenario.json
+          output: qa-results/pass
+          environment: Local
+          image: proxy-qa-runner:smoke
+          artifact-name: runner-smoke-pass
+      - name: Verify the passing reports
+        env:
+          CODE: ${{ steps.pass.outputs.exit-code }}
+          RESULTS: ${{ steps.pass.outputs.results-json }}
+        run: |
+          test "$CODE" = 0
+          for file in results.json results.xml results.html; do test -s "qa-results/pass/$file"; done
+          jq -e '.status == "passed" and .completed == .total' "$RESULTS"
+      - name: Write a failing variant of the sample manifest
+        run: |
+          jq '(.scenario.steps[] | select(.action == "assertText") | .value) = "Text that is not on the page"
+            | .scenario.timeoutMs = 2000' examples/ci/scenario.json >smoke-failing.json
+      - name: Failing sample through the action (expects exit 1)
+        id: fail
+        continue-on-error: true
+        uses: ./action
+        with:
+          config: smoke-failing.json
+          output: qa-results/fail
+          image: proxy-qa-runner:smoke
+          upload-artifact: 'false'
+      - name: Verify the failure is reported as exit 1
+        env:
+          CODE: ${{ steps.fail.outputs.exit-code }}
+          OUTCOME: ${{ steps.fail.outcome }}
+        run: |
+          test "$CODE" = 1
+          test "$OUTCOME" = failure
+          jq -e '.status == "failed"' qa-results/fail/results.json
+
+  publish:
+    name: Push to GHCR
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+          labels: |
+            org.opencontainers.image.title=Proxy QA Browser CI runner
+            org.opencontainers.image.description=Headless runner for Proxy QA Browser scenario and suite manifests (authorized QA of web forms you own).
+            org.opencontainers.image.licenses=Apache-2.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push (layers come from the smoke job's cache)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/runner/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=proxy-qa-runner

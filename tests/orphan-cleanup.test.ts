@@ -22,6 +22,7 @@ const runInput = (overrides: Partial<Omit<TestRun, 'id'>> = {}): Omit<TestRun, '
   engine: 'chromium',
   devicePreset: 'windows-desktop',
   proxyPool: null,
+  provider: null,
   target: null,
   targetingString: null,
   targetMatch: null,

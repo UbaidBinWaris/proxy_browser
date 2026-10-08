@@ -1,10 +1,13 @@
 import { create } from 'zustand'
-import type { AppError, IpInfo, ProxyConfigStatus, ProxyPool, ProxySession, ProxyTestResult } from '@shared/types'
+import type { AppError, IpInfo, ProductKey, ProviderId, ProviderInfo, ProxyConfigStatus, ProxySession, ProxyTestResult } from '@shared/types'
 import { getApi, toAppError, unwrap } from '../lib/api'
 import type { LoadStatus } from '../lib/result'
 
 interface ProxyState {
+  /** Configuration of the default provider (settings.defaultProviderId). */
   config: ProxyConfigStatus | null
+  /** Every registered provider with capabilities and status (no secrets), in picker order; null until loaded. */
+  providers: ProviderInfo[] | null
   configStatus: LoadStatus
   configError: AppError | null
   sessions: ProxySession[]
@@ -13,15 +16,17 @@ interface ProxyState {
   /** Result of the last raw gateway test (Settings → Advanced → Proxy keys). */
   gatewayTest: ProxyTestResult | null
   gatewayTesting: boolean
-  /** Pool of the gateway test in flight (or of the last one). */
-  gatewayPool: ProxyPool | null
+  /** Product of the gateway test in flight (or of the last one). */
+  gatewayPool: ProductKey | null
+  /** Provider of the gateway test in flight (or of the last one). */
+  gatewayProvider: ProviderId | null
   /** Profile ids with an in-flight test or rotate call. */
   busyProfiles: Record<string, 'testing' | 'rotating' | undefined>
   loadConfig: () => Promise<void>
   loadSessions: () => Promise<void>
   upsertSession: (session: ProxySession) => void
-  /** Raw gateway test through `pool` (default: settings.defaultProxyPool). Never throws. */
-  testGateway: (pool?: ProxyPool) => Promise<ProxyTestResult>
+  /** Raw gateway test through a provider product (default: the settings' default provider/product). Never throws. */
+  testGateway: (pool?: ProductKey, providerId?: ProviderId) => Promise<ProxyTestResult>
   testProfile: (profileId: string) => Promise<ProxyTestResult>
   rotateProfile: (profileId: string) => Promise<ProxySession>
   getCurrentIp: (profileId: string | null) => Promise<IpInfo>
@@ -35,6 +40,7 @@ export function upsertProxySession(sessions: ProxySession[], session: ProxySessi
 
 export const useProxyStore = create<ProxyState>((set) => ({
   config: null,
+  providers: null,
   configStatus: 'idle',
   configError: null,
   sessions: [],
@@ -43,13 +49,14 @@ export const useProxyStore = create<ProxyState>((set) => ({
   gatewayTest: null,
   gatewayTesting: false,
   gatewayPool: null,
+  gatewayProvider: null,
   busyProfiles: {},
 
   loadConfig: async () => {
     set((state) => ({ configStatus: state.config ? state.configStatus : 'loading', configError: null }))
     try {
-      const config = await unwrap(getApi().proxy.getConfigStatus())
-      set({ config, configStatus: 'ready' })
+      const [config, providers] = await Promise.all([unwrap(getApi().proxy.getConfigStatus()), unwrap(getApi().proxy.providers())])
+      set({ config, providers, configStatus: 'ready' })
     } catch (err) {
       set({ configStatus: 'error', configError: toAppError(err) })
     }
@@ -67,10 +74,16 @@ export const useProxyStore = create<ProxyState>((set) => ({
 
   upsertSession: (session) => set((state) => ({ sessions: upsertProxySession(state.sessions, session) })),
 
-  testGateway: async (pool) => {
-    set({ gatewayTesting: true, gatewayPool: pool ?? null })
+  testGateway: async (pool, providerId) => {
+    set({ gatewayTesting: true, gatewayPool: pool ?? null, gatewayProvider: providerId ?? null })
     try {
-      const result = await unwrap(pool === undefined ? getApi().proxy.testConnection(null) : getApi().proxy.testConnection(null, pool))
+      const result = await unwrap(
+        pool === undefined
+          ? getApi().proxy.testConnection(null)
+          : providerId === undefined
+            ? getApi().proxy.testConnection(null, pool)
+            : getApi().proxy.testConnection(null, pool, providerId),
+      )
       set({ gatewayTest: result })
       return result
     } catch (err) {

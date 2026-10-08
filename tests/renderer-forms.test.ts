@@ -40,7 +40,7 @@ describe('profile form validation', () => {
   it('requires a session id in sticky mode but not in rotating mode', () => {
     const sticky = validateProfileForm({ ...emptyProfileForm(), name: 'A' })
     expect(sticky.errors?.stickySessionId).toMatch(/required/i)
-    const rotating = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'dataimpulse-rotating' })
+    const rotating = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'rotating' })
     expect(rotating.errors).toBeNull()
     expect(rotating.input?.stickySessionId).toBeNull()
   })
@@ -63,10 +63,10 @@ describe('profile form validation', () => {
   })
 
   it('rejects non-http(s) form URLs with the https:// hint', () => {
-    const result = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'dataimpulse-rotating', formUrlOverride: 'ftp://files.example.com/form' })
+    const result = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'rotating', formUrlOverride: 'ftp://files.example.com/form' })
     expect(result.input).toBeNull()
     expect(result.errors?.formUrlOverride).toMatch(/https:\/\//)
-    const okResult = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'dataimpulse-rotating', formUrlOverride: 'http://forms.example.com/qa' })
+    const okResult = validateProfileForm({ ...emptyProfileForm(), name: 'A', proxyMode: 'rotating', formUrlOverride: 'http://forms.example.com/qa' })
     expect(okResult.errors).toBeNull()
   })
 
@@ -84,12 +84,12 @@ describe('profile form validation', () => {
 
   it('validates sticky session ids with the shared rule, requiring one only in sticky mode', () => {
     expect(STICKY_SESSION_ID_PATTERN.source).toBe('^[a-zA-Z0-9_-]{1,64}$')
-    expect(validateStickySessionId('profile-ok_1', 'dataimpulse-sticky')).toBeNull()
-    expect(validateStickySessionId('has space', 'dataimpulse-sticky')).toMatch(/letters, digits/i)
-    expect(validateStickySessionId('x'.repeat(65), 'dataimpulse-sticky')).toMatch(/letters, digits/i)
-    expect(validateStickySessionId('', 'dataimpulse-sticky')).toMatch(/required/i)
-    expect(validateStickySessionId('', 'dataimpulse-sticky', false)).toBeNull()
-    expect(validateStickySessionId('', 'dataimpulse-rotating')).toBeNull()
+    expect(validateStickySessionId('profile-ok_1', 'sticky')).toBeNull()
+    expect(validateStickySessionId('has space', 'sticky')).toMatch(/letters, digits/i)
+    expect(validateStickySessionId('x'.repeat(65), 'sticky')).toMatch(/letters, digits/i)
+    expect(validateStickySessionId('', 'sticky')).toMatch(/required/i)
+    expect(validateStickySessionId('', 'sticky', false)).toBeNull()
+    expect(validateStickySessionId('', 'rotating')).toBeNull()
     expect(validateStickySessionId('', 'none')).toBeNull()
   })
 
@@ -247,8 +247,9 @@ describe('settings form validation', () => {
     browserExecutableOrigins: {},
     singleSessionMode: true,
     extraChromiumArgs: [] as string[],
-    targetingEncoding: 'remove-spaces' as const,
-    defaultProxyPool: 'residential' as const,
+    providerOptions: {} as Record<string, { encoding?: string }>,
+    defaultProviderId: 'dataimpulse',
+    defaultProxyPool: 'residential',
     defaultTargetCountry: 'us',
     locationMatchPolicy: 'state' as const,
     locationMatchAttempts: 3,

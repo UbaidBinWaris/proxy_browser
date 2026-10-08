@@ -1,23 +1,17 @@
 import { readFile, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { z } from 'zod'
-import { ProfileInputSchema } from '@shared/types'
-import {
-  GatewayInputSchema,
-  MatrixInputSchema,
-  ScenarioInputSchema,
-  EnvironmentInputSchema,
-  SuiteInputSchema,
-} from '@shared/qa'
+import { GatewayInputSchema, MatrixInputSchema, QaHealingModeSchema } from '@shared/qa'
 import { createProfileManager } from '../browser/profile-manager'
 import { createBrowserProvisioner } from '../browser/browser-provisioner'
 import { openDatabase } from '../database'
 import { createLogger } from '../logging/logger'
 import { compileSecrets, redactString } from '../logging/redact'
-import { readProxyEnv, PROXY_ENV_KEYS } from '../config/env'
-import { DataImpulseProvider } from '../proxy/providers/dataimpulse'
+import { scrubProxySecretEnv } from '../config/env'
+import { BUILT_IN_DIALECTS, ProviderRegistry } from '../proxy/providers/registry'
 import { createProxyManager } from '../proxy/proxy-manager'
 import { createIpChecker } from '../proxy/ip-checker'
+import { configErrorText, parseQaManifest } from './cli-manifest'
+import { lookupFromDialects, resolveCliProxy } from './cli-proxy'
 import { createQaExecutor } from './runtime'
 import { createQaService } from './service'
 import { exportBatch } from './reports'
@@ -25,35 +19,10 @@ import { createVisualStore, visualKey } from './visual'
 import { writeFileAtomicSync } from '../util/atomic-file'
 import type { AppPaths } from '../contracts'
 
-const EnvironmentsSchema = z
-  .array(EnvironmentInputSchema.extend({ id: z.string().min(1) }))
-  .max(1000)
-  .default([])
-const ManifestSchema = z.union([
-  z.object({
-    scenario: ScenarioInputSchema.safeExtend({ id: z.string().min(1).optional() }),
-    profile: ProfileInputSchema,
-    matrix: MatrixInputSchema.optional(),
-    environments: EnvironmentsSchema,
-  }),
-  z.object({
-    suite: SuiteInputSchema,
-    scenarios: z
-      .array(ScenarioInputSchema.safeExtend({ id: z.string().min(1) }))
-      .min(1)
-      .max(100),
-    profiles: z
-      .array(ProfileInputSchema.extend({ id: z.string().min(1) }))
-      .min(1)
-      .max(100),
-    matrix: MatrixInputSchema.optional(),
-    environments: EnvironmentsSchema,
-  }),
-])
 export async function runQaCli(args: string[]): Promise<number> {
   if (args.includes('--help') || args.length === 0) {
     process.stdout.write(
-      'Usage: npm run qa -- --config scenario.json [--output qa-results] [--environment name] [--baselines approved.qavb]\nExports JSON, JUnit XML and HTML. Exit: 0 passed, 1 failed, 2 configuration error, 130 cancelled.\nProxy credentials use DATAIMPULSE_PROXY_* environment variables. No .env file is loaded.\n',
+      'Usage: npm run qa -- --config scenario.json [--output qa-results] [--environment name] [--baselines approved.qavb] [--healing off|warn|fail]\n--healing overrides every scenario\'s self-healing mode (default: the manifest value, else warn).\nExports JSON, JUnit XML and HTML. Exit: 0 passed, 1 failed, 2 configuration error, 130 cancelled.\nProxy credentials come from QA_PROVIDER, QA_PROVIDER_PRODUCT, QA_PROVIDER_HOST/_PORT/_USERNAME/_PASSWORD and QA_PROVIDER_EXTRA_<KEY> (DATAIMPULSE_PROXY_* is an alias for QA_PROVIDER=dataimpulse). No .env file is loaded.\n',
     )
     return args.length ? 0 : 2
   }
@@ -63,20 +32,23 @@ export async function runQaCli(args: string[]): Promise<number> {
       value = args[index + 1]
     if (
       !flag ||
-      !['--config', '--output', '--environment', '--baselines'].includes(flag) ||
+      !['--config', '--output', '--environment', '--baselines', '--healing'].includes(flag) ||
       !value ||
       value.startsWith('--') ||
       flags.has(flag)
     )
       throw new Error(
-        'Use --config <file> with optional --output <directory>, --environment <name>, and --baselines <pack>.',
+        'Use --config <file> with optional --output <directory>, --environment <name>, --baselines <pack>, and --healing off|warn|fail.',
       )
     flags.set(flag, value)
   }
   const file = flags.get('--config')
   if (!file) throw new Error('--config is required.')
+  const healingFlag = flags.get('--healing')
+  const healing = healingFlag === undefined ? undefined : QaHealingModeSchema.safeParse(healingFlag).data
+  if (healingFlag !== undefined && !healing) throw new Error('--healing must be off, warn or fail.')
   if ((await stat(file)).size > 10 * 1024 * 1024) throw new Error('Scenario manifest exceeds 10 MB.')
-  const manifest = ManifestSchema.parse(JSON.parse(await readFile(file, 'utf8')))
+  const manifest = parseQaManifest(JSON.parse(await readFile(file, 'utf8')))
   const environmentName = flags.get('--environment')
   const candidates = manifest.environments.filter((env) => env.name === environmentName)
   if (environmentName && candidates.length !== 1)
@@ -114,6 +86,8 @@ export async function runQaCli(args: string[]): Promise<number> {
       if (!manifest.profiles.some((profile) => profile.id === scenario.profileId))
         throw new Error('Suite manifest has a missing profile.')
   }
+  // Validated before anything is created: a configuration error leaves no state behind.
+  const proxySetup = resolveCliProxy(process.env, lookupFromDialects(BUILT_IN_DIALECTS), 'profile' in manifest ? [manifest.profile] : manifest.profiles)
   const output = resolve(flags.get('--output') ?? 'qa-results')
   await mkdir(output, { recursive: true, mode: 0o700 })
   const state = await mkdtemp(join(output, '.qa-state-'))
@@ -130,16 +104,20 @@ export async function runQaCli(args: string[]): Promise<number> {
   const db = openDatabase(':memory:', { defaultScreenshotDir: paths.screenshots, env: {} })
   const logger = createLogger({ repo: db.logs, fileDir: paths.logs })
   const secrets: string[] = []
-  const env = readProxyEnv()
+  const ipChecker = createIpChecker({ getSettings: db.settings.get, logger })
+  // Every built-in provider is registered; the environment's credentials go to the provider they name.
+  const registry = new ProviderRegistry({ ipChecker, logger })
+  for (const dialect of BUILT_IN_DIALECTS) registry.register(dialect)
   if (customInput) secrets.push(customInput.username, customInput.password)
-  if (env.config) secrets.push(env.config.password, env.config.username)
-  const pool = 'profile' in manifest ? manifest.profile.proxyPool : manifest.profiles[0]!.proxyPool
+  secrets.push(...proxySetup.secrets)
+  for (const secret of secrets) logger.registerSecret(secret)
+  for (const warning of proxySetup.warnings) process.stderr.write(`QA configuration warning: ${warning}\n`)
   const sanitize = (text: string): string => redactString(text, compileSecrets(secrets))
-  delete process.env[PROXY_ENV_KEYS.password]
-  delete process.env[PROXY_ENV_KEYS.username]
+  // Nothing launched from here on (browsers, installers) may inherit a proxy secret.
+  scrubProxySecretEnv(process.env)
   delete process.env.QA_PROXY_PASSWORD
   delete process.env.QA_PROXY_USERNAME
-  const profiles = createProfileManager({ repo: db.profiles, logger })
+  const profiles = createProfileManager({ repo: db.profiles, logger, providers: registry })
   const provisioner = createBrowserProvisioner({
     paths,
     logger,
@@ -148,14 +126,15 @@ export async function runQaCli(args: string[]): Promise<number> {
     resourcesPath: '',
     versionCacheFile: null,
   })
-  const provider = new DataImpulseProvider({
-    ipChecker: createIpChecker({ getSettings: db.settings.get, logger }),
+  if (proxySetup.credentials) registry.get(proxySetup.providerId).setCredentials([proxySetup.credentials], 'env')
+  const proxy = createProxyManager({
+    providers: registry,
+    defaultProviderId: () => proxySetup.providerId,
+    sessions: db.proxySessions,
+    profiles: db.profiles,
     logger,
-    credentials: env.config ? [{ ...env.config, pool, sessionTemplate: null }] : [],
-    source: 'env',
   })
-  const proxy = createProxyManager({ provider, sessions: db.proxySessions, profiles: db.profiles, logger })
-  const checker = createIpChecker({ getSettings: db.settings.get, logger })
+  const checker = ipChecker
   if (customInput)
     db.qa!.saveGateway({
       id: 'cli-custom',
@@ -212,6 +191,7 @@ export async function runQaCli(args: string[]): Promise<number> {
         profileId: profile.id,
         captureTrace: false,
         gatewayId: customInput ? 'cli-custom' : null,
+        healing: healing ?? manifest.scenario.healing,
       }).id
     } else {
       const profileIds = new Map(manifest.profiles.map((profile) => [profile.id, profiles.create(profile).id]))
@@ -224,6 +204,7 @@ export async function runQaCli(args: string[]): Promise<number> {
             profileId: profileIds.get(scenario.profileId)!,
             captureTrace: false,
             gatewayId: customInput ? 'cli-custom' : null,
+            healing: healing ?? scenario.healing,
           }).id,
         ]),
       )
@@ -267,7 +248,7 @@ void runQaCli(process.argv.slice(2))
   })
   .catch((err: unknown) => {
     process.stderr.write(
-      `QA configuration error: ${err instanceof z.ZodError ? err.issues.map((issue) => issue.message).join('; ') : err instanceof Error ? err.message : 'Unknown error'}\n`,
+      `QA configuration error: ${configErrorText(err)}\n`,
     )
     process.exitCode = 2
   })

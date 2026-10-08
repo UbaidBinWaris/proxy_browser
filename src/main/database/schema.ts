@@ -262,6 +262,29 @@ export const MIGRATIONS: readonly Migration[] = [
         db.exec(`CREATE TABLE ${table}(id TEXT PRIMARY KEY, body TEXT NOT NULL)`)
     },
   },
+  {
+    /**
+     * Selectable proxy providers. Profiles name their provider (`provider_id`);
+     * every existing profile was a DataImpulse profile. Proxy modes become
+     * provider-neutral: 'dataimpulse-sticky' → 'sticky', 'dataimpulse-rotating'
+     * → 'rotating' ('none' and any other value are left as they are). Test runs
+     * record the provider of a proxied run (`provider`); rows from earlier
+     * versions are DataImpulse runs, except direct runs (no pool), which get
+     * NULL. `proxy_sessions.provider` already exists (v1) and is now written by
+     * the repository instead of being fixed to 'dataimpulse'.
+     */
+    version: 8,
+    name: 'proxy-providers',
+    up: (db) => {
+      db.exec(`
+        UPDATE profiles SET proxy_mode = 'sticky'   WHERE proxy_mode = 'dataimpulse-sticky';
+        UPDATE profiles SET proxy_mode = 'rotating' WHERE proxy_mode = 'dataimpulse-rotating';
+        ALTER TABLE profiles  ADD COLUMN provider_id TEXT NOT NULL DEFAULT 'dataimpulse';
+        ALTER TABLE test_runs ADD COLUMN provider    TEXT DEFAULT 'dataimpulse';
+        UPDATE test_runs SET provider = NULL WHERE pool IS NULL;
+      `)
+    },
+  },
 ]
 
 /** Create the migrations ledger and apply every pending migration in order. */

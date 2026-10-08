@@ -226,10 +226,10 @@ describe('validateCredentialsUpdateForm (partial update of a vault pool)', () =>
 
   it('sends only what changed: a password alone keeps the stored username', () => {
     expect(validateCredentialsUpdateForm(form({ password: 'new pass ' }), 'residential', { current, templateTouched: false })).toEqual({
-      input: { pool: 'residential', host: 'gw.dataimpulse.com', port: 823, password: 'new pass ' },
+      input: { providerId: 'dataimpulse', pool: 'residential', host: 'gw.dataimpulse.com', port: 823, password: 'new pass ' },
       errors: null,
     })
-    expect(validateCredentialsUpdateForm(form({ username: ' login2 ' }), 'mobile', { current, templateTouched: false }).input).toEqual({ pool: 'mobile', host: 'gw.dataimpulse.com', port: 823, username: 'login2' })
+    expect(validateCredentialsUpdateForm(form({ username: ' login2 ' }), 'mobile', { current, templateTouched: false }).input).toEqual({ providerId: 'dataimpulse', pool: 'mobile', host: 'gw.dataimpulse.com', port: 823, username: 'login2' })
   })
 
   it('includes the template only when edited (empty edit removes the override)', () => {

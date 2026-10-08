@@ -16,7 +16,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } fro
 import { SessionsTable } from '@/components/SessionsTable'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { historyRunPath } from '@/lib/navigation'
-import { describeTarget, locationAttemptsLabel, poolShortLabel } from '@/lib/targeting'
+import { describeTarget, locationAttemptsLabel } from '@/lib/targeting'
+import { recordPoolLabel } from '@/lib/providers'
+import { useProviders } from '@/hooks/useProviders'
 import { describeVerifiedLocation, formatDate, orDash } from '@/lib/utils'
 import { useProfilesStore } from '@/stores/profiles'
 import { useRunsStore } from '@/stores/runs'
@@ -31,6 +33,7 @@ export function selectRecentFinishedRuns(runs: readonly TestRun[], limit: number
 }
 
 export function SessionsPage(): React.JSX.Element {
+  const providers = useProviders()
   const navigate = useNavigate()
   const sessionsById = useSessionsStore((s) => s.sessions)
   const status = useSessionsStore((s) => s.status)
@@ -259,7 +262,7 @@ export function SessionsPage(): React.JSX.Element {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={run.proxyPool ? 'default' : 'info'}>{poolShortLabel(run.proxyPool ?? 'none')}</Badge>
+                      <Badge variant={run.proxyPool ? 'default' : 'info'}>{recordPoolLabel(providers, run.provider, run.proxyPool)}</Badge>
                     </TableCell>
                     <TableCell className="max-w-[160px]">
                       <span className="block truncate" title={describeTarget(run.target)}>

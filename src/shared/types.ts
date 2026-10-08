@@ -193,9 +193,27 @@ export const DevicePresetIdSchema = z.string().trim().min(1).max(80)
 export type DevicePresetId = string
 export type CoreDevicePresetId = (typeof DEVICE_PRESET_IDS)[number]
 
-export const PROXY_MODES = ['none', 'dataimpulse-sticky', 'dataimpulse-rotating'] as const
-export const ProxyModeSchema = z.enum(PROXY_MODES)
-export type ProxyMode = z.infer<typeof ProxyModeSchema>
+/**
+ * How a profile connects: directly, through a sticky session (one exit IP held for the
+ * session's lifetime) or rotating (a new exit IP per connection). The provider is a separate
+ * field (`Profile.providerId`).
+ */
+export const PROXY_MODES = ['none', 'sticky', 'rotating'] as const
+/**
+ * Values written by v1.3.0 and earlier (SQLite rows, QA configuration backups, exported CLI
+ * manifests). They are read as the provider-neutral modes; nothing writes them any more.
+ */
+export const LEGACY_PROXY_MODES: Readonly<Record<string, ProxyMode>> = {
+  'dataimpulse-sticky': 'sticky',
+  'dataimpulse-rotating': 'rotating',
+}
+/** Map a legacy `dataimpulse-*` mode to its provider-neutral value; anything else is returned unchanged. */
+export function normalizeProxyMode(value: unknown): unknown {
+  return typeof value === 'string' && Object.hasOwn(LEGACY_PROXY_MODES, value) ? LEGACY_PROXY_MODES[value] : value
+}
+/** Accepts the legacy `dataimpulse-*` values too (files exported by v1.3.0 keep loading). */
+export const ProxyModeSchema = z.preprocess(normalizeProxyMode, z.enum(PROXY_MODES))
+export type ProxyMode = (typeof PROXY_MODES)[number]
 
 export const PROXY_STATUSES = ['untested', 'testing', 'working', 'failed', 'offline'] as const
 export const ProxyStatusSchema = z.enum(PROXY_STATUSES)
@@ -292,24 +310,107 @@ export interface DevicePresetInfo {
 // Proxy pools & geo targeting
 // ---------------------------------------------------------------------------
 
-/** DataImpulse sells pools as separate plans with their own logins on the same gateway. */
-export const PROXY_POOLS = ['residential', 'mobile'] as const
-export const ProxyPoolSchema = z.enum(PROXY_POOLS)
-export type ProxyPool = z.infer<typeof ProxyPoolSchema>
-export const PROXY_POOL_LABELS: Record<ProxyPool, string> = {
-  residential: 'DataImpulse Residential',
-  mobile: 'DataImpulse Mobile',
-}
+/**
+ * Built-in proxy providers, one dialect each under src/main/proxy/providers/.
+ * Adding a provider adds its id here (and registers its dialect in providers/registry.ts).
+ */
+export const PROVIDER_IDS = ['dataimpulse'] as const
+/** The provider every profile, Quick Launch and stored credential set used before providers were selectable. */
+export const DEFAULT_PROVIDER_ID = 'dataimpulse'
+/** Lower-case slug shared by provider ids and product keys. */
+const SLUG_PATTERN = /^[a-z0-9-]{1,32}$/
+/**
+ * A provider id. Stored ids are open strings validated against the provider registry at
+ * runtime, so a profile that names a provider this build does not know fails with
+ * INVALID_INPUT naming it instead of being silently switched to another provider.
+ */
+export const ProviderIdSchema = z.string().trim().regex(SLUG_PATTERN, 'Provider id must be 1–32 lower-case letters, digits or dashes')
+export type ProviderId = string
+
+/**
+ * A provider product (plan / pool), e.g. DataImpulse "residential" or "mobile". Validated at
+ * runtime against the selected provider's capabilities. "none" is reserved (direct connection).
+ */
+export const ProductKeySchema = z
+  .string()
+  .trim()
+  .regex(SLUG_PATTERN, 'Product must be 1–32 lower-case letters, digits or dashes')
+  .refine((key) => key !== 'none', '"none" is reserved for a direct connection')
+export type ProductKey = string
+/** The product used when none is named (DataImpulse's base plan; stored values predate products). */
+export const DEFAULT_PRODUCT_KEY = 'residential'
 
 /** How precisely the exit IP location is requested from the provider. */
 export const TARGET_MODES = ['country', 'state', 'city', 'zip'] as const
 export const TargetModeSchema = z.enum(TARGET_MODES)
 export type TargetMode = z.infer<typeof TargetModeSchema>
 
+// ---------------------------------------------------------------------------
+// Provider capabilities (credential-free; shared with the renderer over IPC)
+// ---------------------------------------------------------------------------
+
+export interface ProviderProduct {
+  key: ProductKey
+  label: string
+  /** Shown next to the product when it costs more than the base plan. */
+  billingNote?: string
+}
+
+export interface StickyCapabilities {
+  supported: boolean
+  /** Session lifetime the provider accepts, when it can be set. */
+  ttlMinutes?: { min: number; max: number }
+  /** Source of a RegExp every session id produced by the dialect matches. */
+  idPattern: string
+  idMaxLength: number
+}
+
+export interface ExtraCredentialField {
+  /** Key in the stored `extras` map (letters, digits, underscore). */
+  key: string
+  label: string
+  /** Secret fields are rendered as password inputs, never echoed back and registered with the logger. */
+  secret: boolean
+}
+
+export interface ProviderCapabilities {
+  products: ProviderProduct[]
+  targetModes: TargetMode[]
+  sticky: StickyCapabilities
+  defaults: { host: string; port: number }
+  extraCredentialFields: ExtraCredentialField[]
+  /** Shown when a request targets more than a country and the provider bills that at a higher rate. */
+  targetingBillingNote?: string
+  /**
+   * Bundled data file (under resources/geonames) listing the state values the
+   * provider accepts; states outside it are flagged as not officially targetable.
+   */
+  stateAllowlistFile?: string
+  /** Accepted `ProviderOptions.encoding` values, default first. */
+  encodingOptions?: string[]
+}
+
+/** Label of a provider's product ("Residential"); the key itself when the provider does not offer it. */
+export function productLabel(capabilities: Pick<ProviderCapabilities, 'products'>, key: ProductKey): string {
+  return capabilities.products.find((product) => product.key === key)?.label ?? key
+}
+
+/** What the renderer may know about a registered provider. NEVER includes credentials. */
+export interface ProviderInfo {
+  id: ProviderId
+  displayName: string
+  docsUrl: string
+  capabilities: ProviderCapabilities
+  /** Default sticky-session username template when the provider supports templates (placeholders {username}, {session}); null otherwise. */
+  sessionTemplate: string | null
+  /** Password-free configuration of each product. */
+  status: ProxyConfigStatus
+}
+
 /**
- * Requested exit location. `country` is always required by DataImpulse (lower-case ISO-2).
+ * Requested exit location. `country` (lower-case ISO-2) is always present.
  * `state`/`city` hold the human-readable names (e.g. "New Jersey", "Los Angeles"); the
- * provider adapter encodes them (DataImpulse: lower-case, spaces removed → state.newjersey).
+ * provider dialect encodes them (DataImpulse: lower-case, spaces removed → state.newjersey).
  */
 export const GeoTargetSchema = z.object({
   mode: TargetModeSchema,
@@ -423,7 +524,7 @@ export const ProfileInputSchema = z.object({
   locale: z.string().trim().min(2).max(35),
   timezone: z.string().trim().min(1).max(64),
   proxyMode: ProxyModeSchema,
-  /** Required when proxyMode is dataimpulse-sticky; letters, digits, dash, underscore (max 64). */
+  /** Required when proxyMode is sticky; letters, digits, dash, underscore (max 64). */
   stickySessionId: z
     .string()
     .trim()
@@ -432,11 +533,13 @@ export const ProfileInputSchema = z.object({
   /** Optional per-profile override of the default test form URL (http/https only). */
   formUrlOverride: FormUrlSchema.nullable(),
   notes: z.string().max(4000),
-  /** Which provider pool (plan/login) to use when proxyMode is not 'none'. */
-  proxyPool: ProxyPoolSchema.default('residential'),
+  /** Which product (plan/login) of the provider to use when proxyMode is not 'none'; validated against the provider's capabilities. */
+  proxyPool: ProductKeySchema.default(DEFAULT_PRODUCT_KEY),
+  /** Proxy provider; profiles saved before providers were selectable are DataImpulse profiles. */
+  providerId: ProviderIdSchema.default(DEFAULT_PROVIDER_ID),
   /** Requested exit location; null = provider default (no geo filter beyond the login). */
   target: GeoTargetSchema.nullable().default(null),
-  /** Sticky session TTL in minutes (DataImpulse sessttl); null = provider default (~30 min). */
+  /** Sticky session TTL in minutes (e.g. DataImpulse sessttl); null = provider default. */
   stickyTtlMinutes: z.int().min(1).max(1440).nullable().default(null),
   /** Created by Quick Launch and hidden from the Profiles page unless saved. */
   ephemeral: z.boolean().default(false),
@@ -452,8 +555,10 @@ export const QuickLaunchInputSchema = z.object({
   startUrl: FormUrlSchema.nullable(),
   engine: BrowserEngineSchema,
   devicePreset: DevicePresetIdSchema,
-  /** 'none' = direct connection. */
-  proxyPool: z.union([ProxyPoolSchema, z.literal('none')]),
+  /** Provider of the product below (ignored for a direct connection). */
+  providerId: ProviderIdSchema.default(DEFAULT_PROVIDER_ID),
+  /** Product key of the provider, or 'none' = direct connection. */
+  proxyPool: z.union([z.literal('none'), ProductKeySchema]),
   target: GeoTargetSchema.nullable(),
   /** true → a fresh sticky session id is generated for this launch; false → rotating. */
   sticky: z.boolean().default(true),
@@ -471,7 +576,9 @@ export type QuickLaunchInput = z.infer<typeof QuickLaunchInputSchema>
 
 /** What the launcher shows before connecting: the exact targeting string that will be sent (no secrets). */
 export interface TargetingPreview {
-  pool: ProxyPool | 'none'
+  /** Provider the preview was composed for (null for a direct connection). */
+  providerId: ProviderId | null
+  pool: ProductKey | 'none'
   /** e.g. "cr.us;state.newjersey;sessid.ql-7f3a" — parameters only, never the login or password. */
   targetingString: string | null
   poolConfigured: boolean
@@ -491,7 +598,8 @@ export type Profile = z.infer<typeof ProfileSchema>
 
 /** What the renderer may know about proxy configuration. NEVER includes the password. */
 export interface ProxyPoolStatus {
-  pool: ProxyPool
+  /** Product key (one entry per product the provider offers, in capability order). */
+  pool: ProductKey
   configured: boolean
   host: string | null
   port: number | null
@@ -503,7 +611,7 @@ export interface ProxyConfigStatus {
   /** True when at least one pool is configured. */
   configured: boolean
   pools: ProxyPoolStatus[]
-  provider: 'dataimpulse'
+  provider: ProviderId
   host: string | null
   port: number | null
   /** Username with the middle masked, e.g. "ab****yz". */
@@ -530,9 +638,17 @@ export type KeyBackend = (typeof KEY_BACKENDS)[number]
 export const SESSION_TEMPLATE_MESSAGE = 'Session template must contain both {username} and {session}'
 export const isValidSessionTemplate = (template: string): boolean => template.includes('{username}') && template.includes('{session}')
 
+/** Keys of provider-specific credential fields (`capabilities.extraCredentialFields`). */
+export const ExtraFieldKeySchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/, 'Extra field keys are letters, digits and underscores')
+/** Provider-specific credential values (e.g. a Bright Data zone). Encrypted in the vault like passwords. */
+export const CredentialExtrasSchema = z.record(ExtraFieldKeySchema, z.string().max(512))
+
 /** Input for saving/testing proxy credentials from the UI. Never echoed back. */
 export const ProxyCredentialsInputSchema = z.object({
-  pool: ProxyPoolSchema.default('residential'),
+  /** Provider the credentials belong to; inputs written before providers existed are DataImpulse inputs. */
+  providerId: ProviderIdSchema.default(DEFAULT_PROVIDER_ID),
+  /** Product key (validated against the provider's capabilities by the main process). */
+  pool: ProductKeySchema.default(DEFAULT_PRODUCT_KEY),
   host: z.string().trim().min(1, 'Proxy host is required').max(253),
   port: z.int().min(1).max(65535),
   username: z.string().trim().min(1, 'Proxy username is required').max(256),
@@ -544,8 +660,13 @@ export const ProxyCredentialsInputSchema = z.object({
     .max(200)
     .nullable()
     .refine((t) => t === null || t === '' || isValidSessionTemplate(t), SESSION_TEMPLATE_MESSAGE),
+  /** Values for the provider's extra credential fields; empty values are dropped. */
+  extras: CredentialExtrasSchema.default({}),
 })
-export type ProxyCredentialsInput = z.infer<typeof ProxyCredentialsInputSchema>
+/** What callers send (defaults may be omitted). */
+export type ProxyCredentialsInput = z.input<typeof ProxyCredentialsInputSchema>
+/** Validated credentials input, defaults applied. */
+export type ProxyCredentialsData = z.output<typeof ProxyCredentialsInputSchema>
 
 /**
  * Partial update of one pool's stored credentials (Manage keys window). Absent or empty
@@ -555,7 +676,8 @@ export type ProxyCredentialsInput = z.infer<typeof ProxyCredentialsInputSchema>
  * merged result with `ProxyCredentialsInputSchema`. Never echoed back.
  */
 export const ProxyCredentialsUpdateSchema = z.object({
-  pool: ProxyPoolSchema,
+  providerId: ProviderIdSchema.default(DEFAULT_PROVIDER_ID),
+  pool: ProductKeySchema,
   host: z.string().trim().max(253).optional(),
   port: z.int().min(1).max(65535).optional(),
   username: z.string().trim().max(256).optional(),
@@ -567,14 +689,16 @@ export const ProxyCredentialsUpdateSchema = z.object({
     .nullable()
     .optional()
     .refine((t) => t === undefined || t === null || t === '' || isValidSessionTemplate(t), SESSION_TEMPLATE_MESSAGE),
+  /** Per extra field: absent or empty keeps the stored value. */
+  extras: CredentialExtrasSchema.optional(),
 })
-export type ProxyCredentialsUpdate = z.infer<typeof ProxyCredentialsUpdateSchema>
+export type ProxyCredentialsUpdate = z.input<typeof ProxyCredentialsUpdateSchema>
 
 /** Local, network-free health of the credential vault. Safe to send to the renderer. */
 export interface SecurityStatus {
   source: CredentialSource
-  /** Pools with credentials present in the vault (or env fallback). */
-  configuredPools: ProxyPool[]
+  /** Products with credentials present in the vault, per provider id (only providers with at least one product). */
+  configuredProducts: Record<ProviderId, ProductKey[]>
   /** Backend protecting the vault key ('none' when no key exists yet). */
   keyBackend: KeyBackend
   /** Human label of the OS backend, e.g. "Windows DPAPI", "GNOME Keyring / libsecret", "machine-derived (reduced protection)". */
@@ -632,8 +756,10 @@ export interface IpInfo {
 export interface ProxySession {
   id: string
   profileId: string | null
-  provider: 'dataimpulse'
-  pool: ProxyPool
+  /** Provider id the session was tested through. */
+  provider: ProviderId
+  /** Product key. */
+  pool: ProductKey
   target: GeoTarget | null
   targetingString: string | null
   targetMatch: TargetMatch | null
@@ -673,7 +799,10 @@ export interface TestRun {
   profileName: string
   engine: BrowserEngine
   devicePreset: DevicePresetId
-  proxyPool: ProxyPool | null
+  /** Provider id of a proxied run; null for a direct connection. */
+  provider: ProviderId | null
+  /** Product key of a proxied run; null for a direct connection. */
+  proxyPool: ProductKey | null
   target: GeoTarget | null
   /** Parameters sent to the provider (no login/password), e.g. "cr.us;zip.07102;sessid.x". */
   targetingString: string | null
@@ -742,7 +871,9 @@ export interface BrowserSession {
   profileName: string
   engine: BrowserEngine
   devicePreset: DevicePresetId
-  proxyPool: ProxyPool | null
+  /** Provider id of a proxied session; null for a direct connection. */
+  provider: ProviderId | null
+  proxyPool: ProductKey | null
   target: GeoTarget | null
   targetingString: string | null
   targetMatch: TargetMatch | null
@@ -845,6 +976,12 @@ export interface LogQuery {
 // Settings
 // ---------------------------------------------------------------------------
 
+/** Options the user sets per provider (Settings → Advanced → Targeting). */
+export const ProviderOptionsSchema = z.object({
+  encoding: z.string().trim().min(1).max(32).optional(),
+})
+export type ProviderOptions = z.infer<typeof ProviderOptionsSchema>
+
 export const AppSettingsSchema = z.object({
   defaultFormUrl: FormUrlSchema,
   ipCheckProvider: IpCheckProviderSchema,
@@ -872,9 +1009,17 @@ export const AppSettingsSchema = z.object({
   singleSessionMode: z.boolean().default(true),
   /** Extra command-line flags for Chromium-family launches ("Flags settings"). */
   extraChromiumArgs: z.array(z.string().trim().regex(/^--[A-Za-z0-9-]+(=.*)?$/, 'Flags must look like --flag or --flag=value')).default([]),
-  /** How multi-word place names are encoded for the provider. DataImpulse publishes state.newjersey → 'remove-spaces'. */
-  targetingEncoding: z.enum(['remove-spaces', 'underscore', 'keep']).default('remove-spaces'),
-  defaultProxyPool: ProxyPoolSchema.default('residential'),
+  /**
+   * Per-provider options, keyed by provider id. `encoding` (one of the provider's
+   * `capabilities.encodingOptions`) controls how multi-word place names are sent; unknown values
+   * fall back to the provider's default. Replaces the global `targetingEncoding` of earlier
+   * versions, whose value is moved to `providerOptions.dataimpulse.encoding` on first load.
+   */
+  providerOptions: z.record(ProviderIdSchema, ProviderOptionsSchema).default({}),
+  /** Provider preselected for new profiles and Quick Launch, and used for raw gateway tests. */
+  defaultProviderId: ProviderIdSchema.default(DEFAULT_PROVIDER_ID),
+  /** Product of the default provider preselected for new profiles and raw gateway tests. */
+  defaultProxyPool: ProductKeySchema.default(DEFAULT_PRODUCT_KEY),
   defaultTargetCountry: z.string().trim().length(2).toLowerCase().default('us'),
   /** Sticky sessions with a target: what the verified exit location must achieve before the browser opens. */
   locationMatchPolicy: LocationMatchPolicySchema.default('state'),
@@ -911,8 +1056,9 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'screenshotDir'> = {
   browserExecutableOrigins: {},
   singleSessionMode: true,
   extraChromiumArgs: [],
-  targetingEncoding: 'remove-spaces',
-  defaultProxyPool: 'residential',
+  providerOptions: {},
+  defaultProviderId: DEFAULT_PROVIDER_ID,
+  defaultProxyPool: DEFAULT_PRODUCT_KEY,
   defaultTargetCountry: 'us',
   locationMatchPolicy: 'state',
   locationMatchAttempts: 3,

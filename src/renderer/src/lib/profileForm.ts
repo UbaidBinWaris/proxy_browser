@@ -1,5 +1,6 @@
-import type { BrowserEngine, BrowserEngineInfo, DevicePresetId, DevicePresetInfo, DeviceType, GeoTarget, Profile, ProfileInput, ProxyMode, ProxyPool, TargetMode } from '@shared/types'
-import { BROWSER_ENGINES, BROWSER_ENGINE_KIND, BROWSER_ENGINE_LABELS, DEVICE_TYPES, DEVICE_TYPE_LABELS, ProfileInputSchema } from '@shared/types'
+import type { BrowserEngine, BrowserEngineInfo, DevicePresetId, DevicePresetInfo, DeviceType, GeoTarget, ProductKey, Profile, ProfileInput, ProviderId, ProxyMode, TargetMode } from '@shared/types'
+import { BROWSER_ENGINES, BROWSER_ENGINE_KIND, BROWSER_ENGINE_LABELS, DEFAULT_PRODUCT_KEY, DEFAULT_PROVIDER_ID, DEVICE_TYPES, DEVICE_TYPE_LABELS, ProfileInputSchema } from '@shared/types'
+import type { ProviderLike } from './providers'
 import { engineAction } from './engines'
 import { toKebab } from './utils'
 
@@ -29,8 +30,10 @@ export interface ProfileFormState {
   stickySessionId: string
   formUrlOverride: string
   notes: string
-  /** Provider pool used when proxyMode is not 'none'. */
-  proxyPool: ProxyPool
+  /** Proxy provider used when proxyMode is not 'none'. */
+  providerId: ProviderId
+  /** Product of the provider used when proxyMode is not 'none'. */
+  proxyPool: ProductKey
   /** Mode shown by the target segmented control (kept even while `target` is null). */
   targetMode: TargetMode
   /** Requested exit location; null = provider default. */
@@ -53,7 +56,8 @@ export function detectTimezone(): string {
   }
 }
 
-export function emptyProfileForm(): ProfileFormState {
+/** New profiles start from the settings' default provider and product when given. */
+export function emptyProfileForm(defaults?: { providerId?: ProviderId; proxyPool?: ProductKey }): ProfileFormState {
   return {
     name: '',
     engine: 'chromium',
@@ -64,11 +68,12 @@ export function emptyProfileForm(): ProfileFormState {
     userAgent: '',
     locale: 'en-US',
     timezone: detectTimezone(),
-    proxyMode: 'dataimpulse-sticky',
+    proxyMode: 'sticky',
     stickySessionId: '',
     formUrlOverride: '',
     notes: '',
-    proxyPool: 'residential',
+    providerId: defaults?.providerId ?? DEFAULT_PROVIDER_ID,
+    proxyPool: defaults?.proxyPool ?? DEFAULT_PRODUCT_KEY,
     targetMode: 'state',
     target: null,
     stickyTtlMinutes: '',
@@ -91,6 +96,7 @@ export function profileFormFrom(profile: Profile): ProfileFormState {
     stickySessionId: profile.stickySessionId ?? '',
     formUrlOverride: profile.formUrlOverride ?? '',
     notes: profile.notes,
+    providerId: profile.providerId,
     proxyPool: profile.proxyPool,
     targetMode: profile.target?.mode ?? 'state',
     target: profile.target,
@@ -117,7 +123,7 @@ export function suggestSessionId(name: string): string {
  */
 export function validateStickySessionId(value: string, proxyMode: ProxyMode, requireWhenSticky = true): string | null {
   const trimmed = value.trim()
-  if (trimmed === '') return proxyMode === 'dataimpulse-sticky' && requireWhenSticky ? STICKY_SESSION_ID_REQUIRED_MESSAGE : null
+  if (trimmed === '') return proxyMode === 'sticky' && requireWhenSticky ? STICKY_SESSION_ID_REQUIRED_MESSAGE : null
   return STICKY_SESSION_ID_PATTERN.test(trimmed) ? null : STICKY_SESSION_ID_FORMAT_MESSAGE
 }
 
@@ -233,6 +239,24 @@ function humaniseIssue(key: string, message: string): string {
 
 export const TARGET_MESSAGE = 'Pick a location from the list (the country must be a 2-letter code, e.g. US)'
 
+/** The provider cannot serve the form as filled in (product, target mode, sticky sessions); mirrors the main process check. */
+export function providerFormProblem(
+  form: Pick<ProfileFormState, 'proxyMode' | 'proxyPool' | 'target' | 'targetMode'>,
+  provider: Pick<ProviderLike, 'displayName' | 'capabilities'>,
+): { field: keyof ProfileFormState; message: string } | null {
+  const { capabilities } = provider
+  if (!capabilities.products.some((product) => product.key === form.proxyPool)) {
+    return { field: 'proxyPool', message: `${provider.displayName} does not offer this product. Pick one of: ${capabilities.products.map((product) => product.label).join(', ')}.` }
+  }
+  if (form.target && !capabilities.targetModes.includes(form.targetMode)) {
+    return { field: 'target', message: `${provider.displayName} does not support targeting by ${form.targetMode}.` }
+  }
+  if (form.proxyMode === 'sticky' && !capabilities.sticky.supported) {
+    return { field: 'proxyMode', message: `${provider.displayName} does not support sticky sessions.` }
+  }
+  return null
+}
+
 /** Sticky TTL as typed → minutes (null when empty); NaN when not a whole number so the schema rejects it. */
 export function parseStickyTtl(value: string): number | null {
   const trimmed = value.trim()
@@ -247,6 +271,7 @@ export function parseStickyTtl(value: string): number | null {
 export function validateProfileForm(
   form: ProfileFormState,
   preset: DevicePresetInfo | null = null,
+  provider: Pick<ProviderLike, 'displayName' | 'capabilities'> | null = null,
 ): { input: ProfileInput; errors: null } | { input: null; errors: ProfileFormErrors } {
   const candidate = {
     name: form.name,
@@ -263,9 +288,10 @@ export function validateProfileForm(
     formUrlOverride: form.formUrlOverride.trim() === '' ? null : form.formUrlOverride.trim(),
     notes: form.notes,
     proxyPool: form.proxyPool,
+    providerId: form.providerId,
     // A direct profile never carries a geo target or TTL; the fields stay in the form for when the mode flips back.
     target: form.proxyMode === 'none' ? null : form.target === null ? null : { ...form.target, mode: form.targetMode },
-    stickyTtlMinutes: form.proxyMode === 'dataimpulse-sticky' ? parseStickyTtl(form.stickyTtlMinutes) : null,
+    stickyTtlMinutes: form.proxyMode === 'sticky' ? parseStickyTtl(form.stickyTtlMinutes) : null,
     ephemeral: form.ephemeral,
   }
   const parsed = ProfileInputSchema.safeParse(candidate)
@@ -278,9 +304,11 @@ export function validateProfileForm(
       }
     }
   }
-  if (candidate.proxyMode === 'dataimpulse-sticky' && candidate.stickySessionId === null) {
+  if (candidate.proxyMode === 'sticky' && candidate.stickySessionId === null) {
     errors.stickySessionId = STICKY_SESSION_ID_REQUIRED_MESSAGE
   }
+  const providerIssue = provider && candidate.proxyMode !== 'none' ? providerFormProblem(form, provider) : null
+  if (providerIssue && !errors[providerIssue.field]) errors[providerIssue.field] = providerIssue.message
   const engineConflict = engineConflictMessage(preset, form.engine)
   if (engineConflict && !errors.engine) errors.engine = engineConflict
   if (preset && form.deviceType !== preset.deviceType && !errors.deviceType) {

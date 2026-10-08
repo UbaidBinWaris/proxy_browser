@@ -59,11 +59,12 @@ const validInput: ProfileInput = {
   userAgent: '',
   locale: 'en-US',
   timezone: 'America/Chicago',
-  proxyMode: 'dataimpulse-sticky',
+  proxyMode: 'sticky',
   stickySessionId: 'US-IPhone-01',
   formUrlOverride: null,
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,
@@ -156,9 +157,9 @@ describe('createProfileManager — create/update', () => {
   it('updates an existing profile and 404s on unknown ids', () => {
     const manager = setup()
     const created = manager.create(validInput)
-    const updated = manager.update(created.id, { ...validInput, name: 'Renamed', proxyMode: 'dataimpulse-rotating' })
+    const updated = manager.update(created.id, { ...validInput, name: 'Renamed', proxyMode: 'rotating' })
     expect(updated.name).toBe('Renamed')
-    expect(updated.proxyMode).toBe('dataimpulse-rotating')
+    expect(updated.proxyMode).toBe('rotating')
     expectAppError(() => manager.update('nope', validInput), 'NOT_FOUND')
     expectAppError(() => manager.get('nope'), 'NOT_FOUND')
     expectAppError(() => manager.delete('nope'), 'NOT_FOUND')
@@ -226,7 +227,7 @@ describe('createProfileManager — duplicate', () => {
 
   it('keeps null sticky session for rotating profiles and respects the 64-char limit', () => {
     const manager = setup()
-    const rotating = manager.create({ ...validInput, proxyMode: 'dataimpulse-rotating', stickySessionId: null })
+    const rotating = manager.create({ ...validInput, proxyMode: 'rotating', stickySessionId: null })
     expect(manager.duplicate(rotating.id).stickySessionId).toBeNull()
 
     const longId = 'a'.repeat(64)

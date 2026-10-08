@@ -1,34 +1,39 @@
 /**
  * Presentation of proxy credentials without ever handling them (pure, unit-tested):
- * the sidebar status pill, the one-line per-pool status and which pools can be
+ * the sidebar status pill, the one-line per-product status and which products can be
  * updated partially (only vault entries: the main process merges with them).
  */
-import type { ProxyConfigStatus, ProxyPool, ProxyPoolStatus, ProxySession, ProxyStatus } from '@shared/types'
-import { PROXY_POOLS } from '@shared/types'
+import type { ProductKey, ProviderId, ProxyConfigStatus, ProxyPoolStatus, ProxySession, ProxyStatus } from '@shared/types'
+import { DEFAULT_PROVIDER_ID } from '@shared/types'
+import type { ProviderLike } from './providers'
 import type { StatusTone } from './security'
 import { CREDENTIAL_SOURCE_META } from './setup'
-
-export const POOL_TAB_LABELS: Record<ProxyPool, string> = { residential: 'Residential', mobile: 'Mobile' }
 
 export interface ProxyPill {
   label: string
   tone: StatusTone
 }
 
-/** Sidebar footer pill: "Proxy ready" when any pool has credentials, "Proxy not set" otherwise. */
+/** Sidebar footer pill: "Proxy ready" when any product has credentials, "Proxy not set" otherwise. */
 export function proxyStatusPill(config: Pick<ProxyConfigStatus, 'configured'> | null): ProxyPill {
   if (!config) return { label: 'Proxy …', tone: 'muted' }
   return config.configured ? { label: 'Proxy ready', tone: 'success' } : { label: 'Proxy not set', tone: 'warning' }
 }
 
-export function poolStatusFor(pools: readonly ProxyPoolStatus[] | null | undefined, pool: ProxyPool): ProxyPoolStatus | null {
+/** The pill over every provider: ready when any of them has credentials. */
+export function providersStatusPill(providers: readonly Pick<ProviderLike, 'status'>[] | null): ProxyPill {
+  if (!providers) return proxyStatusPill(null)
+  return proxyStatusPill({ configured: providers.some((provider) => provider.status?.configured === true) })
+}
+
+export function poolStatusFor(pools: readonly ProxyPoolStatus[] | null | undefined, pool: ProductKey): ProxyPoolStatus | null {
   return pools?.find((status) => status.pool === pool) ?? null
 }
 
-/** Pools without credentials (all of them while the status is unknown is NOT assumed: unknown → []). */
-export function unconfiguredPools(pools: readonly ProxyPoolStatus[] | null | undefined): ProxyPool[] {
+/** Products without credentials, in status order (unknown status → []). */
+export function unconfiguredPools(pools: readonly ProxyPoolStatus[] | null | undefined): ProductKey[] {
   if (!pools) return []
-  return PROXY_POOLS.filter((pool) => !(poolStatusFor(pools, pool)?.configured ?? false))
+  return pools.filter((status) => !status.configured).map((status) => status.pool)
 }
 
 /** True when the pool's credentials live in the vault, so empty fields can mean "keep the stored value". */
@@ -53,11 +58,11 @@ export interface PoolTest {
 }
 
 /**
- * Last raw-gateway test of a pool. There is one gateway session row; it records the pool it last
- * tested, so only that pool has a "last tested" time.
+ * Last raw-gateway test of a provider product. There is one gateway session row; it records the
+ * provider and product it last tested, so only that one has a "last tested" time.
  */
-export function lastPoolTest(sessions: readonly ProxySession[], pool: ProxyPool): PoolTest | null {
+export function lastPoolTest(sessions: readonly ProxySession[], pool: ProductKey, providerId: ProviderId = DEFAULT_PROVIDER_ID): PoolTest | null {
   const gateway = sessions.find((session) => session.profileId === null && session.sessionId === null)
-  if (!gateway || gateway.pool !== pool || !gateway.lastCheckedAt) return null
+  if (!gateway || gateway.pool !== pool || gateway.provider !== providerId || !gateway.lastCheckedAt) return null
   return { status: gateway.status, at: gateway.lastCheckedAt }
 }

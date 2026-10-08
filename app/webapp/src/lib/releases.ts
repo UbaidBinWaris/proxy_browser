@@ -11,7 +11,11 @@ export const versionSchema = z.string().regex(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[
 export const fileSchema = z.string().regex(/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(exe|AppImage)$/).max(180)
 const assetSchema = z.object({ platform: z.enum(['win32', 'linux']), arch: z.literal('x64'), fileName: fileSchema, size: z.int().positive().max(2 * 1024 ** 3), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
 const assetsSchema = z.array(assetSchema).length(2).refine(a => new Set(a.map(x => x.platform)).size === 2 && new Set(a.map(x => x.fileName)).size === 2)
-const manifestSchema = z.object({ format: z.literal(1), appId: z.literal('com.letsscall.proxy-qa-browser'), version: versionSchema, releasedAt: z.iso.datetime(), notes: z.array(z.string().min(1).max(500)).min(1).max(30), assets: assetsSchema })
+const APP_ID = 'com.ubaidbinwaris.proxy-qa-browser'
+/** SHA-256 of identities used by releases before 1.4.0; their signed manifests remain publishable. */
+const LEGACY_APP_ID_SHA256 = new Set(['75d9a5c16dc6183903353723cf75ce6289ee562066cf3aaa07ca63180d44d8be'])
+const appIdSchema = z.string().max(200).refine(id => id === APP_ID || LEGACY_APP_ID_SHA256.has(createHash('sha256').update(id).digest('hex')), 'Unknown application identity.')
+const manifestSchema = z.object({ format: z.literal(1), appId: appIdSchema, version: versionSchema, releasedAt: z.iso.datetime(), notes: z.array(z.string().min(1).max(500)).min(1).max(30), assets: assetsSchema })
 const onlineSchema = manifestSchema.pick({ version: true, releasedAt: true, notes: true }).extend({ assets: z.array(assetSchema.extend({ url: z.url() })).length(2) })
 const envelopeSchema = z.object({ payload: z.string().max(65536), signature: z.string().regex(/^[A-Za-z0-9+/]+={0,2}$/).max(256) })
 export type Release = z.infer<typeof manifestSchema>

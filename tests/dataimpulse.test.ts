@@ -3,12 +3,13 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 import type { GeoTarget, IpInfo } from '../src/shared/types'
-import { PROXY_POOLS, STICKY_SESSION_ID_MAX_LENGTH, STICKY_SESSION_ID_PATTERN } from '../src/shared/types'
+import { STICKY_SESSION_ID_MAX_LENGTH, STICKY_SESSION_ID_PATTERN } from '../src/shared/types'
 import { AppException } from '../src/main/contracts'
 import type { IpChecker, Logger, ProxyConnection, ProxyCredentials, ProxyRequest } from '../src/main/contracts'
 import { parseDataImpulseStates, parseGeoNamesUs } from '../src/main/locations/geonames-loader'
 import { US_STATE_CODES } from '../src/main/locations/us-state-timezones'
 import {
+  DATAIMPULSE_PRODUCTS,
   DataImpulseProvider,
   DEFAULT_SESSION_TEMPLATE,
   NOT_CONFIGURED_MESSAGE,
@@ -286,7 +287,7 @@ describe('DataImpulseProvider pools', () => {
     expect(provider.isPoolConfigured('residential')).toBe(true)
     expect(provider.isPoolConfigured('mobile')).toBe(true)
     const status = provider.getConfigStatus()
-    expect(status.pools.map((p) => p.pool)).toEqual([...PROXY_POOLS])
+    expect(status.pools.map((p) => p.pool)).toEqual([...DATAIMPULSE_PRODUCTS])
     expect(status.pools).toEqual([
       { pool: 'residential', configured: true, host: 'gw.dataimpulse.com', port: 823, usernameMasked: 're****in', source: 'vault' },
       { pool: 'mobile', configured: true, host: 'gw.dataimpulse.com', port: 823, usernameMasked: 'mo****in', source: 'vault' },

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import type { MatrixInput, QaBatch, QaCase, QaExecution, QaScenario, ScenarioInput } from '@shared/qa'
-import { MatrixInputSchema, ScenarioInputSchema } from '@shared/qa'
+import { MatrixInputSchema, ScenarioInputSchema, countHealedSteps } from '@shared/qa'
 import type { Profile } from '@shared/types'
 import type { ProfileManager } from '../contracts'
 import { AppException } from '../contracts'
@@ -154,6 +154,7 @@ export function createQaService(options: QaServiceOptions) {
         endedAt: null,
         total: plans.length,
         completed: 0,
+        healedSteps: 0,
         cases: [],
         input,
       }
@@ -187,7 +188,7 @@ export function createQaService(options: QaServiceOptions) {
                   userAgent: null,
                   formUrlOverride: caseScenario.startUrl,
                   target: plan.target,
-                  stickySessionId: caseProfile.proxyMode === 'dataimpulse-sticky' ? randomUUID() : null,
+                  stickySessionId: caseProfile.proxyMode === 'sticky' ? randomUUID() : null,
                   ephemeral: true,
                 })
                 const outcome = await options.execute(
@@ -236,6 +237,7 @@ export function createQaService(options: QaServiceOptions) {
               batch.cases.push(final)
               batch.cases.sort((a, b) => Number(a.id) - Number(b.id))
               batch.completed = batch.cases.length
+              batch.healedSteps = countHealedSteps(batch.cases)
               emit(batch)
             }
           }

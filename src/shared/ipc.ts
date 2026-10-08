@@ -1,4 +1,5 @@
 import type { DesktopSetupOptions, DesktopStatus, UsbUpdatePreview } from './desktop'
+import type { SiteAccessStatus, SiteAccessTokenInput, SiteAccessTokenSummary } from './site-access'
 /**
  * IPC contract between renderer and main.
  *
@@ -26,7 +27,9 @@ import type {
   LocationQueryResult,
   LocationStats,
   LocationSearch,
-  ProxyPool,
+  ProductKey,
+  ProviderId,
+  ProviderInfo,
   QuickLaunchInput,
   TargetingPreview,
   LogEntry,
@@ -82,6 +85,7 @@ export const IPC = {
     deleteSuite: 'qa:delete-suite',
     exportSuite: 'qa:export-suite',
     approveBaseline: 'qa:approve-baseline',
+    updateHealedSelector: 'qa:update-healed-selector',
     exportBaselines: 'qa:export-baselines',
     startRecording: 'qa:start-recording',
     recording: 'qa:recording',
@@ -121,6 +125,7 @@ export const IPC = {
     presets: 'profiles:presets',
   },
   proxy: {
+    providers: 'proxy:providers',
     getConfigStatus: 'proxy:get-config-status',
     testConnection: 'proxy:test-connection',
     getCurrentIp: 'proxy:get-current-ip',
@@ -196,6 +201,12 @@ export const IPC = {
     quickLaunch: 'launcher:quick-launch',
     closeAll: 'launcher:close-all',
   },
+  siteAccess: {
+    status: 'site-access:status',
+    save: 'site-access:save',
+    setEnabled: 'site-access:set-enabled',
+    delete: 'site-access:delete',
+  },
 } as const
 
 export const EVENTS = {
@@ -249,6 +260,8 @@ export interface ProxyQaApi {
     deleteSuite(id: string): Promise<IpcResult<void>>
     exportSuite(id: string): Promise<IpcResult<string>>
     approveBaseline(batchId: string, caseId: string, stepIndex: number): Promise<IpcResult<void>>
+    /** Promotes the fallback a finished run healed with to that step's primary selector in the saved scenario. */
+    updateHealedSelector(batchId: string, caseId: string, stepIndex: number): Promise<IpcResult<QaScenario>>
     exportBaselines(batchId: string): Promise<IpcResult<string>>
     startRecording(input: ScenarioInput): Promise<IpcResult<QaRecording>>
     recording(): Promise<IpcResult<QaRecording | null>>
@@ -289,12 +302,16 @@ export interface ProxyQaApi {
     presets(): Promise<IpcResult<DevicePresetInfo[]>>
   }
   proxy: {
-    getConfigStatus(): Promise<IpcResult<ProxyConfigStatus>>
+    /** Registered proxy providers with their capabilities and password-free configuration status, in picker order. */
+    providers(): Promise<IpcResult<ProviderInfo[]>>
+    /** Password-free configuration of one provider (default: settings.defaultProviderId). */
+    getConfigStatus(providerId?: ProviderId): Promise<IpcResult<ProxyConfigStatus>>
     /**
-     * Test proxy for a profile (uses its sticky session) or the raw gateway when profileId is null.
-     * `pool` picks the gateway pool for a raw gateway test (default: settings.defaultProxyPool); ignored for profiles.
+     * Test proxy for a profile (uses its provider and sticky session) or the raw gateway when profileId is null.
+     * `pool` / `providerId` pick the product and provider of a raw gateway test (default: settings.defaultProxyPool /
+     * settings.defaultProviderId); both are ignored for profiles.
      */
-    testConnection(profileId: string | null, pool?: ProxyPool): Promise<IpcResult<ProxyTestResult>>
+    testConnection(profileId: string | null, pool?: ProductKey, providerId?: ProviderId): Promise<IpcResult<ProxyTestResult>>
     getCurrentIp(profileId: string | null): Promise<IpcResult<IpInfo>>
     listSessions(): Promise<IpcResult<ProxySession[]>>
     /** Assigns a fresh sticky session id to the profile and re-tests. */
@@ -355,17 +372,18 @@ export interface ProxyQaApi {
   security: {
     /** Local, network-free health check of key + vault. */
     status(): Promise<IpcResult<SecurityStatus>>
-    /** Live test of the given credentials through the proxy WITHOUT persisting them. */
+    /** Live test of the given credentials (`providerId` + product `pool`) through that provider's gateway WITHOUT persisting them. */
     testCredentials(input: ProxyCredentialsInput): Promise<IpcResult<ProxyTestResult>>
-    /** Encrypt + persist credentials, verify by reading them back, and activate them immediately. */
+    /** Encrypt + persist credentials of one provider product, verify by reading them back, and activate them immediately. */
     saveCredentials(input: ProxyCredentialsInput): Promise<IpcResult<SecurityStatus>>
-    clearCredentials(pool: ProxyPool): Promise<IpcResult<SecurityStatus>>
+    /** Remove one provider product's credentials from the vault. */
+    clearCredentials(providerId: ProviderId, product: ProductKey): Promise<IpcResult<SecurityStatus>>
     /** Generate a new per-machine key and re-wrap the vault with it. */
     rotateKey(): Promise<IpcResult<SecurityStatus>>
     /** Reveal the key or vault directory in the OS file manager. */
     revealLocations(which: 'key' | 'vault'): Promise<IpcResult<void>>
     /**
-     * Merge a partial update with the pool's stored vault entry inside the main process (empty
+     * Merge a partial update with the provider product's stored vault entry inside the main process (empty
      * fields keep the stored value), validate the merged credentials, encrypt + persist + verify.
      */
     updateCredentials(input: ProxyCredentialsUpdate): Promise<IpcResult<SecurityStatus>>
@@ -410,6 +428,14 @@ export interface ProxyQaApi {
     status(): Promise<IpcResult<SetupStatus>>
     /** Mark first-run setup as completed for this installation. */
     complete(): Promise<IpcResult<SetupStatus>>
+  }
+  /** Site access tokens (Settings → Advanced). Responses never contain a header value, only a masked preview. */
+  siteAccess: {
+    status(): Promise<IpcResult<SiteAccessStatus>>
+    /** Create (no id) or update a token; on update an empty/omitted headerValue keeps the stored secret. */
+    save(input: SiteAccessTokenInput, id?: string): Promise<IpcResult<SiteAccessTokenSummary>>
+    setEnabled(id: string, enabled: boolean): Promise<IpcResult<SiteAccessTokenSummary>>
+    delete(id: string): Promise<IpcResult<void>>
   }
   events: {
     on<C extends EventChannel>(channel: C, listener: (payload: EventPayloads[C]) => void): Unsubscribe

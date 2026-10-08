@@ -19,13 +19,42 @@ const templateUrl = z.union([
     .max(2000)
     .refine((url) => /\{\{[A-Za-z][A-Za-z0-9_]*\}\}/.test(url), 'Use an HTTP URL or a URL containing variables.'),
 ])
+/** Ordered most-stable first; the executor tries fallbacks in this order. */
+export const QA_FALLBACK_KINDS = ['testid', 'role', 'label', 'placeholder', 'text', 'css'] as const
+export const QA_TEST_ID_ATTRIBUTES = ['data-testid', 'data-test', 'data-qa'] as const
+/**
+ * An alternative way to find an action step's element when its primary selector matches nothing.
+ * `role`: value = ARIA role, name = accessible name. `testid`: value = attribute value, name = attribute
+ * (data-testid by default). Other kinds carry only a value.
+ */
+export const QaFallbackSchema = z
+  .object({
+    kind: z.enum(QA_FALLBACK_KINDS),
+    value: z.string().trim().min(1).max(1000),
+    name: z.string().trim().min(1).max(500).optional(),
+  })
+  .superRefine((fallback, ctx) => {
+    if (fallback.kind === 'role' && !/^[a-z]{2,40}$/.test(fallback.value))
+      ctx.addIssue({ code: 'custom', message: 'Use a lowercase ARIA role for role fallbacks.', path: ['value'] })
+    if (fallback.kind === 'testid' && fallback.name && !(QA_TEST_ID_ATTRIBUTES as readonly string[]).includes(fallback.name))
+      ctx.addIssue({ code: 'custom', message: 'Use data-testid, data-test or data-qa.', path: ['name'] })
+    if (fallback.kind !== 'role' && fallback.kind !== 'testid' && fallback.name !== undefined)
+      ctx.addIssue({ code: 'custom', message: 'Only role and test-ID fallbacks take a name.', path: ['name'] })
+    if (fallback.kind !== 'css' && /[\r\n]/.test(fallback.value + (fallback.name ?? '')))
+      ctx.addIssue({ code: 'custom', message: 'Fallback values must be a single line.', path: ['value'] })
+  })
+export type QaFallback = z.infer<typeof QaFallbackSchema>
+const fallbacks = z.array(QaFallbackSchema).max(4).optional()
+export const QA_HEALING_MODES = ['off', 'warn', 'fail'] as const
+export const QaHealingModeSchema = z.enum(QA_HEALING_MODES)
+export type QaHealingMode = z.infer<typeof QaHealingModeSchema>
 export const QaStepSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('goto'), value: templateUrl }),
-  z.object({ action: z.literal('fill'), selector, value }),
-  z.object({ action: z.literal('click'), selector }),
-  z.object({ action: z.literal('select'), selector, value }),
-  z.object({ action: z.literal('check'), selector }),
-  z.object({ action: z.literal('uncheck'), selector }),
+  z.object({ action: z.literal('fill'), selector, value, fallbacks }),
+  z.object({ action: z.literal('click'), selector, fallbacks }),
+  z.object({ action: z.literal('select'), selector, value, fallbacks }),
+  z.object({ action: z.literal('check'), selector, fallbacks }),
+  z.object({ action: z.literal('uncheck'), selector, fallbacks }),
   z.object({ action: z.literal('assertVisible'), selector }),
   z.object({ action: z.literal('assertText'), selector, value }),
   z.object({ action: z.literal('assertUrl'), value }),
@@ -58,6 +87,7 @@ export const ScenarioInputSchema = z
     timeoutMs: z.int().min(1000).max(60000).default(15000),
     maskSelectors: z.array(selector).max(30).default([]),
     captureTrace: z.boolean().default(false),
+    healing: QaHealingModeSchema.default('warn'),
   })
   .superRefine((input, ctx) => {
     for (const url of [
@@ -103,6 +133,21 @@ export interface QaStepResult {
   error?: string
   screenshot?: string
   visual?: QaVisualResult
+  /** Present when the primary selector matched nothing and a fallback matched exactly one element. */
+  healed?: QaHealedSelector
+}
+export interface QaHealedSelector {
+  originalSelector: string
+  usedFallback: QaFallback
+  /** Position of the used fallback in the step's fallback list at run time. */
+  fallbackIndex: number
+  suggestedSelector: string
+  /** True when healing was set to fail, so the step stopped instead of acting on the fallback. */
+  blocked?: boolean
+}
+/** Number of steps that healed (or, in fail mode, could have healed) in the final attempt of each case. */
+export function countHealedSteps(cases: Array<Pick<QaExecution, 'steps'>>): number {
+  return cases.reduce((count, item) => count + item.steps.filter((step) => step.healed).length, 0)
 }
 export interface QaVisualResult {
   key: string
@@ -153,6 +198,8 @@ export interface QaExecution {
   trace?: string
   finalUrl: string
   durationMs: number
+  /** Informational evidence, e.g. 'site access token "Staging" applied to https://staging.example.com' (never a secret). */
+  notes?: string[]
 }
 export interface QaCase extends QaExecution {
   id: string
@@ -184,6 +231,8 @@ export interface QaBatch {
   input: MatrixInput
   suiteId?: string
   environmentName?: string
+  /** Healed steps across completed cases; absent on batches recorded before self-healing existed. */
+  healedSteps?: number
 }
 export interface QaWorkspace {
   id: string

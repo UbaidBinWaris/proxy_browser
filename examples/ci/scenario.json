@@ -1,0 +1,46 @@
+{
+  "scenario": {
+    "name": "Sample signup form",
+    "profileId": "ci-sample-profile",
+    "startUrl": "http://127.0.0.1:8080/",
+    "allowedOrigins": ["http://127.0.0.1:8080"],
+    "variables": {
+      "fullName": "CI Tester",
+      "email": "ci-tester@example.test"
+    },
+    "steps": [
+      { "action": "assertStatus", "value": 200 },
+      { "action": "assertVisible", "selector": "[data-testid=signup-form]" },
+      { "action": "fill", "selector": "#name", "value": "{{fullName}}" },
+      { "action": "fill", "selector": "#email", "value": "{{email}}" },
+      { "action": "select", "selector": "#plan", "value": "team" },
+      { "action": "check", "selector": "#consent" },
+      { "action": "click", "selector": "button[type=submit]" },
+      { "action": "assertText", "selector": "#result", "value": "Thanks, CI Tester. Your team account is ready." },
+      { "action": "assertUrl", "value": "#submitted" }
+    ],
+    "timeoutMs": 15000
+  },
+  "profile": {
+    "name": "CI sample (direct, Chromium desktop)",
+    "engine": "chromium",
+    "deviceType": "desktop",
+    "devicePreset": "linux-desktop",
+    "viewportWidth": 1280,
+    "viewportHeight": 800,
+    "userAgent": null,
+    "locale": "en-US",
+    "timezone": "UTC",
+    "proxyMode": "none",
+    "stickySessionId": null,
+    "formUrlOverride": null,
+    "notes": "Direct connection. The sample needs no proxy credentials."
+  },
+  "environments": [
+    {
+      "id": "env-local",
+      "name": "Local",
+      "baseUrl": "http://127.0.0.1:8080"
+    }
+  ]
+}

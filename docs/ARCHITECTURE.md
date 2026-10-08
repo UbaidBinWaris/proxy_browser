@@ -38,10 +38,16 @@ saved profile.
 │                       v3 pools + geo targeting, v4 postal code +      │
 │                       location attempts)                              │
 │            repositories/*  one repository per table                   │
-│  proxy/    providers/dataimpulse.ts  ProxyProvider (DataImpulse:      │
-│                                      per-pool logins, targeting       │
-│                                      string cr/state/city/zip/sessid/ │
-│                                      sessttl, place-name encoding)    │
+│  proxy/    providers/dialect.ts      ProviderDialect + capabilities   │
+│                                      (pure provider syntax)           │
+│            providers/gateway-provider.ts  GatewayProvider: the        │
+│                                      ProxyProvider for any dialect    │
+│            providers/registry.ts     ProviderRegistry (id → gateway)  │
+│            providers/dataimpulse.ts  DataImpulse dialect (per-pool    │
+│                                      logins, cr/state/city/zip/       │
+│                                      sessid/sessttl)                  │
+│            targeting-text.ts         neutral place-name encoding,     │
+│                                      not-configured messages          │
 │            proxy-manager.ts          ProxyManager (pool resolution,   │
 │                                      requested-vs-verified match)     │
 │            ip-checker.ts             IpChecker (ip-api/ipinfo/ipwhois)│
@@ -230,17 +236,17 @@ All module boundaries are declared in two files. Nothing else is shared.
 | `AppException` | `contracts.ts` | Error carrying an `AppErrorCode`; converted to `IpcResult` failure at the IPC boundary. Messages are human-readable and never contain secrets. |
 | `Logger` | `logging/logger.ts` | Structured INFO/WARN/ERROR entries, persisted via `LogRepository`, pushed to the renderer, redacted through `logging/redact.ts`. `registerSecret()` makes a value unprintable everywhere. |
 | `Database` | `database/index.ts` | Opens `<userData>/data/proxy-qa.sqlite` with `node:sqlite`, applies `database/schema.ts` migrations and exposes the repositories below. |
-| `ProfileRepository` | `database/repositories/profiles.ts` | CRUD for QA profiles, including the v3 columns `proxy_pool`, `target_json` (JSON `GeoTarget`), `sticky_ttl_minutes` and `ephemeral`. Ephemeral rows are created by Quick Launch and hidden from the Profiles page unless "Save as profile" was ticked. Deleting a profile also deletes its `proxy_sessions` row (migration v2); its `test_runs` are kept with `profile_id = NULL` so history survives. |
-| `ProxySessionRepository` | `database/repositories/proxySessions.ts` | One sticky-session row per profile (plus one raw-gateway row) with last IP/geo/status, (v2) `country_code`, (v3) `pool`, `target_json`, the `targeting_string` sent and the `target_match` verdict, and (v4) the exit IP's `postal_code`. Never stores credentials. |
-| `TestRunRepository` | `database/repositories/testRuns.ts` | One row per browser launch (status, IP, screenshot, lead/certificate IDs) plus (v3) `pool`, `target_json`, `targeting_string` and `target_match`, and (v4) `postal_code`, `location_attempts`, `location_max_attempts` and `location_warning` from the location re-roll. |
+| `ProfileRepository` | `database/repositories/profiles.ts` | CRUD for QA profiles, including the v3 columns `proxy_pool` (a product key of the profile's provider), `target_json` (JSON `GeoTarget`), `sticky_ttl_minutes` and `ephemeral`, and the v8 column `provider_id`. `proxy_mode` is `none` / `sticky` / `rotating`; a legacy `dataimpulse-*` value (written by an older build) is read as the neutral mode. Ephemeral rows are created by Quick Launch and hidden from the Profiles page unless "Save as profile" was ticked. Deleting a profile also deletes its `proxy_sessions` row (migration v2); its `test_runs` are kept with `profile_id = NULL` so history survives. |
+| `ProxySessionRepository` | `database/repositories/proxySessions.ts` | One sticky-session row per profile (plus one raw-gateway row) with the provider it was tested through (`provider`, from `ProxySessionContext.providerId`; a changed provider resets the cached result like a changed pool), last IP/geo/status, (v2) `country_code`, (v3) `pool`, `target_json`, the `targeting_string` sent and the `target_match` verdict, and (v4) the exit IP's `postal_code`. Never stores credentials. |
+| `TestRunRepository` | `database/repositories/testRuns.ts` | One row per browser launch (status, IP, screenshot, lead/certificate IDs) plus (v8) `provider` (NULL for a direct run), (v3) `pool`, `target_json`, `targeting_string` and `target_match`, and (v4) `postal_code`, `location_attempts`, `location_max_attempts` and `location_warning` from the location re-roll. |
 | `NetworkRepository` | `database/repositories/network.ts` | Captured requests per run, including extracted IDs from JSON bodies. |
-| `SettingsRepository` | `database/repositories/settings.ts` | `AppSettings`, stored as one `app_settings` row per key (JSON value) and validated key by key, so one corrupt value falls back to its default without discarding the others; `update()` merges a patch (`AppSettingsPatchSchema`, which — unlike Zod 4's `.partial()` — never fills in defaults for absent keys). New keys (`singleSessionMode`, `extraChromiumArgs`, `targetingEncoding`, `defaultProxyPool`, `defaultTargetCountry`, `locationMatchPolicy`, `locationMatchAttempts`) load with their Zod defaults from older documents. |
+| `SettingsRepository` | `database/repositories/settings.ts` | `AppSettings`, stored as one `app_settings` row per key (JSON value) and validated key by key, so one corrupt value falls back to its default without discarding the others; `update()` merges a patch (`AppSettingsPatchSchema`, which — unlike Zod 4's `.partial()` — never fills in defaults for absent keys). New keys (`singleSessionMode`, `extraChromiumArgs`, `providerOptions`, `defaultProviderId`, `defaultProxyPool`, `defaultTargetCountry`, `locationMatchPolicy`, `locationMatchAttempts`) load with their Zod defaults from older documents. On creation, `migrateLegacySettings()` moves the global `targetingEncoding` row of earlier versions into `providerOptions.dataimpulse.encoding` (an encoding already there wins; a corrupt value is dropped) and deletes the legacy row, in one transaction; a failure leaves the row for the next start. |
 | `LogRepository` | `database/repositories/logs.ts` | Log rows with pruning. |
-| `CredentialVault` | `security/credential-vault.ts` | Encrypted proxy credentials: `<userData>/vault/proxy-credentials.vault` (AES-256-GCM, header `{v, alg, installId}` bound as AAD) with the key in `<keys>/<installId>.key`, wrapped by a `KeyWrapperBackend`. The decrypted blob holds **one credential set per pool** (`residential`, `mobile`); a blob written by an earlier version (single credential set) is migrated to the per-pool layout on first decrypt and re-saved. Atomic writes, read-back verification on `save()`, interrupted-rotation recovery, network-free `status()` (incl. `configuredPools`), `recordProxyTest()` for the last gateway result. Decrypted credentials stay in main-process memory; every password is registered with the logger as soon as it is known. |
+| `CredentialVault` | `security/credential-vault.ts` | Encrypted proxy credentials: `<userData>/vault/proxy-credentials.vault` (AES-256-GCM, header `{v, alg, installId}` bound as AAD) with the key in `<keys>/<installId>.key`, wrapped by a `KeyWrapperBackend`. Keyed by **(provider id, product)**: `get(providerId, product)`, `clear(providerId, product)`, `save(input)` with `input.providerId`. Decrypted payload v3 `{ v: 3, providers: { <id>: { products: { <key>: { host, port, username, password, sessionTemplate, extras } } } } }` (`extras` = the provider's extra credential fields, inside the ciphertext like the password). Payload v2 (`{ v: 2, pools }`) and the single-credential v1 shape are read as `providers.dataimpulse` and rewritten once — **after** the original file is copied verbatim to `<vault>.v2.bak` (atomic, same directory, same permissions; a different existing backup is moved aside). If the backup or the rewrite fails, both files stay as they were, the decrypted entries remain active, `status().warnings` and the log carry a `VAULT_ERROR` message naming the backup, and every later write retries the backup first (so a v2 file without a backup is never overwritten). Atomic writes (injectable writer for tests), read-back verification on `save()`, interrupted-rotation recovery, network-free `status()` (incl. `configuredProducts`), `recordProxyTest()` for the last gateway result. Decrypted credentials stay in main-process memory; every password and `user:pass`, and every extra field the provider declares secret (`secretExtraKeys`, all extras when not given), is registered with the logger as soon as it is known. Per device only: never synced or exported. |
 | `KeyWrapperBackend` | `security/key-wrapper.ts` | `os-keychain` (Electron `safeStorage`: DPAPI / macOS Keychain / libsecret / KWallet — never Linux `basic_text` or `unknown`) or `machine-derived` (scrypt N=2¹⁵ over machine id + OS username, salt sha256(installId)). Injected into the vault, so everything is testable without Electron. |
 | `InstallStateStore` | `security/install-state.ts` | `<userData>/install.json`: `installId` (random UUID), `setupCompletedAt`, `lastProxyTest*`. Never holds secrets; a corrupt file is moved aside and recreated. |
-| `ProxyProvider` | `proxy/providers/dataimpulse.ts` | Builds Playwright proxy settings for DataImpulse from the **pool's** login: the targeting string (`cr.us;state.newjersey;city.newark;zip.07102;sessid.<id>;sessttl.<min>` — `__` introduces parameters, `;` separates, `.` is key/value, `,` lists values; `cr` is mandatory with state/city/zip) is appended to the login with `__`, or with `;` when the login already carries parameters; the session template from the saved credentials (else `DATAIMPULSE_SESSION_TEMPLATE` in development, else the default) still applies. Place names are encoded per `AppSettings.targetingEncoding` (`remove-spaces` → `newjersey`, DataImpulse's published convention; `underscore`; `keep`). Exposes the parameter-only string for the "Will connect as" preview and the run/session records, tests connectivity, derives/rotates session ids. `setCredentials(list, source)` replaces the whole set of pool credentials at runtime (called whenever the vault changes); `testCredentials()` checks candidates in rotating mode without activating or persisting them. Only this module, the vault, `ProxyManager`, `BrowserManager` and the relay ever see a password. |
-| `ProxyManager` | `proxy/proxy-manager.ts` | Resolves a profile's `proxyMode`, `proxyPool`, `target` and `stickyTtlMinutes` to a `ProxyConnection` (`PROXY_NOT_CONFIGURED` when the pool has no credentials), runs tests, compares the verified exit location with the request into a `TargetMatch` (`match` / `partial` / `mismatch` / `unknown`; country first, then state; a ZIP target is checked exactly against the IP's postal code, a city target by city name), persists `ProxySession` rows, emits updates. `verifyForLaunch(profile, { policy, attempts })` is the pre-launch check: for a sticky session with a target it re-rolls the sticky id (`<id>-r<N>`, written back to the profile) while the verdict falls short of `AppSettings.locationMatchPolicy`, up to `locationMatchAttempts` IP checks, and otherwise settles on the best attempt with a warning (see "Data flow of a launch"). |
+| `ProxyProvider` | `proxy/providers/gateway-provider.ts` (`GatewayProvider`) + one dialect per provider (`proxy/providers/dataimpulse.ts`) — see [Proxy providers](#proxy-providers) | Exposes `name`, `displayName`, `docsUrl` and `capabilities`. For DataImpulse it builds Playwright proxy settings from the **product's** login: the targeting string (`cr.us;state.newjersey;city.newark;zip.07102;sessid.<id>;sessttl.<min>` — `__` introduces parameters, `;` separates, `.` is key/value, `,` lists values; `cr` is mandatory with state/city/zip) is appended to the login with `__`, or with `;` when the login already carries parameters; the session template from the saved credentials (else `DATAIMPULSE_SESSION_TEMPLATE` in development, else the default) still applies. Place names are encoded per `AppSettings.providerOptions.dataimpulse.encoding` (`remove-spaces` → `newjersey`, DataImpulse's published convention; `underscore`; `keep`). Exposes the parameter-only string for the "Will connect as" preview and the run/session records, tests connectivity, derives/rotates session ids. `setCredentials(list, source)` replaces the whole set of pool credentials at runtime (called whenever the vault changes); `testCredentials()` checks candidates in rotating mode without activating or persisting them. Only this module, the vault, `ProxyManager`, `BrowserManager` and the relay ever see a password. |
+| `ProxyManager` | `proxy/proxy-manager.ts` | Resolves the provider for every request from `profile.providerId` through a `ProxyProviderResolver` (the `ProviderRegistry`; an unknown id fails with `INVALID_INPUT` naming it — never a fallback), then the profile's `proxyMode`, `proxyPool`, `target` and `stickyTtlMinutes` to a `ProxyConnection` (`PROXY_NOT_CONFIGURED` with the provider's display name and product label when the product has no credentials or is not offered); `providers()` returns every provider's capabilities and status (no secrets) and `getConfigStatus(id?)` one provider's status; runs tests, compares the verified exit location with the request into a `TargetMatch` (`match` / `partial` / `mismatch` / `unknown`; country first, then state; a ZIP target is checked exactly against the IP's postal code, a city target by city name), persists `ProxySession` rows, emits updates. `verifyForLaunch(profile, { policy, attempts })` is the pre-launch check: for a sticky session with a target it re-rolls the sticky id (`<id>-r<N>`, written back to the profile) while the verdict falls short of `AppSettings.locationMatchPolicy`, up to `locationMatchAttempts` IP checks, and otherwise settles on the best attempt with a warning (see "Data flow of a launch"). |
 | `IpChecker` | `proxy/ip-checker.ts` | Looks up the exit IP through a proxy (or directly, for `proxyMode: none`) using ip-api / ipinfo / ipwhois with timeout and retries. `IpInfo` carries country, region, city and the **postal code** (ip-api `zip`, requested in `fields`; ipinfo / ipwho.is `postal`). |
 | `ProxyRelay` | `proxy/local-relay.ts` | Per-session HTTP proxy on `127.0.0.1:<random port>` that injects `Proxy-Authorization` for the upstream gateway and forwards plain requests and `CONNECT` tunnels. See "Local proxy relay". |
 | `TaskManager` | `tasks/task-manager.ts` | Serial background queue for every install / uninstall (`install-bundled`, `install-vendor`, `uninstall`). One task at a time in queue order; `enqueue` validates first (`INVALID_INPUT` for engines without an automatic method, bundled read-only builds, uninstalling a copy the app did not install) and returns an identical queued/running task instead of a duplicate. States `queued → running → verifying → done / failed`, `cancelled` from any unfinished state: cancel aborts the run's signal and terminates every child process it registered with its whole tree (`taskkill /T /F` on Windows). `isEngineBusy` (queued/running/verifying) drives the `ENGINE_BUSY` launch guard in `BrowserManager` and `Launcher`; `isEngineInstalling` (running) makes detection skip that engine's version read and path auto-save. Pushes the full list on `event:tasks-update` (progress coalesced to 200 ms); the last 20 finished tasks persist in `<data>/task-history.json`. The work itself is done by `tasks/install-executor.ts`: provisioner install (with `InstallRunOptions` signal + child pid callback) → Windows post-install sweep → verification (`verifyEngine`: executable/marker exists, non-executing version, headless smoke launch from `tasks/smoke-launch.ts` with a 30 s budget and a `--proxy-qa-session=verify-…` marker for hung Chromium browsers, path auto-saved) → sweep again; failures are `TaskFailure`s ("Installed, but failed verification: …"; Vivaldi gets its own message). |
@@ -291,7 +297,8 @@ security.openKeysWindow() ──IPC──▶  KeysWindowController.open()
                                      hard timeout 15 min                       → <KeysWindowPage/> only
                                                                                (no shell, no setup guard)
                                      security.updateCredentials(update) ◀──IPC── CredentialsForm (partial)
-                                     mergeCredentialsUpdate(vault.get(pool), update)
+                                     provider/product checked against proxy.providers()
+                                     mergeCredentialsUpdate(vault.get(providerId, pool), update)
                                        → ProxyCredentialsInputSchema
                                        → vault.save() → onChange
 event:security-update  ◀──────────── forwardEvents (status only) ───────▶ (both windows)
@@ -316,8 +323,14 @@ event:security-update  ◀──────────── forwardEvents (st
   minutes without input (`lib/keysWindow.ts` — one timer whose deadline moves
   on input); main closes it after `KEYS_WINDOW_HARD_TIMEOUT_MS` (15 min)
   regardless. On `closed` main only broadcasts a fresh `SecurityStatus`.
+- **Provider first**: the window opens with a **Provider** select (every
+  registered provider, from `proxy.providers()`); the provider's products are
+  the tabs, its `capabilities.defaults` pre-fill host/port and its
+  `extraCredentialFields` render as extra inputs (secret ones as password
+  inputs, write-only like the password). The template section only appears
+  for providers that support session templates.
 - **Partial updates** (`security/credentials-merge.ts`, unit-tested): absent
-  or empty host / username / password keep the stored value (the password is
+  or empty host / username / password / extra field keep the stored value (the password is
   never trimmed), `sessionTemplate` absent keeps it and null/'' removes it;
   with nothing stored every field is required. The merged result is validated
   with `ProxyCredentialsInputSchema` before `vault.save()` (encrypt, write,
@@ -440,7 +453,8 @@ promise in the renderer.
 ## Quick Launch data flow (Launch page)
 
 The Launch page is the default route and produces a `QuickLaunchInput`
-(`src/shared/types.ts`): `proxyPool` (`residential` / `mobile` / `none`),
+(`src/shared/types.ts`): `providerId` (default `dataimpulse`), `proxyPool`
+(a product key of that provider, e.g. `residential` / `mobile`, or `none`),
 `target` (`GeoTarget`: `mode`, lower-case ISO-2 `country`, `state`,
 `stateCode`, `city`, `zip`), `engine`, `devicePreset`, optional `startUrl`,
 `sticky` (default true) with `stickyTtlMinutes`, optional `locale` /
@@ -466,11 +480,13 @@ The Launch page is the default route and produces a `QuickLaunchInput`
    (up to 3 attempts) if the exit IP is outside New Jersey"; rotating and `off`
    say that nothing is re-rolled).
 3. **Connect & Launch.** The handler validates the input, resolves the preset
-   (`INVALID_INPUT` for unknown ids), refuses an unconfigured pool
-   (`PROXY_NOT_CONFIGURED`) and an engine with an active install task
+   (`INVALID_INPUT` for unknown ids), resolves the provider by id
+   (`INVALID_INPUT` naming an unknown one), refuses a product without keys or
+   not offered (`PROXY_NOT_CONFIGURED`) and a target mode or sticky session the
+   provider does not support (`INVALID_INPUT`) and an engine with an active install task
    (`ENGINE_BUSY`) before touching any open session, creates a profile — `ephemeral: true` unless
-   `saveAsProfile` — with `proxyMode` `dataimpulse-sticky` / `-rotating` /
-   `none`, a generated `stickySessionId`, pool, target and TTL, and hands it
+   `saveAsProfile` — with `proxyMode` `sticky` / `rotating` / `none`, the
+   `providerId`, a generated `stickySessionId`, pool, target and TTL, and hands it
    to `BrowserManager.launch`. With `singleSessionMode` on and a session
    already open, the launch is refused with `SESSION_LIMIT` unless
    `replaceActiveSession` is set ("Close it and launch"), in which case the
@@ -494,9 +510,93 @@ Ephemeral profiles are ordinary `profiles` rows with `ephemeral = 1`; the
 Profiles page filters them out, runs and sessions keep referencing them, and
 "Save as profile" simply creates the row with `ephemeral = 0`.
 
+## Proxy providers
+
+Provider support is split into three parts under `src/main/proxy/providers/`
+(design: `docs/superpowers/specs/2026-10-08-proxy-provider-plugins-design.md`):
+
+- **Dialect** (`dialect.ts` types; one file per provider, e.g. `dataimpulse.ts`)
+  — the only provider-specific code. Pure, stateless and synchronous:
+  `compose(credentials, request, options)` returns the full connection
+  (`server`, `username`, `password`, password-free `targetingString`; targeting
+  may go in the username or the password), plus `targetingString()`,
+  `createSession()`, `rotateSession()`, an optional
+  `composeCredentialCheck()` (how candidate keys are tested) and an optional
+  `isRetryableLocationFailure()` (false stops the location re-roll early;
+  DataImpulse returns false for `PROXY_DEAD`, its exhausted-ZIP-pool HTTP 503).
+  `capabilities` describes products, target modes, sticky-session id rules and
+  TTL range, default host/port, extra credential fields, the geo billing note,
+  the state allow-list file and the encoding options. A dialect never logs,
+  stores credentials or does I/O.
+- **`GatewayProvider`** (`gateway-provider.ts`) implements `ProxyProvider` for
+  any dialect: the per-pool credential map, `setCredentials`,
+  `getConfigStatus`, `testConnection`, `testCredentials`, `getCurrentIp`, the
+  session-template resolution (for dialects that support templates) and secret
+  registration — every saved and candidate password, secret extra fields and
+  every **composed** password (some providers put parameters there).
+  `DataImpulseProvider` remains as a thin subclass (`GatewayProvider` +
+  `dataImpulseDialect`) for existing call sites (QA CLI, tests).
+- **`ProviderRegistry`** (`registry.ts`) maps `ProviderId` →
+  `GatewayProvider`. `get()` of an unknown id fails with `INVALID_INPUT` naming
+  it (never a silent fallback); `list()` returns credential-free summaries.
+  `main.ts` registers every built-in dialect (`getEncoding` reads
+  `settings.providerOptions[id].encoding` at request time) and hands the
+  registry to the proxy manager, profile manager, launcher and vault (secret
+  extra-field declarations).
+
+Neutral code (proxy manager, locations service, launcher) imports place-name
+encoding and the not-configured messages from `proxy/targeting-text.ts`, never
+from a dialect.
+
+**Adding a provider:** add one dialect file (official parameter docs URL in its
+header, syntax copied from those docs), a golden-table test (request →
+`{ server, username, password }` from the documented examples), its id in
+`PROVIDER_IDS` (`src/shared/types.ts`) and the dialect in `BUILT_IN_DIALECTS`
+(`registry.ts`). `tests/provider-dialect-contract.test.ts` then runs the
+contract suite on it (session ids match the declared pattern and length,
+rotation always changes the id, the targeting string never contains the
+password, `compose` is deterministic, every declared target mode changes the
+output). No launcher, browser-manager or QA-runtime change is needed.
+
+**Provider selection** (rollout step 2):
+
+- `ProxyMode` is `none` / `sticky` / `rotating`; `ProxyModeSchema` maps the
+  v1.3.0 values `dataimpulse-sticky` / `dataimpulse-rotating` when reading
+  SQLite rows, QA configuration backups and CLI manifests.
+- Products are open `ProductKey` strings (`/^[a-z0-9-]{1,32}$/`, `none`
+  reserved) validated against the provider's `capabilities.products` — by
+  `ProfileManager` (`providerProblem`: unknown provider, product, target mode,
+  sticky support → `INVALID_INPUT`), the security IPC handlers (before the
+  vault is touched), the launcher and the proxy manager. DataImpulse keeps the
+  keys `residential` / `mobile`, so stored values need no rewrite.
+- `Profile.providerId` (default `dataimpulse`), `QuickLaunchInput.providerId`,
+  `TestRun.provider`, `BrowserSession.provider`, `ProxySession.provider`.
+- IPC: `proxy.providers()` → `ProviderInfo[]` (`id`, `displayName`,
+  `docsUrl`, `capabilities`, `sessionTemplate` default or null, password-free
+  `status`); `proxy.getConfigStatus(providerId?)`;
+  `proxy.testConnection(null, product?, providerId?)`; credential inputs carry
+  `providerId` + `pool` (product) + `extras`;
+  `security.clearCredentials(providerId, product)`.
+- Renderer: every provider name, product label, default gateway, extra field,
+  target mode and encoding option comes from `proxy.providers()`
+  (`renderer/src/lib/providers.ts`); profile editor and Launch offer only
+  providers with keys (plus the current one).
+- Messages name the provider: `notConfiguredMessage(displayName)`,
+  `productNotConfiguredMessage(provider, product)` (`proxy/targeting-text.ts`),
+  `GatewayProvider` rewrites a 407 with `proxyAuthMessage(displayName)`, the
+  navigation error mapping and the launcher's geo-billing warning
+  (`capabilities.targetingBillingNote`) use the provider's text.
+- QA CLI: `QA_PROVIDER`, `QA_PROVIDER_PRODUCT`,
+  `QA_PROVIDER_HOST/_PORT/_USERNAME/_PASSWORD`, `QA_PROVIDER_EXTRA_<KEY>`
+  (`config/env.ts` `readProviderEnv`, `qa/cli-proxy.ts` `resolveCliProxy`);
+  `DATAIMPULSE_PROXY_*` is an alias. Secrets are scrubbed from `process.env`
+  (`scrubProxySecretEnv`) before anything launches. Manifest parsing lives in
+  `qa/cli-manifest.ts` (matrix without `scenarioId`; errors as
+  `path: message`).
+
 ## DataImpulse targeting
 
-Reference syntax (docs.dataimpulse.com), produced by `ProxyProvider`:
+Reference syntax (docs.dataimpulse.com), produced by the DataImpulse dialect:
 
 ```
 login__cr.us;state.newjersey;city.newark;zip.07102;sessid.<id>;sessttl.<minutes>
@@ -511,7 +611,8 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.<id>;sessttl.<minutes>
   `AppSettings.defaultTargetCountry`).
 - Multi-word names are lower-cased with spaces removed, following
   DataImpulse's published state list (`resources/geonames/dataimpulse-states.csv`);
-  `AppSettings.targetingEncoding` can switch to `underscore` or `keep`.
+  `AppSettings.providerOptions.dataimpulse.encoding` can switch to
+  `underscore` or `keep`.
 - `sessid` makes the session sticky (≈ 30 min by default); `sessttl` sets the
   interval in minutes. Rotating mode sends neither.
 - State / city / ZIP filters are **billed at 2×** by DataImpulse; the preview
@@ -530,7 +631,7 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.<id>;sessttl.<minutes>
   in New York, NY 10118); the location re-roll handles this for sticky
   sessions.
 
-## Database schema (v7)
+## Database schema (v8)
 
 v1 created `profiles`, `proxy_sessions`, `test_runs`, `network_entries`,
 `app_settings` and `logs`; v2 rebuilt `proxy_sessions` with `ON DELETE CASCADE`
@@ -544,6 +645,14 @@ and `country_code`. Migrations v3 and v4 add, without rewriting existing rows
 | v3 | `test_runs` | `pool`, `target_json` (JSON), `targeting_string`, `target_match` |
 | v4 | `proxy_sessions` | `postal_code` (exit IP's postal code) |
 | v4 | `test_runs` | `postal_code`, `location_attempts` (INTEGER, default 1), `location_max_attempts` (INTEGER, default 1), `location_warning` (TEXT) — rows from earlier versions read as one attempt out of one |
+| v8 | `profiles` | `provider_id` (TEXT NOT NULL, default `dataimpulse`); `proxy_mode` values rewritten `dataimpulse-sticky` → `sticky`, `dataimpulse-rotating` → `rotating` (other values untouched) |
+| v8 | `test_runs` | `provider` (TEXT, default `dataimpulse`; set to NULL for existing rows without a pool, i.e. direct runs) |
+| v8 | `proxy_sessions` | no new column: the existing `provider` (v1) is now written per session instead of being fixed to `dataimpulse` |
+
+v5–v7 add the QA tables (`qa_*`) and redact stored URLs. v8 is covered by
+`tests/provider-migrations.test.ts` on a v7 fixture database with realistic
+rows (sticky / rotating / direct / ephemeral profiles, proxied / direct /
+orphaned runs, a profile session and the gateway row, legacy settings).
 
 No column ever holds a login or a password; `targeting_string` starts at the
 first parameter (`cr.…`).
@@ -591,4 +700,24 @@ Migration 5 adds JSON-backed QA workspaces, scenarios, batches, policy, schedule
 
 A run resolves and validates every scenario/dataset before reserving the complete case budget. Each worker creates and cleans up an ephemeral profile/context. The recorder shares the browser provisioning and proxy verification runtime, records only a draft, and has a separate lifecycle that blocks automatic runs while active.
 
+Self-healing selectors live in `qa/healing.ts`: pure functions order and validate recorder fallbacks, translate them to Playwright selectors, split one step timeout between the primary selector and its fallbacks, and accept a fallback only on exactly one match. The executor calls its small Playwright adapter for action steps only, never for assertions. **Update selector in scenario** sends batch/case/step identifiers; the main process derives the new selector from the saved scenario's own fallback.
+
 Visual comparisons use bounded PNG decoding and pixelmatch. Approved baseline keys include stable scenario/dataset identity and browser/platform settings. Approval and image preview accept batch/case/step identifiers rather than caller-supplied paths, validate real filesystem boundaries, and retain the comparison's baseline screenshot in that run's evidence. Baseline PNGs are outside automatic evidence retention; CLI imports them into temporary storage from validated packs.
+
+## Site access tokens
+
+`src/main/site-access/` is a self-contained module that sends an operator-defined secret header to the exact origins the operator lists (allowlisting the operator's own QA traffic on their own WAF/CAPTCHA/fraud stack; never evasion):
+
+| File | Role |
+| --- | --- |
+| `matcher.ts` | Pure: exact-origin matching (`createSiteAccessMatcher`), conflict detection (same header name to the same origin). Origin normalisation and header deny-list live in `src/shared/site-access.ts` (shared with the renderer). |
+| `store.ts` | Per-device JSON file `<data>/site-access-tokens.json`; values encrypted with `safeStorage` (same keychain policy as custom gateways), registered with the log redactor on load/save; masked summaries only. |
+| `attach.ts` | Playwright adapter `attachSiteAccessRules(context, rules)`: a context-level terminal route performs tokenized requests through `route.fetch({ maxRedirects: 0 })` and fulfills them (document redirects become a fresh navigation, sub-resource redirects are fulfilled as 3xx on Chromium/Firefox and failed on WebKit), plus a page-level decorator that adds the header as a fallback override before any other context route. |
+| `ipc.ts` | The `siteAccess` IPC namespace (`status`, `save`, `setEnabled`, `delete`); never returns a value. |
+| `index.ts` | `createSiteAccess({ file, logger })` → `{ store, unlock(encryption), attach(context, onNote) }`. |
+
+Call sites (one line each): `browser-manager.ts` `openContext` (every manual engine, including installed vendor browsers and the WebKit relay path), `qa/runtime.ts` session factory (shared by QA automation and the recorder), `main.ts` wiring, `ipc/index.ts` registration. The renderer section is `components/settings/SiteAccessSection.tsx` with pure form logic in `lib/siteAccess.ts`.
+
+Route composition rule: Playwright runs context routes in reverse registration order, and a header added with `continue`/`fallback` is re-sent on redirect hops by every engine. Any other route handler that lets a request through must therefore use `route.fallback()` (never `route.continue()`), so a tokenized request always reaches the terminal handler; `qa/navigation.ts` follows this rule. `tests/site-access-browser.test.ts` verifies, per installed engine, that a 302 from an allowlisted origin never delivers the header to another origin.
+
+The CLI runner (`qa/cli.ts`) does not pass an attacher: tokens are a desktop, per-device feature.

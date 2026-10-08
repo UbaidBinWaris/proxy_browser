@@ -35,8 +35,8 @@ export function Gateways({
       <h2 className="mb-2 text-lg font-semibold">Custom proxy gateways</h2>
       <p className="mb-4 text-sm text-muted-foreground">
         Connect another provider using its HTTP or SOCKS5 gateway. Credentials are encrypted by the OS keychain.
-        Configure provider-specific location and session options in its username; DataImpulse location matrices apply
-        only to DataImpulse profiles.
+        Configure provider-specific location and session options in its username; location matrices apply only to
+        profiles that use a built-in proxy provider.
       </p>
       <form
         onSubmit={(event) => {

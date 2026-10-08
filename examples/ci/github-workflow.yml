@@ -1,0 +1,65 @@
+# Example consumer workflow: copy to .github/workflows/qa.yml in YOUR repository.
+#
+# It runs a manifest exported from Proxy QA Browser (Automation -> Export for CI /
+# Export suite for CI) against your staging site. Only test sites you own or are
+# contracted to test.
+#
+# Proxy credentials are never inputs and never belong in the manifest: store them as
+# repository or environment secrets and map them in the step's `env:`. The action
+# forwards every set QA_PROVIDER, QA_PROVIDER_*, DATAIMPULSE_PROXY_* and QA_PROXY_*
+# variable to the runner container by name and masks the values. Leave them out
+# entirely for a direct (unproxied) run.
+name: Form QA
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest # Linux runner with Docker
+    timeout-minutes: 30
+    steps:
+      # Pin third-party actions by full commit SHA.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run the exported suite against staging
+        id: qa
+        # Pin to a release tag or, better, its commit SHA. The default runner image
+        # matches the action's release; override `image` to pin a digest.
+        uses: UbaidBinWaris/proxy_browser/action@v1.4.0
+        with:
+          config: qa/signup-suite.json # exported manifest, committed without real form data
+          environment: Staging # environment name exported in the manifest
+          output: qa-results
+          # baselines: qa/approved.qavb  # approved screenshot pack, if the suite asserts screenshots
+          # healing: fail                # off | warn | fail (runner images whose CLI supports --healing)
+        env:
+          # Provider gateway (QA_PROVIDER_* family). Remove this block for direct runs.
+          QA_PROVIDER: ${{ vars.QA_PROVIDER }}
+          QA_PROVIDER_HOST: ${{ secrets.QA_PROVIDER_HOST }}
+          QA_PROVIDER_PORT: ${{ secrets.QA_PROVIDER_PORT }}
+          QA_PROVIDER_USERNAME: ${{ secrets.QA_PROVIDER_USERNAME }}
+          QA_PROVIDER_PASSWORD: ${{ secrets.QA_PROVIDER_PASSWORD }}
+          # Legacy DataImpulse names keep working:
+          # DATAIMPULSE_PROXY_HOST: ${{ secrets.DATAIMPULSE_PROXY_HOST }}
+          # DATAIMPULSE_PROXY_PORT: ${{ secrets.DATAIMPULSE_PROXY_PORT }}
+          # DATAIMPULSE_PROXY_USERNAME: ${{ secrets.DATAIMPULSE_PROXY_USERNAME }}
+          # DATAIMPULSE_PROXY_PASSWORD: ${{ secrets.DATAIMPULSE_PROXY_PASSWORD }}
+          # Or one custom gateway for the whole run:
+          # QA_PROXY_SERVER: ${{ secrets.QA_PROXY_SERVER }}
+          # QA_PROXY_USERNAME: ${{ secrets.QA_PROXY_USERNAME }}
+          # QA_PROXY_PASSWORD: ${{ secrets.QA_PROXY_PASSWORD }}
+
+      # The action already fails the job on a non-zero exit code and uploads the
+      # reports as the `qa-results` artifact. Outputs are available for later steps:
+      - name: Summarize
+        if: always() && steps.qa.outputs.results-json != ''
+        env:
+          RESULTS: ${{ steps.qa.outputs.results-json }}
+          CODE: ${{ steps.qa.outputs.exit-code }}
+        run: |
+          [ -f "$RESULTS" ] || exit 0 # configuration errors (exit 2) write no report
+          jq -r '"QA \(.status): \(.completed)/\(.total) cases (exit '"$CODE"')"' "$RESULTS" >>"$GITHUB_STEP_SUMMARY"

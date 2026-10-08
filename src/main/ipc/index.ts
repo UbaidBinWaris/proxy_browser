@@ -25,6 +25,7 @@ import { settingsHandlers } from './settings'
 import { setupHandlers } from './setup'
 import { taskHandlers } from './tasks'
 import { qaHandlers } from './qa'
+import { siteAccessHandlers } from '../site-access'
 
 export type { IpcDeps } from './deps'
 export type { Broadcast } from './broadcast'
@@ -54,6 +55,7 @@ export function buildHandlerSpecs(deps: IpcDeps): HandlerSpec[] {
     ...launcherHandlers(deps),
     ...taskHandlers(deps),
     ...qaHandlers(deps),
+    ...siteAccessHandlers(deps.siteAccess),
   ]
 }
 

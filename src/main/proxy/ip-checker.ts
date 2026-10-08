@@ -53,8 +53,11 @@ function errorMessage(err: unknown): string {
   }
 }
 
-const PROXY_AUTH_MESSAGE =
-  'Proxy rejected the credentials (HTTP 407). Re-enter and test the DataImpulse username and password in the app (first-run setup or Settings) and make sure your DataImpulse plan is active.'
+/** HTTP 407 from the gateway, naming the provider when the connection knows it. */
+export function proxyAuthMessage(providerName?: string): string {
+  const name = providerName?.trim() || 'proxy provider'
+  return `Proxy rejected the credentials (HTTP 407). Re-enter and test the ${name} username and password in the app (first-run setup or Settings) and make sure your ${name} plan is active.`
+}
 const PROXY_DEAD_MESSAGE =
   'Could not connect through the proxy gateway. The proxy may be down or the host/port may be wrong. Verify the proxy host and port in your saved credentials.'
 
@@ -66,10 +69,10 @@ const PROXY_GATEWAY_STATUSES = new Set([502, 503, 504])
  * 502/503/504 come from the gateway itself and are proxy errors; any other
  * non-2xx is the IP service misbehaving. Returns null for a usable response.
  */
-export function classifyHttpStatus(status: number, viaProxy: boolean, provider: IpCheckProvider): AppException | null {
+export function classifyHttpStatus(status: number, viaProxy: boolean, provider: IpCheckProvider, proxyName?: string): AppException | null {
   if (status >= 200 && status < 300) return null
   if (status === 407) {
-    return new AppException('PROXY_AUTH_FAILED', PROXY_AUTH_MESSAGE, `HTTP 407 from ${provider} request`)
+    return new AppException('PROXY_AUTH_FAILED', proxyAuthMessage(proxyName), `HTTP 407 from ${provider} request`)
   }
   if (viaProxy && status === 503) {
     // The gateway answered, so host/port/credentials are fine: it had no exit IP for
@@ -88,7 +91,7 @@ export function classifyHttpStatus(status: number, viaProxy: boolean, provider: 
 }
 
 /** Map a transport/proxy failure to a human-readable AppException (never leaks credentials). */
-export function classifyNetworkError(err: unknown): AppException {
+export function classifyNetworkError(err: unknown, proxyName?: string): AppException {
   if (err instanceof AppException) return err
   const raw = errorMessage(err)
   const detail = stripCredentials(raw)
@@ -102,7 +105,7 @@ export function classifyNetworkError(err: unknown): AppException {
     lower.includes('err_proxy_auth_requested') ||
     lower.includes('ns_error_proxy_authentication_failed')
   ) {
-    return new AppException('PROXY_AUTH_FAILED', PROXY_AUTH_MESSAGE, detail)
+    return new AppException('PROXY_AUTH_FAILED', proxyAuthMessage(proxyName), detail)
   }
   if (lower.includes('enotfound') || lower.includes('eai_again') || lower.includes('getaddrinfo') || lower.includes('name_not_resolved')) {
     return new AppException(

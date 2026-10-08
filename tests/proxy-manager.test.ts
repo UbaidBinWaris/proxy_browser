@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { GeoTarget, IpInfo, LocationEntry, Profile, ProfileInput, ProxyPool, ProxySession, ProxyTestResult } from '../src/shared/types'
+import type { GeoTarget, IpInfo, LocationEntry, Profile, ProfileInput, ProductKey, ProxySession, ProxyTestResult } from '../src/shared/types'
 import { AppException } from '../src/main/contracts'
 import type { Database, IpChecker, Logger, ProxyConnection, ProxyProvider, ProxyRequest } from '../src/main/contracts'
 import { openDatabase } from '../src/main/database/index'
-import { DataImpulseProvider, buildTargetingString, poolNotConfiguredMessage } from '../src/main/proxy/providers/dataimpulse'
+import { DataImpulseProvider, buildTargetingString, dataImpulseDialect, poolNotConfiguredMessage } from '../src/main/proxy/providers/dataimpulse'
 import { compareTargetWith, createProxyManager, describeExitLocation, describeRequestedLocation, normalizePostalCode, profileInputFrom } from '../src/main/proxy/proxy-manager'
 
 const PASSWORD = 'Hunter2!Secret'
@@ -36,11 +36,12 @@ const input: ProfileInput = {
   userAgent: null,
   locale: 'en-US',
   timezone: 'America/New_York',
-  proxyMode: 'dataimpulse-sticky',
+  proxyMode: 'sticky',
   stickySessionId: 'e2e-chromium-001',
   formUrlOverride: null,
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,
@@ -59,12 +60,15 @@ function fakeLogger(entries: Array<{ level: string; message: string; meta?: Reco
   }
 }
 
-function fakeProvider(configuredPools: ProxyPool[] = ['residential']): ProxyProvider & { tested: ProxyRequest[] } {
+function fakeProvider(configuredPools: ProductKey[] = ['residential']): ProxyProvider & { tested: ProxyRequest[] } {
   const tested: ProxyRequest[] = []
   const configured = configuredPools.length > 0
   return {
     tested,
     name: 'dataimpulse',
+    displayName: dataImpulseDialect.displayName,
+    docsUrl: dataImpulseDialect.docsUrl,
+    capabilities: dataImpulseDialect.capabilities,
     isConfigured: () => configured,
     isPoolConfigured: (pool) => configuredPools.includes(pool),
     setCredentials: () => undefined,
@@ -138,7 +142,7 @@ describe('createProxyManager', () => {
       target: NJ,
     })
     // Rotating profiles never send a session or TTL even when one is stored.
-    const rotating = db.profiles.create({ ...input, name: 'Rot', proxyMode: 'dataimpulse-rotating', stickySessionId: null, target: TX_CITY, stickyTtlMinutes: 45 })
+    const rotating = db.profiles.create({ ...input, name: 'Rot', proxyMode: 'rotating', stickySessionId: null, target: TX_CITY, stickyTtlMinutes: 45 })
     expect(manager.resolveForProfile(rotating)).toMatchObject({ pool: 'residential', sessionId: null, targetingString: 'cr.us;state.texas;city.austin' })
     expect(manager.resolveForProfile(db.profiles.create({ ...input, name: 'Direct', proxyMode: 'none', stickySessionId: null }))).toBeNull()
   })
@@ -191,8 +195,8 @@ describe('createProxyManager', () => {
   it('auto-generates and saves a sticky id for a sticky profile that has none', async () => {
     const provider = fakeProvider()
     const manager = createProxyManager({ provider, sessions: db.proxySessions, profiles: db.profiles, logger: fakeLogger(entries) })
-    const profile = db.profiles.create({ ...input, proxyMode: 'dataimpulse-rotating', stickySessionId: null })
-    const sticky: Profile = { ...profile, proxyMode: 'dataimpulse-sticky', stickySessionId: null }
+    const profile = db.profiles.create({ ...input, proxyMode: 'rotating', stickySessionId: null })
+    const sticky: Profile = { ...profile, proxyMode: 'sticky', stickySessionId: null }
     db.profiles.update(profile.id, profileInputFrom(sticky))
 
     const result = await manager.testConnection(sticky)
@@ -237,7 +241,7 @@ describe('createProxyManager', () => {
 
   it('rejects rotation for non-sticky profiles and when the pool is not configured', async () => {
     const manager = createProxyManager({ provider: fakeProvider(), sessions: db.proxySessions, profiles: db.profiles, logger: fakeLogger(entries) })
-    const rotating = db.profiles.create({ ...input, proxyMode: 'dataimpulse-rotating', stickySessionId: null })
+    const rotating = db.profiles.create({ ...input, proxyMode: 'rotating', stickySessionId: null })
     await expect(manager.rotateSession(rotating)).rejects.toMatchObject({ code: 'INVALID_PROFILE' })
 
     const unconfigured = createProxyManager({ provider: fakeProvider([]), sessions: db.proxySessions, profiles: db.profiles, logger: fakeLogger(entries) })
@@ -526,7 +530,7 @@ describe('verifyForLaunch (location re-roll)', () => {
 
   it('rotating sessions and targetless profiles are never re-rolled', async () => {
     const rotating = managerWith([NY_CARRIER, NEWARK_07102])
-    const rot = zipProfile({ name: 'Rotating ZIP', proxyMode: 'dataimpulse-rotating', stickySessionId: null })
+    const rot = zipProfile({ name: 'Rotating ZIP', proxyMode: 'rotating', stickySessionId: null })
     expect(await rotating.manager.verifyForLaunch(rot, { policy: 'exact', attempts: 8 })).toMatchObject({ attempts: 1, maxAttempts: 1, sessionId: null, targetMatch: 'mismatch' })
     expect(rotating.seen).toHaveLength(1)
     expect(rotating.seen[0]?.username).toBe('acme_login__cr.us;state.newjersey;city.newark;zip.07102')

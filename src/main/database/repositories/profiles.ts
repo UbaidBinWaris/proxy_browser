@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-import { GeoTargetSchema, ProfileInputSchema } from '@shared/types'
-import type { BrowserEngine, DevicePresetId, DeviceType, GeoTarget, Profile, ProfileInput, ProxyMode, ProxyPool } from '@shared/types'
+import { DEFAULT_PRODUCT_KEY, DEFAULT_PROVIDER_ID, GeoTargetSchema, ProfileInputSchema, normalizeProxyMode } from '@shared/types'
+import type { BrowserEngine, DevicePresetId, DeviceType, GeoTarget, Profile, ProfileInput, ProxyMode } from '@shared/types'
 
 import { AppException } from '../../contracts'
 import type { ProfileListOptions, ProfileRepository } from '../../contracts'
@@ -10,7 +10,7 @@ import type { Cell, Row } from '../sql'
 
 const COLUMNS = `id, name, engine, device_type, device_preset, viewport_width, viewport_height, user_agent,
   locale, timezone, proxy_mode, sticky_session_id, form_url_override, notes, proxy_pool, target_json,
-  sticky_ttl_minutes, ephemeral, created_at, updated_at`
+  sticky_ttl_minutes, ephemeral, provider_id, created_at, updated_at`
 
 /** Parse a stored GeoTarget JSON column; anything unreadable yields null (the profile just loses its filter). */
 export function parseTargetJson(value: Cell): GeoTarget | null {
@@ -39,11 +39,13 @@ function rowToProfile(row: Row): Profile {
     userAgent: asStringOrNull(row.user_agent),
     locale: asString(row.locale),
     timezone: asString(row.timezone),
-    proxyMode: asString(row.proxy_mode) as ProxyMode,
+    // Migration 8 rewrote the legacy dataimpulse-* values; normalising again keeps a row written by an older build readable.
+    proxyMode: normalizeProxyMode(asString(row.proxy_mode)) as ProxyMode,
     stickySessionId: asStringOrNull(row.sticky_session_id),
     formUrlOverride: asStringOrNull(row.form_url_override),
     notes: asString(row.notes),
-    proxyPool: (asStringOrNull(row.proxy_pool) ?? 'residential') as ProxyPool,
+    proxyPool: asStringOrNull(row.proxy_pool) ?? DEFAULT_PRODUCT_KEY,
+    providerId: asStringOrNull(row.provider_id) ?? DEFAULT_PROVIDER_ID,
     target: parseTargetJson(row.target_json),
     stickyTtlMinutes: asNumberOrNull(row.sticky_ttl_minutes),
     ephemeral: intToBool(row.ephemeral),
@@ -67,13 +69,13 @@ export function createProfileRepository(db: DatabaseSync): ProfileRepository {
   const selectOne = db.prepare(`SELECT ${COLUMNS} FROM profiles WHERE id = ?`)
   const insert = db.prepare(`
     INSERT INTO profiles (${COLUMNS})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `)
   const update = db.prepare(`
     UPDATE profiles SET
       name = ?, engine = ?, device_type = ?, device_preset = ?, viewport_width = ?, viewport_height = ?,
       user_agent = ?, locale = ?, timezone = ?, proxy_mode = ?, sticky_session_id = ?, form_url_override = ?,
-      notes = ?, proxy_pool = ?, target_json = ?, sticky_ttl_minutes = ?, ephemeral = ?, updated_at = ?
+      notes = ?, proxy_pool = ?, target_json = ?, sticky_ttl_minutes = ?, ephemeral = ?, provider_id = ?, updated_at = ?
     WHERE id = ?
   `)
   const remove = db.prepare('DELETE FROM profiles WHERE id = ?')
@@ -116,6 +118,7 @@ export function createProfileRepository(db: DatabaseSync): ProfileRepository {
           targetToJson(input.target),
           nullable(input.stickyTtlMinutes),
           boolToInt(input.ephemeral),
+          input.providerId,
           ts,
           ts,
         )
@@ -146,6 +149,7 @@ export function createProfileRepository(db: DatabaseSync): ProfileRepository {
           targetToJson(input.target),
           nullable(input.stickyTtlMinutes),
           boolToInt(input.ephemeral),
+          input.providerId,
           nowIso(),
           id,
         )

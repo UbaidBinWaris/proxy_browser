@@ -24,11 +24,12 @@ const profileInput = (overrides: Partial<ProfileInput> = {}): ProfileInput => ({
   userAgent: null,
   locale: 'en-US',
   timezone: 'America/New_York',
-  proxyMode: 'dataimpulse-sticky',
+  proxyMode: 'sticky',
   stickySessionId: 'win-chrome-1',
   formUrlOverride: null,
   notes: '',
   proxyPool: 'residential',
+  providerId: 'dataimpulse',
   target: null,
   stickyTtlMinutes: null,
   ephemeral: false,
@@ -44,6 +45,7 @@ const runInput = (overrides: Partial<Omit<TestRun, 'id'>> = {}): Omit<TestRun, '
   engine: 'chromium',
   devicePreset: 'windows-desktop',
   proxyPool: null,
+  provider: null,
   target: null,
   targetingString: null,
   targetMatch: null,
@@ -94,7 +96,7 @@ describe('database', () => {
       const journal = raw.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
       expect(journal.journal_mode).toBe('wal')
       const migrations = raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[]
-      expect(migrations.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7])
+      expect(migrations.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
       const tables = raw
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
@@ -134,7 +136,7 @@ describe('database', () => {
           `INSERT INTO profiles (id, name, engine, device_type, device_preset, viewport_width, viewport_height, user_agent, locale, timezone,
              proxy_mode, sticky_session_id, form_url_override, notes, created_at, updated_at)
            VALUES ('prof-1', 'Keep', 'chromium', 'desktop', 'windows-desktop', 1366, 768, NULL, 'en-US', 'UTC',
-             'dataimpulse-sticky', 'keep-1', NULL, '', ?, ?)`,
+             'sticky', 'keep-1', NULL, '', ?, ?)`,
         )
         .run(ts, ts)
       const insert = legacy.prepare(
@@ -155,7 +157,7 @@ describe('database', () => {
 
       const raw = new DatabaseSync(legacyPath)
       const versions = (raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[]).map((m) => m.version)
-      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7])
+      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
       const fk = raw.prepare('PRAGMA foreign_key_list(proxy_sessions)').all() as Array<{ on_delete: string; table: string }>
       expect(fk).toEqual([expect.objectContaining({ table: 'profiles', on_delete: 'CASCADE' })])
       const runsFk = raw.prepare('PRAGMA foreign_key_list(test_runs)').all() as Array<{ on_delete: string }>
@@ -183,7 +185,7 @@ describe('database', () => {
           `INSERT INTO profiles (id, name, engine, device_type, device_preset, viewport_width, viewport_height, user_agent, locale, timezone,
              proxy_mode, sticky_session_id, form_url_override, notes, created_at, updated_at)
            VALUES ('prof-1', 'Old', 'chromium', 'desktop', 'windows-desktop', 1366, 768, NULL, 'en-US', 'UTC',
-             'dataimpulse-sticky', 'old-1', NULL, '', ?, ?)`,
+             'sticky', 'old-1', NULL, '', ?, ?)`,
         )
         .run(ts, ts)
       legacy
@@ -282,7 +284,7 @@ describe('database', () => {
       expect(saved).toMatchObject({ ephemeral: false, target: NJ, stickyTtlMinutes: null })
       expect(db.profiles.count()).toBe(2)
       expect(() => db.profiles.create(profileInput({ target: { ...NJ, zip: '12' } }))).toThrowError(AppException)
-      expect(() => db.profiles.create(profileInput({ proxyPool: 'datacenter' as never }))).toThrowError(AppException)
+      expect(() => db.profiles.create(profileInput({ proxyPool: 'Data Center' as never }))).toThrowError(AppException)
     })
 
     it('rejects invalid input and missing ids with AppException codes', () => {

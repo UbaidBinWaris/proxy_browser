@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AppSettingsSchema } from '../src/shared/types'
 import { CHROMIUM_FLAG_MESSAGE, CHROMIUM_FLAG_PATTERN, flagsErrorMessage, formatChromiumArgs, parseChromiumArgs } from '../src/renderer/src/lib/flags'
-import { LOCATION_MATCH_POLICY_HINTS, LOCATION_MATCH_POLICY_OPTIONS, TARGETING_ENCODINGS, settingsFormFrom, validateSettingsForm } from '../src/renderer/src/lib/settingsForm'
+import { LOCATION_MATCH_POLICY_HINTS, LOCATION_MATCH_POLICY_OPTIONS, providerOptionsFrom, settingsFormFrom, validateSettingsForm } from '../src/renderer/src/lib/settingsForm'
 
 const settings = {
   defaultFormUrl: 'https://example.com/',
@@ -15,8 +15,9 @@ const settings = {
   browserExecutableOrigins: {},
   singleSessionMode: true,
   extraChromiumArgs: ['--disable-features=Translate', '--lang=en-US'],
-  targetingEncoding: 'remove-spaces' as const,
-  defaultProxyPool: 'residential' as const,
+  providerOptions: { dataimpulse: { encoding: 'remove-spaces' } } as Record<string, { encoding?: string }>,
+  defaultProviderId: 'dataimpulse',
+  defaultProxyPool: 'residential',
   defaultTargetCountry: 'us',
   locationMatchPolicy: 'exact' as const,
   locationMatchAttempts: 4,
@@ -67,13 +68,13 @@ describe('settings form with sessions, flags and targeting', () => {
     const form = settingsFormFrom(settings)
     expect(form.singleSessionMode).toBe(true)
     expect(form.extraChromiumArgs).toBe('--disable-features=Translate\n--lang=en-US')
-    expect(form.targetingEncoding).toBe('remove-spaces')
+    expect(form.providerEncodings).toEqual({ dataimpulse: 'remove-spaces' })
+    expect(form.defaultProviderId).toBe('dataimpulse')
     expect(form.defaultProxyPool).toBe('residential')
     expect(form.defaultTargetCountry).toBe('US')
     const result = validateSettingsForm(form, settings.screenshotDir, settings.browserExecutables)
     expect(result.errors).toBeNull()
     expect(result.data).toEqual(settings)
-    expect(TARGETING_ENCODINGS).toEqual(['remove-spaces', 'underscore', 'keep'])
   })
 
   it('rejects bad flags with the line summary and a bad default country', () => {
@@ -97,8 +98,20 @@ describe('settings form with sessions, flags and targeting', () => {
   })
 
   it('normalises the country to lower case and accepts an empty flags editor', () => {
-    const result = validateSettingsForm({ ...settingsFormFrom(settings), extraChromiumArgs: '', defaultTargetCountry: 'de', singleSessionMode: false, targetingEncoding: 'underscore', defaultProxyPool: 'mobile' }, settings.screenshotDir)
+    const result = validateSettingsForm(
+      { ...settingsFormFrom(settings), extraChromiumArgs: '', defaultTargetCountry: 'de', singleSessionMode: false, providerEncodings: { dataimpulse: 'underscore' }, defaultProxyPool: 'mobile' },
+      settings.screenshotDir,
+    )
     expect(result.errors).toBeNull()
-    expect(result.data).toMatchObject({ extraChromiumArgs: [], defaultTargetCountry: 'de', singleSessionMode: false, targetingEncoding: 'underscore', defaultProxyPool: 'mobile' })
+    expect(result.data).toMatchObject({ extraChromiumArgs: [], defaultTargetCountry: 'de', singleSessionMode: false, providerOptions: { dataimpulse: { encoding: 'underscore' } }, defaultProxyPool: 'mobile' })
+  })
+
+  it('edits the place-name encoding per provider and keeps options it does not edit', () => {
+    expect(providerOptionsFrom({ dataimpulse: 'keep' }, { acme: { encoding: 'loud' } })).toEqual({ acme: { encoding: 'loud' }, dataimpulse: { encoding: 'keep' } })
+    const result = validateSettingsForm({ ...settingsFormFrom(settings), providerEncodings: { dataimpulse: 'keep' }, defaultProviderId: 'acme', defaultProxyPool: 'isp' }, settings.screenshotDir, {}, { acme: { encoding: 'loud' } })
+    expect(result.data).toMatchObject({ providerOptions: { acme: { encoding: 'loud' }, dataimpulse: { encoding: 'keep' } }, defaultProviderId: 'acme', defaultProxyPool: 'isp' })
+    const bad = validateSettingsForm({ ...settingsFormFrom(settings), providerEncodings: { 'Not A Provider': 'keep' } }, settings.screenshotDir)
+    expect(bad.data).toBeNull()
+    expect(bad.errors?.providerEncodings).toBeDefined()
   })
 })

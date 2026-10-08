@@ -43,7 +43,7 @@ export function mapLaunchError(err: unknown, secrets: readonly string[]): AppExc
 
 export function mapNavigationError(
   err: unknown,
-  opts: { timeoutMs: number; viaProxy: boolean; secrets: readonly string[] },
+  opts: { timeoutMs: number; viaProxy: boolean; secrets: readonly string[]; /** Provider display name for the rejected-login message. */ providerName?: string },
 ): AppException {
   if (err instanceof AppException) return err
   const text = shortErrorText(err, opts.secrets)
@@ -78,7 +78,7 @@ export function mapNavigationError(
   if (/ERR_PROXY_AUTH_(UNSUPPORTED|REQUESTED)|ERR_PROXY_AUTH|\b407\b|NS_ERROR_PROXY_AUTHENTICATION_FAILED|proxy authentication/i.test(text)) {
     return new AppException(
       'PROXY_AUTH_FAILED',
-      'The proxy rejected the credentials. Re-enter and test the DataImpulse username and password in the app (first-run setup or Settings).',
+      `The proxy rejected the credentials. Re-enter and test the ${opts.providerName?.trim() || 'proxy provider'} username and password in the app (first-run setup or Settings).`,
       text,
     )
   }

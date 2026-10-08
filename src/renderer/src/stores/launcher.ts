@@ -55,7 +55,7 @@ export const useLauncherStore = create<LauncherState>((set, get) => ({
   hydrate: (settings) => {
     if (get().hydrated) return
     const prefs = readLauncherPrefs(resolveStorage())
-    const base = defaultLauncherForm({ defaultProxyPool: settings.defaultProxyPool, defaultTargetCountry: settings.defaultTargetCountry })
+    const base = defaultLauncherForm({ defaultProviderId: settings.defaultProviderId, defaultProxyPool: settings.defaultProxyPool, defaultTargetCountry: settings.defaultTargetCountry })
     const current = get().form
     // Keep anything the user already changed on this visit (target, URL…) while filling defaults in.
     set({

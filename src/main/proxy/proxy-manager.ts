@@ -1,7 +1,11 @@
 /**
- * Proxy manager: resolves per-profile proxy connections (pool + sticky session +
- * geo target), runs connectivity tests, persists ProxySession rows and
- * broadcasts session updates.
+ * Proxy manager: resolves per-profile proxy connections (provider + product +
+ * sticky session + geo target), runs connectivity tests, persists ProxySession
+ * rows and broadcasts session updates.
+ *
+ * The provider is resolved per request from `profile.providerId` through the
+ * provider registry. An unknown provider id fails with INVALID_INPUT naming it;
+ * a profile is never silently switched to another provider.
  *
  * Sticky session ids are owned by the profile: whenever this layer picks a new
  * id for a sticky profile (first auto-generated id, a rotation, or a location
@@ -17,16 +21,18 @@
  * pool, the provider parameter string (no login/password), the session id, the
  * exit IP and latency.
  */
-import { LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, satisfiesLocationPolicy } from '../../shared/types'
+import { DEFAULT_PROVIDER_ID, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, ProxyCredentialsInputSchema, satisfiesLocationPolicy } from '../../shared/types'
 import type {
   GeoTarget,
   IpInfo,
   LocationMatchPolicy,
+  ProductKey,
   Profile,
   ProfileInput,
+  ProviderId,
+  ProviderInfo,
   ProxyConfigStatus,
   ProxyCredentialsInput,
-  ProxyPool,
   ProxySession,
   ProxyStatus,
   ProxyTestResult,
@@ -42,21 +48,27 @@ import type {
   ProxyConnection,
   ProxyManager,
   ProxyProvider,
+  ProxyProviderResolver,
   ProxyRequest,
   ProxySessionRepository,
 } from '../contracts'
-import { NOT_CONFIGURED_MESSAGE, encodePlaceName, encodeStateName, poolNotConfiguredMessage } from './providers/dataimpulse'
+import { encodePlaceName, encodeStateName, notConfiguredMessage, productNotConfiguredMessage } from './targeting-text'
 
 export interface ProxyManagerOptions {
-  provider: ProxyProvider
+  /** Providers by id (the provider registry). */
+  providers?: ProxyProviderResolver
+  /** Single-provider shortcut (QA CLI, tests): the same as a resolver holding only this provider. */
+  provider?: ProxyProvider
+  /** Provider for raw gateway tests and `getConfigStatus()` without an id. Defaults to DataImpulse when registered, else the first provider. */
+  defaultProviderId?: () => ProviderId
   sessions: ProxySessionRepository
   logger: Logger
   /** When present, auto-generated and rotated sticky session ids are persisted on the profile. */
   profiles?: ProfileRepository
   /** Called after every raw-gateway test (profile === null) so the vault health can show the last result without re-testing. */
   onGatewayTest?: (status: ProxyStatus, at: string) => void
-  /** Pool for raw-gateway tests (profile === null). Defaults to settings-free behaviour: the first configured pool, else residential. */
-  defaultPool?: () => ProxyPool
+  /** Product for raw-gateway tests (profile === null) of the default provider. Defaults to its first configured product, else its first product. */
+  defaultPool?: () => ProductKey
   /** State catalogue so `compareTarget` can match a USPS code against a state name (and vice versa). */
   locations?: Pick<LocationsService, 'states'>
 }
@@ -65,6 +77,18 @@ const LOG_SCOPE = 'proxy.manager'
 type SessionListener = (session: ProxySession) => void
 
 /** One working IP check made by `verifyForLaunch`. */
+/** A resolver over one provider (`get` of any other id fails like the registry does). */
+export function singleProviderResolver(provider: ProxyProvider): ProxyProviderResolver {
+  return {
+    get: (id) => {
+      if (id === provider.name) return provider
+      throw new AppException('INVALID_INPUT', `Unknown proxy provider "${id}".`, `registered providers: ${provider.name}`)
+    },
+    has: (id) => id === provider.name,
+    ids: () => [provider.name],
+  }
+}
+
 interface VerifiedAttempt {
   attempt: number
   sessionId: string | null
@@ -90,6 +114,7 @@ export function profileInputFrom(profile: Profile): ProfileInput {
     formUrlOverride: profile.formUrlOverride,
     notes: profile.notes,
     proxyPool: profile.proxyPool,
+    providerId: profile.providerId,
     target: profile.target ? { ...profile.target } : null,
     stickyTtlMinutes: profile.stickyTtlMinutes,
     ephemeral: profile.ephemeral,
@@ -230,7 +255,32 @@ function qualifierFor(match: TargetMatch | null, target: GeoTarget, ip: IpInfo):
 }
 
 export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
-  const { provider, sessions, logger, profiles } = opts
+  const { sessions, logger, profiles } = opts
+  const resolver: ProxyProviderResolver | null = opts.providers ?? (opts.provider ? singleProviderResolver(opts.provider) : null)
+  if (!resolver) throw new AppException('INTERNAL', 'The proxy manager needs at least one proxy provider.')
+  const providers: ProxyProviderResolver = resolver
+
+  function defaultProviderId(): ProviderId {
+    const configured = opts.defaultProviderId?.()
+    if (configured && providers.has(configured)) return configured
+    if (providers.has(DEFAULT_PROVIDER_ID)) return DEFAULT_PROVIDER_ID
+    const first = providers.ids()[0]
+    if (!first) throw new AppException('INTERNAL', 'No proxy provider is registered.')
+    return first
+  }
+
+  /** The provider a profile names; INVALID_INPUT naming the id when this build does not have it. */
+  function providerFor(profile: Profile | null, override?: ProviderId): ProxyProvider {
+    const id = profile ? (profile.providerId ?? DEFAULT_PROVIDER_ID) : (override ?? defaultProviderId())
+    if (!providers.has(id) && profile) {
+      throw new AppException(
+        'INVALID_INPUT',
+        `Profile "${profile.name}" uses the proxy provider "${id}", which this version does not support. Edit the profile and pick another provider.`,
+        `registered providers: ${providers.ids().join(', ') || 'none'}`,
+      )
+    }
+    return providers.get(id)
+  }
   const listeners = new Set<SessionListener>()
   const states = createStateResolver(opts.locations)
 
@@ -256,61 +306,66 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
   }
 
   /** The sticky id a profile should use right now, generating (and saving) one when it has none. */
-  function stickySessionIdFor(profile: Profile): string {
+  function stickySessionIdFor(profile: Profile, provider: ProxyProvider): string {
     if (profile.stickySessionId) return profile.stickySessionId
     const generated = provider.createSession(profile.name)
     persistStickySessionId(profile, generated, 'auto-generated')
     return generated
   }
 
-  function sessionIdFor(profile: Profile | null): string | null {
-    if (!profile || profile.proxyMode !== 'dataimpulse-sticky') return null
-    return stickySessionIdFor(profile)
+  function sessionIdFor(profile: Profile | null, provider: ProxyProvider): string | null {
+    if (!profile || profile.proxyMode !== 'sticky') return null
+    return stickySessionIdFor(profile, provider)
   }
 
-  function gatewayPool(): ProxyPool {
-    if (opts.defaultPool) return opts.defaultPool()
+  function gatewayPool(provider: ProxyProvider): ProductKey {
+    // The settings' default product applies to the default provider only (another provider may not offer it).
+    const preferred = opts.defaultPool?.()
+    if (preferred && provider.name === defaultProviderId() && provider.capabilities.products.some((p) => p.key === preferred)) return preferred
     const configured = provider.getConfigStatus().pools.find((p) => p.configured)
-    return configured?.pool ?? 'residential'
+    return configured?.pool ?? provider.capabilities.products[0]?.key ?? 'residential'
   }
 
   /** Everything the provider needs for a profile (or the raw gateway when profile is null). */
-  function requestFor(profile: Profile | null): ProxyRequest {
-    if (!profile) return { pool: gatewayPool(), sessionId: null, target: null, ttlMinutes: null }
+  function requestFor(profile: Profile | null, provider: ProxyProvider): ProxyRequest {
+    if (!profile) return { pool: gatewayPool(provider), sessionId: null, target: null, ttlMinutes: null }
     return {
       pool: profile.proxyPool,
-      sessionId: sessionIdFor(profile),
+      sessionId: sessionIdFor(profile, provider),
       target: profile.target ? { ...profile.target } : null,
-      ttlMinutes: profile.proxyMode === 'dataimpulse-sticky' ? profile.stickyTtlMinutes : null,
+      ttlMinutes: profile.proxyMode === 'sticky' ? profile.stickyTtlMinutes : null,
     }
   }
 
-  function requireConfigured(pool: ProxyPool): void {
+  /** PROXY_NOT_CONFIGURED for a product without credentials (or one the provider does not offer). */
+  function requireConfigured(provider: ProxyProvider, pool: ProductKey): void {
     if (provider.isPoolConfigured(pool)) return
-    if (!provider.isConfigured()) {
+    const offered = provider.capabilities.products.some((product) => product.key === pool)
+    if (offered && !provider.isConfigured()) {
       const status = provider.getConfigStatus()
-      throw new AppException('PROXY_NOT_CONFIGURED', NOT_CONFIGURED_MESSAGE, `missing: ${status.missing.join(', ') || 'unknown'}`)
+      throw new AppException('PROXY_NOT_CONFIGURED', notConfiguredMessage(provider.displayName), `provider=${provider.name}; missing: ${status.missing.join(', ') || 'unknown'}`)
     }
-    throw new AppException('PROXY_NOT_CONFIGURED', poolNotConfiguredMessage(pool), `pool=${pool}`)
+    throw new AppException('PROXY_NOT_CONFIGURED', productNotConfiguredMessage(provider, pool), `provider=${provider.name}; pool=${pool}`)
+  }
+
+  function contextFor(provider: ProxyProvider, request: ProxyRequest, targetingString: string): { providerId: ProviderId; pool: ProductKey; target: GeoTarget | null; targetingString: string | null } {
+    return { providerId: provider.name, pool: request.pool, target: request.target, targetingString: targetingString || null }
   }
 
   function compareTarget(target: GeoTarget | null, ip: IpInfo | null): TargetMatch {
     return compareTargetWith(target, ip, states)
   }
 
-  async function runTest(profile: Profile | null, request: ProxyRequest): Promise<{ result: ProxyTestResult; session: ProxySession }> {
+  async function runTest(profile: Profile | null, provider: ProxyProvider, request: ProxyRequest): Promise<{ result: ProxyTestResult; session: ProxySession }> {
     const profileName = profile?.name ?? 'gateway'
     const connection = provider.buildProxyConfig(request)
-    let row = sessions.upsertForProfile(profile?.id ?? null, request.sessionId, {
-      pool: request.pool,
-      target: request.target,
-      targetingString: connection.targetingString || null,
-    })
+    let row = sessions.upsertForProfile(profile?.id ?? null, request.sessionId, contextFor(provider, request, connection.targetingString))
     row = sessions.updateStatus(row.id, { status: 'testing', error: null })
     emit(row)
     logger.info(LOG_SCOPE, 'Proxy test started', {
       profileId: profile?.id ?? null,
       profileName,
+      provider: provider.name,
       pool: request.pool,
       sessionId: request.sessionId,
       targeting: connection.targetingString || null,
@@ -365,10 +420,10 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
   }
 
   /** Show an earlier attempt again as the profile's proxy session (its sticky id still holds that exit IP). */
-  function restoreAttempt(profile: Profile, base: ProxyRequest, chosen: VerifiedAttempt): void {
+  function restoreAttempt(profile: Profile, provider: ProxyProvider, base: ProxyRequest, chosen: VerifiedAttempt): void {
     const request: ProxyRequest = { ...base, sessionId: chosen.sessionId }
     const connection = provider.buildProxyConfig(request)
-    let row = sessions.upsertForProfile(profile.id, chosen.sessionId, { pool: request.pool, target: request.target, targetingString: connection.targetingString || null })
+    let row = sessions.upsertForProfile(profile.id, chosen.sessionId, contextFor(provider, request, connection.targetingString))
     row = sessions.updateStatus(row.id, { status: 'working', ip: chosen.ip, error: null, targetMatch: chosen.targetMatch })
     emit(row)
   }
@@ -377,12 +432,13 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     if (profile.proxyMode === 'none') {
       throw new AppException('INVALID_PROFILE', `Profile "${profile.name}" does not use a proxy; there is no proxy exit IP to verify.`)
     }
-    const base = requestFor(profile)
-    requireConfigured(base.pool)
+    const provider = providerFor(profile)
+    const base = requestFor(profile, provider)
+    requireConfigured(provider, base.pool)
     const { policy } = options
     const target = base.target
     // Only a sticky session can be re-rolled: a rotating one gets a new IP per request anyway.
-    const canReroll = profile.proxyMode === 'dataimpulse-sticky' && base.sessionId !== null && target !== null && policy !== 'off'
+    const canReroll = profile.proxyMode === 'sticky' && base.sessionId !== null && target !== null && policy !== 'off'
     const requested = target ? describeRequestedLocation(target, policy) : null
     const maxAttempts = canReroll
       ? Math.min(LOCATION_MATCH_ATTEMPTS_MAX, Math.max(LOCATION_MATCH_ATTEMPTS_MIN, Math.trunc(options.attempts) || LOCATION_MATCH_ATTEMPTS_MIN))
@@ -396,7 +452,7 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     let gaveUp: string | null = null
     while (attempts < maxAttempts) {
       attempts += 1
-      const { result } = await runTest(profile, request)
+      const { result } = await runTest(profile, provider, request)
       let progressReason: string
       if (result.status === 'working' && result.ip) {
         const targetMatch = target ? compareTarget(target, result.ip) : null
@@ -429,11 +485,19 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
           code,
           message: result.error?.message ?? null,
         })
-        // Another session id cannot fix rejected credentials, and a gateway that already refused a new sticky session
-        // (PROXY_DEAD after the IP checker's own retries — live: HTTP 503 once a thin ZIP pool's IPs were all pinned)
-        // keeps refusing until a session expires, so further re-rolls would only cost time.
-        if (code === 'PROXY_AUTH_FAILED' || code === 'PROXY_DEAD') {
-          gaveUp = code === 'PROXY_AUTH_FAILED' ? 'the proxy rejected the credentials (PROXY_AUTH_FAILED)' : 'the gateway refused a new sticky session (PROXY_DEAD); this location may have no free exit IP right now'
+        // Another session id cannot fix rejected credentials. Whether any other failure is worth a new session id is the
+        // provider's call: DataImpulse's gateway, once it refused a new sticky session (PROXY_DEAD after the IP checker's
+        // own retries — live: HTTP 503 once a thin ZIP pool's IPs were all pinned), keeps refusing until a session expires.
+        const error = result.error ?? { code, message: 'Proxy test failed without an error.' }
+        if (code === 'PROXY_AUTH_FAILED') {
+          gaveUp = 'the proxy rejected the credentials (PROXY_AUTH_FAILED)'
+          break
+        }
+        if (provider.isRetryableLocationFailure && !provider.isRetryableLocationFailure(error)) {
+          gaveUp =
+            code === 'PROXY_DEAD'
+              ? 'the gateway refused a new sticky session (PROXY_DEAD); this location may have no free exit IP right now'
+              : `the provider reported a failure another session cannot fix (${code})`
           break
         }
         progressReason = `Attempt ${attempts} could not verify the exit IP (${code})`
@@ -467,7 +531,7 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     const chosen = best
     if (chosen.sessionId !== null && chosen.sessionId !== request.sessionId) {
       persistStickySessionId(profile, chosen.sessionId, `best location result, attempt ${chosen.attempt}`)
-      restoreAttempt(profile, base, chosen)
+      restoreAttempt(profile, provider, base, chosen)
     }
     const got = describeExitLocation(chosen.ip, states)
     if (stopped) {
@@ -499,33 +563,51 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
   }
 
   return {
-    getConfigStatus(): ProxyConfigStatus {
-      return provider.getConfigStatus()
+    getConfigStatus(providerId?: ProviderId): ProxyConfigStatus {
+      return providers.get(providerId ?? defaultProviderId()).getConfigStatus()
+    },
+
+    providers(): ProviderInfo[] {
+      return providers.ids().map((id) => {
+        const provider = providers.get(id)
+        return {
+          id: provider.name,
+          displayName: provider.displayName,
+          docsUrl: provider.docsUrl,
+          capabilities: structuredClone(provider.capabilities),
+          sessionTemplate: provider.sessionTemplateDefault ?? null,
+          status: provider.getConfigStatus(),
+        }
+      })
     },
 
     testCredentials(input: ProxyCredentialsInput): Promise<ProxyTestResult> {
-      return provider.testCredentials(input)
+      // The provider id names the gateway to test through; an unknown id fails with INVALID_INPUT naming it.
+      const providerId = ProxyCredentialsInputSchema.shape.providerId.safeParse(input.providerId)
+      return providers.get(providerId.success ? providerId.data : DEFAULT_PROVIDER_ID).testCredentials(input)
     },
 
     resolveForProfile(profile: Profile): ProxyConnection | null {
       if (profile.proxyMode === 'none') return null
-      return provider.buildProxyConfig(requestFor(profile))
+      const provider = providerFor(profile)
+      return provider.buildProxyConfig(requestFor(profile, provider))
     },
 
     compareTarget,
 
-    async testConnection(profile: Profile | null, pool?: ProxyPool): Promise<ProxyTestResult> {
+    async testConnection(profile: Profile | null, pool?: ProductKey, providerId?: ProviderId): Promise<ProxyTestResult> {
       if (profile && profile.proxyMode === 'none') {
         throw new AppException(
           'INVALID_PROFILE',
-          `Profile "${profile.name}" has proxy mode "none"; there is no proxy to test. Switch it to a DataImpulse mode first.`,
+          `Profile "${profile.name}" has proxy mode "none"; there is no proxy to test. Switch it to a sticky or rotating proxy mode first.`,
         )
       }
-      const base = requestFor(profile)
-      // A raw gateway test may name its pool (Settings → Advanced → Proxy keys tests each pool); profiles always use their own.
+      // A raw gateway test may name its provider and product (Settings → Advanced → Proxy keys tests each one); profiles always use their own.
+      const provider = providerFor(profile, profile === null ? providerId : undefined)
+      const base = requestFor(profile, provider)
       const request = profile === null && pool !== undefined ? { ...base, pool } : base
-      requireConfigured(request.pool)
-      const { result } = await runTest(profile, request)
+      requireConfigured(provider, request.pool)
+      const { result } = await runTest(profile, provider, request)
       return result
     },
 
@@ -535,25 +617,27 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
       if (profile && profile.proxyMode === 'none') {
         throw new AppException('INVALID_PROFILE', `Profile "${profile.name}" does not use a proxy; it has no proxy exit IP.`)
       }
-      return provider.getCurrentIp(requestFor(profile))
+      const provider = providerFor(profile)
+      return provider.getCurrentIp(requestFor(profile, provider))
     },
 
     async rotateSession(profile: Profile): Promise<ProxySession> {
-      if (profile.proxyMode !== 'dataimpulse-sticky') {
+      if (profile.proxyMode !== 'sticky') {
         throw new AppException(
           'INVALID_PROFILE',
           `Profile "${profile.name}" is not in sticky-session mode; only sticky sessions can be rotated.`,
           `proxyMode=${profile.proxyMode}`,
         )
       }
-      requireConfigured(profile.proxyPool)
+      const provider = providerFor(profile)
+      requireConfigured(provider, profile.proxyPool)
       const existing = sessions.getByProfile(profile.id)
       const current = profile.stickySessionId ?? existing?.sessionId ?? null
       const next = provider.rotateSession(current, profile.name)
-      logger.info(LOG_SCOPE, 'Rotating sticky session', { profileId: profile.id, profileName: profile.name, pool: profile.proxyPool, from: current, to: next })
+      logger.info(LOG_SCOPE, 'Rotating sticky session', { profileId: profile.id, profileName: profile.name, provider: provider.name, pool: profile.proxyPool, from: current, to: next })
       // Write the new id back first so the profile and its session row never disagree, even if the test fails.
       persistStickySessionId(profile, next, 'rotated')
-      const { session } = await runTest(profile, { ...requestFor(profile), sessionId: next })
+      const { session } = await runTest(profile, provider, { ...requestFor(profile, provider), sessionId: next })
       return session
     },
 

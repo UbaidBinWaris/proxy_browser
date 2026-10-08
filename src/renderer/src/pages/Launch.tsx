@@ -15,6 +15,7 @@ import { BrowserPicker } from '@/components/BrowserPicker'
 import { DevicePicker } from '@/components/DevicePicker'
 import { LocationCombobox, TARGET_MODE_ICONS } from '@/components/LocationCombobox'
 import { PoolPicker, configuredPools } from '@/components/PoolPicker'
+import { Select } from '@/components/ui/Select'
 import { TargetingStrip } from '@/components/TargetingStrip'
 import { EngineInstallHint } from '@/components/EngineInstallHint'
 import { StartUrlInput } from '@/components/StartUrlInput'
@@ -37,6 +38,7 @@ import type { LauncherFormErrors, LauncherFormState } from '@/lib/launcherForm'
 import { historyRunPath } from '@/lib/navigation'
 import { engineAvailabilityMessage, isEngineUnavailable } from '@/lib/profileForm'
 import { TARGET_MODE_OPTIONS, geoTargetFromEntry, locationPolicySummary, poolLabel } from '@/lib/targeting'
+import { configuredProductKeys, findProvider, productKeys, selectableProviders } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useLauncherStore } from '@/stores/launcher'
@@ -51,7 +53,8 @@ import { toast } from '@/stores/toasts'
 
 /** DOM id of the control that shows a given form error (for focusing the first offender). */
 const ERROR_FOCUS_IDS: Record<keyof LauncherFormState, string> = {
-  pool: 'launch-pool-residential',
+  providerId: 'launch-provider',
+  pool: 'launch-pool-none',
   mode: 'launch-mode',
   country: 'launch-country',
   target: 'launch-location',
@@ -84,7 +87,7 @@ export function LaunchPage(): React.JSX.Element {
   const dismissSessionLimit = useLauncherStore((s) => s.dismissSessionLimit)
 
   const settings = useSettingsStore((s) => s.settings)
-  const config = useProxyStore((s) => s.config)
+  const providers = useProxyStore((s) => s.providers)
   const loadConfig = useProxyStore((s) => s.loadConfig)
   const browsers = useAppStore((s) => s.browsers)
   const loadBrowsers = useAppStore((s) => s.loadBrowsers)
@@ -117,7 +120,10 @@ export function LaunchPage(): React.JSX.Element {
 
   const engines = browsers?.engines ?? null
   const tasks = useTasksStore((s) => s.tasks)
-  const pools = config?.pools ?? null
+  // Only providers with saved keys are offered (plus the selected one, so the control can display it).
+  const providerChoices = useMemo(() => selectableProviders(providers, form.providerId), [providers, form.providerId])
+  const provider = findProvider(providers, form.providerId) ?? (providers ? (providerChoices[0] ?? null) : null)
+  const pools = provider?.status.pools ?? null
   const configured = useMemo(() => configuredPools(pools), [pools])
   const preset = useMemo<DevicePresetInfo | null>(
     () => presets.find((p) => p.id === form.devicePreset) ?? null,
@@ -142,6 +148,27 @@ export function LaunchPage(): React.JSX.Element {
       if (next && next.id !== form.devicePreset) setField('devicePreset', next.id)
     }
   }, [presets, preset, form.engine, form.devicePreset, setField])
+
+  // The remembered provider/product may not exist (anymore): fall back to a configured provider and product.
+  useEffect(() => {
+    if (!providers || providers.length === 0) return
+    const current = findProvider(providers, form.providerId)
+    const next = current ?? providerChoices[0] ?? providers[0] ?? null
+    if (!next) return
+    const offered = productKeys(next)
+    const pool = form.pool === 'none' || offered.includes(form.pool) ? form.pool : (configuredProductKeys(next)[0] ?? offered[0] ?? 'none')
+    if (next.id !== form.providerId || pool !== form.pool) patch({ providerId: next.id, pool })
+    if (form.mode !== 'country' && !next.capabilities.targetModes.includes(form.mode)) setMode(next.capabilities.targetModes[0] ?? 'country')
+  }, [providers, providerChoices, form.providerId, form.pool, form.mode, patch, setMode])
+
+  const selectProvider = (id: string): void => {
+    const next = findProvider(providers, id)
+    const offered = productKeys(next)
+    const pool = form.pool === 'none' || offered.includes(form.pool) ? form.pool : (configuredProductKeys(next)[0] ?? offered[0] ?? 'none')
+    patch({ providerId: id, pool })
+    clearError('providerId')
+    clearError('pool')
+  }
 
   // Live validation drives the preview and the button state; errors are only displayed after a submit attempt.
   const built = useMemo(() => buildQuickLaunchInput(form), [form])
@@ -269,11 +296,14 @@ export function LaunchPage(): React.JSX.Element {
     ? null
     : (built.errors?.target ?? built.errors?.country ?? built.errors?.stickyTtlMinutes ?? null)
   const presetsLoading = presetsStatus === 'loading' || presetsStatus === 'idle'
-  const profileNamePlaceholder = suggestProfileName(form, preset)
+  const profileNamePlaceholder = suggestProfileName(form, preset, provider)
   const randomLocationBusy = randomBusy[form.mode] === true
   const locationControlId = form.mode === 'country' ? 'launch-country' : 'launch-location'
   const locationError = form.mode === 'country' ? errors.country : errors.target
-  const modeOptions = TARGET_MODE_OPTIONS.map((option) => ({ ...option, icon: TARGET_MODE_ICONS[option.value] }))
+  const modeOptions = TARGET_MODE_OPTIONS.filter((option) => !provider || provider.capabilities.targetModes.includes(option.value)).map((option) => ({
+    ...option,
+    icon: TARGET_MODE_ICONS[option.value],
+  }))
   const policySummary = locationPolicySummary({
     pool: form.pool,
     sticky: form.sticky,
@@ -321,6 +351,25 @@ export function LaunchPage(): React.JSX.Element {
             <CardHeader title="Connection" />
             <CardBody className="flex flex-col gap-5">
               <div className="flex flex-col gap-1.5">
+                <label htmlFor="launch-provider" className="text-sm font-medium leading-none">
+                  Proxy provider
+                </label>
+                <Select
+                  id="launch-provider"
+                  value={provider?.id ?? form.providerId}
+                  onChange={(e) => selectProvider(e.target.value)}
+                  options={(providerChoices.length > 0 ? providerChoices : providers ?? []).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+                  disabled={providers === null}
+                  aria-describedby={errors.providerId ? 'launch-provider-error' : undefined}
+                />
+                {errors.providerId ? (
+                  <p id="launch-provider-error" role="alert" className="text-xs text-destructive">
+                    {errors.providerId}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1.5">
                 <span id="launch-pool-label" className="text-sm font-medium leading-none">
                   Proxy pool
                 </span>
@@ -328,6 +377,7 @@ export function LaunchPage(): React.JSX.Element {
                   id="launch-pool"
                   value={form.pool}
                   onChange={(pool) => update('pool', pool)}
+                  provider={provider}
                   pools={pools}
                   onRandom={handleRandomPool}
                   onManageKeys={handleManageKeys}
@@ -676,7 +726,7 @@ export function LaunchPage(): React.JSX.Element {
               aria-describedby={engineBusy ? 'launch-engine-busy' : undefined}
               title={
                 poolBlocked
-                  ? `${poolLabel(form.pool)} has no keys. Add them with “Manage keys”.`
+                  ? `${poolLabel(form.pool, provider)} has no keys. Add them with “Manage keys”.`
                   : engineBusy
                     ? engineBusy
                     : engineMissing

@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { BrowsersStatus, SecurityStatus } from '../src/shared/types'
 import { SESSION_TEMPLATE_MESSAGE } from '../src/shared/types'
 import {
-  DEFAULT_PROXY_HOST,
-  DEFAULT_PROXY_PORT,
   HOST_MESSAGE,
   PORT_MESSAGE,
   emptyCredentialsForm,
@@ -29,11 +27,12 @@ import {
   shortInstallId,
 } from '../src/renderer/src/lib/security'
 import { errorLabel } from '../src/renderer/src/lib/result'
+import { dataImpulseDialect } from '../src/main/proxy/providers/dataimpulse'
 
 function securityStatus(overrides: Partial<SecurityStatus> = {}): SecurityStatus {
   return {
     source: 'vault',
-    configuredPools: ['residential'],
+    configuredProducts: { dataimpulse: ['residential'] },
     keyBackend: 'os-keychain',
     keyBackendLabel: 'GNOME Keyring / libsecret',
     keyPath: '/home/qa/.config/proxy-qa-browser/security/vault.key',
@@ -134,19 +133,24 @@ describe('portable Windows automatic preparation', () => {
 })
 
 describe('credentials form validation', () => {
-  it('pre-fills DataImpulse defaults and adopts the active host/port when known', () => {
-    expect(emptyCredentialsForm()).toEqual({
-      host: DEFAULT_PROXY_HOST,
-      port: String(DEFAULT_PROXY_PORT),
+  it("pre-fills the provider's default gateway and adopts the active host/port when known", () => {
+    const defaults = dataImpulseDialect.capabilities.defaults
+    expect(emptyCredentialsForm(null, defaults)).toEqual({
+      host: 'gw.dataimpulse.com',
+      port: '823',
       username: '',
       password: '',
       sessionTemplate: '',
+      extras: {},
     })
+    // Without a provider (list still loading) nothing is guessed.
+    expect(emptyCredentialsForm()).toMatchObject({ host: '', port: '' })
     expect(emptyCredentialsForm({ host: 'proxy.example.net', port: 10000 })).toMatchObject({
       host: 'proxy.example.net',
       port: '10000',
     })
-    expect(emptyCredentialsForm({ host: null, port: null })).toMatchObject({ host: DEFAULT_PROXY_HOST, port: '823' })
+    expect(emptyCredentialsForm({ host: null, port: null }, defaults)).toMatchObject({ host: 'gw.dataimpulse.com', port: '823' })
+    expect(emptyCredentialsForm({ host: 'proxy.example.net', port: 10000 }, defaults)).toMatchObject({ host: 'proxy.example.net', port: '10000' })
   })
 
   it('accepts a complete form, trimming host/username, keeping the password verbatim and nulling an empty template', () => {
@@ -159,7 +163,9 @@ describe('credentials form validation', () => {
     })
     expect(result.errors).toBeNull()
     expect(result.input).toEqual({
+      providerId: 'dataimpulse',
       pool: 'residential',
+      extras: {},
       host: 'gw.dataimpulse.com',
       port: 823,
       username: 'user1',
@@ -178,6 +184,8 @@ describe('credentials form validation', () => {
     }
     expect(validateCredentialsForm(form, 'mobile').input?.pool).toBe('mobile')
     expect(validateCredentialsForm(form).input?.pool).toBe('residential')
+    // …and with the provider and its extra fields (empty values are not sent).
+    expect(validateCredentialsForm({ ...form, extras: { zone: 'z1', apiKey: '' } }, 'isp', { providerId: 'acme' }).input).toMatchObject({ providerId: 'acme', pool: 'isp', extras: { zone: 'z1' } })
   })
 
   it('accepts IPv4 hosts and a session template with both placeholders', () => {
@@ -203,6 +211,9 @@ describe('credentials form validation', () => {
     expect(validateHost('gw.dataimpulse.com')).toBeNull()
     expect(validateHost('localhost')).toBeNull()
     expect(validateHost('192.168.1.10')).toBeNull()
+    // The hint names the selected provider's default gateway when one is known.
+    expect(validateHost('http://x', 'gw.dataimpulse.com')).toBe('Enter the hostname only, e.g. gw.dataimpulse.com — no http://, path or port')
+    expect(HOST_MESSAGE).not.toMatch(/dataimpulse/i)
   })
 
   it('reports field-level errors for port, username, password and template', () => {

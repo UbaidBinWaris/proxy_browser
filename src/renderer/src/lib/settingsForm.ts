@@ -1,15 +1,6 @@
-import type { AppSettings, BrowserExecutableOverrides, IpCheckProvider, LocationMatchPolicy, ProxyPool } from '@shared/types'
+import type { AppSettings, BrowserExecutableOverrides, IpCheckProvider, LocationMatchPolicy, ProductKey, ProviderId } from '@shared/types'
 import { AppSettingsSchema, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, LOCATION_MATCH_POLICIES } from '@shared/types'
 import { flagsErrorMessage, formatChromiumArgs, parseChromiumArgs } from './flags'
-
-export type TargetingEncoding = AppSettings['targetingEncoding']
-
-export const TARGETING_ENCODINGS: readonly TargetingEncoding[] = ['remove-spaces', 'underscore', 'keep']
-export const TARGETING_ENCODING_LABELS: Record<TargetingEncoding, string> = {
-  'remove-spaces': 'Remove spaces (DataImpulse default)',
-  underscore: 'Replace spaces with underscores',
-  keep: 'Keep spaces',
-}
 
 export const LOCATION_MATCH_POLICY_LABELS: Record<LocationMatchPolicy, string> = {
   off: 'Off',
@@ -40,8 +31,11 @@ export interface SettingsFormState {
   singleSessionMode: boolean
   /** Editor text: one Chromium flag per line. */
   extraChromiumArgs: string
-  targetingEncoding: TargetingEncoding
-  defaultProxyPool: ProxyPool
+  /** Place-name encoding per provider id (`settings.providerOptions[id].encoding`); a provider without an entry uses its default. */
+  providerEncodings: Record<ProviderId, string>
+  defaultProviderId: ProviderId
+  /** Product of the default provider. */
+  defaultProxyPool: ProductKey
   defaultTargetCountry: string
   locationMatchPolicy: LocationMatchPolicy
   /** Editor text; validated as a whole number in the shared range. */
@@ -60,7 +54,10 @@ export function settingsFormFrom(settings: AppSettings): SettingsFormState {
     navigationTimeoutMs: String(settings.navigationTimeoutMs),
     singleSessionMode: settings.singleSessionMode,
     extraChromiumArgs: formatChromiumArgs(settings.extraChromiumArgs),
-    targetingEncoding: settings.targetingEncoding,
+    providerEncodings: Object.fromEntries(
+      Object.entries(settings.providerOptions).flatMap(([id, options]) => (options.encoding ? [[id, options.encoding]] : [])),
+    ),
+    defaultProviderId: settings.defaultProviderId,
     defaultProxyPool: settings.defaultProxyPool,
     defaultTargetCountry: settings.defaultTargetCountry.toUpperCase(),
     locationMatchPolicy: settings.locationMatchPolicy,
@@ -91,15 +88,25 @@ function friendly(key: keyof SettingsFormState, message: string): string {
   }
 }
 
+/** `providerOptions` from the per-provider encodings, keeping options the form does not edit. */
+export function providerOptionsFrom(encodings: Record<ProviderId, string>, base: AppSettings['providerOptions'] = {}): AppSettings['providerOptions'] {
+  const next: AppSettings['providerOptions'] = {}
+  for (const [id, options] of Object.entries(base)) next[id] = { ...options }
+  for (const [id, encoding] of Object.entries(encodings)) next[id] = { ...(next[id] ?? {}), encoding }
+  return next
+}
+
 /**
  * Validate the settings form against the shared schema. `screenshotDir` and
  * `browserExecutables` are not edited by this form (the first is read-only, the second
- * is managed row by row in Settings → Browsers) and are passed through unchanged.
+ * is managed row by row in Settings → Browsers) and are passed through unchanged, and so are
+ * provider options the form does not edit (`baseProviderOptions`).
  */
 export function validateSettingsForm(
   form: SettingsFormState,
   screenshotDir: string,
   browserExecutables: BrowserExecutableOverrides = {},
+  baseProviderOptions: AppSettings['providerOptions'] = {},
 ): { data: AppSettings; errors: null } | { data: null; errors: SettingsFormErrors } {
   const errors: SettingsFormErrors = {}
   const flags = parseChromiumArgs(form.extraChromiumArgs)
@@ -117,7 +124,8 @@ export function validateSettingsForm(
     browserExecutables,
     singleSessionMode: form.singleSessionMode,
     extraChromiumArgs: flags.args,
-    targetingEncoding: form.targetingEncoding,
+    providerOptions: providerOptionsFrom(form.providerEncodings, baseProviderOptions),
+    defaultProviderId: form.defaultProviderId,
     defaultProxyPool: form.defaultProxyPool,
     defaultTargetCountry: form.defaultTargetCountry.trim().toLowerCase(),
     locationMatchPolicy: form.locationMatchPolicy,
@@ -125,7 +133,9 @@ export function validateSettingsForm(
   })
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {
-      const key = issue.path[0]
+      const raw = issue.path[0]
+      // Provider options are edited as `providerEncodings`.
+      const key = raw === 'providerOptions' ? 'providerEncodings' : raw
       if (typeof key === 'string' && key in form && !(key in errors)) {
         errors[key as keyof SettingsFormState] = friendly(key as keyof SettingsFormState, issue.message)
       }

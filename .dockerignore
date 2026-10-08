@@ -1,0 +1,42 @@
+# Build context for docker/runner/Dockerfile. Keep secrets, build output and
+# large generated folders out of the context (and therefore out of every layer).
+
+# Secrets and signing material — the runner image needs none of these
+.env
+.env.*
+**/.env
+**/.env.*
+.release-keys/
+.deploy/
+*.pem
+*.pfx
+*.p12
+*.pqab
+*.qavb
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules/
+**/node_modules/
+out/
+dist/
+release/
+*.tsbuildinfo
+app/webapp/.next/
+
+# Runtime and test output
+data/
+server-data/
+smoke-output/
+qa-results/
+build/browsers/
+build/webkit-libs/
+
+# Tooling and VCS
+.git/
+.github/
+.claude/
+.remember/
+.serena/
+.vscode/
+.idea/
+*.log

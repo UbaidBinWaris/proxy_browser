@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Lock, Trash2 } from 'lucide-react'
 import { AppIcon } from '@/components/icons/AppIcon'
-import type { ProxyPool } from '@shared/types'
-import { PROXY_POOLS, PROXY_POOL_LABELS } from '@shared/types'
+import type { ProductKey, ProviderId } from '@shared/types'
+import { DEFAULT_PROVIDER_ID } from '@shared/types'
 import { EVENTS } from '@shared/ipc'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ErrorAlert } from '@/components/ui/ErrorAlert'
+import { Field } from '@/components/ui/Field'
+import { Select } from '@/components/ui/Select'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Tabs, tabPanelProps } from '@/components/ui/Tabs'
 import { ToastViewport } from '@/components/ui/Toast'
@@ -15,7 +17,8 @@ import { CredentialsForm } from '@/components/CredentialsForm'
 import { useEvent } from '@/hooks/useEvent'
 import { KEYS_ACTIVITY_EVENTS, KEYS_INACTIVITY_TIMEOUT_MS, createInactivityTracker, inactivityNote } from '@/lib/keysWindow'
 import type { InactivityTracker } from '@/lib/keysWindow'
-import { POOL_TAB_LABELS, lastPoolTest, poolStatusFor, supportsPartialUpdate } from '@/lib/proxyKeys'
+import { findProvider, productKeys, productLabelFor, providerProductLabel } from '@/lib/providers'
+import { lastPoolTest, poolStatusFor, supportsPartialUpdate } from '@/lib/proxyKeys'
 import { relativeTime } from '@/lib/security'
 import { CREDENTIAL_SOURCE_META } from '@/lib/setup'
 import { useProxyStore } from '@/stores/proxy'
@@ -50,12 +53,14 @@ function useInactivityClose(onExpire: () => void): number {
 
 /**
  * The secure "Manage proxy keys" window (route #/keys, rendered without the app shell).
- * Shows each pool's status and the credentials form; for a pool stored in the vault an empty
- * username or password keeps the stored value, so the password can be rotated on its own.
+ * A provider picker comes first; its products are the tabs. Shows each product's status and the
+ * credentials form (default gateway and extra fields from the provider's capabilities); for a
+ * product stored in the vault an empty username, password or extra field keeps the stored value,
+ * so the password can be rotated on its own.
  * Typed values live only in this window's React state and are gone when it closes.
  */
 export function KeysWindowPage(): React.JSX.Element {
-  const config = useProxyStore((s) => s.config)
+  const providers = useProxyStore((s) => s.providers)
   const configError = useProxyStore((s) => s.configError)
   const loadConfig = useProxyStore((s) => s.loadConfig)
   const sessions = useProxyStore((s) => s.sessions)
@@ -67,8 +72,19 @@ export function KeysWindowPage(): React.JSX.Element {
   const clearCredentials = useSecurityStore((s) => s.clearCredentials)
   const closeKeysWindow = useSecurityStore((s) => s.closeKeysWindow)
 
-  const [pool, setPool] = useState<ProxyPool>('residential')
+  const [providerId, setProviderId] = useState<ProviderId>(DEFAULT_PROVIDER_ID)
+  const [selectedPool, setPool] = useState<ProductKey | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
+
+  // The registered providers arrive after mount; fall back to the first one when the default is not registered.
+  const provider = findProvider(providers, providerId) ?? providers?.[0] ?? null
+  const products = productKeys(provider)
+  const pool: ProductKey = selectedPool !== null && products.includes(selectedPool) ? selectedPool : (products[0] ?? 'residential')
+  const config = provider?.status ?? null
+  const changeProvider = (id: string): void => {
+    setProviderId(id)
+    setPool(null)
+  }
 
   useEffect(() => {
     void loadConfig()
@@ -89,13 +105,14 @@ export function KeysWindowPage(): React.JSX.Element {
 
   const status = poolStatusFor(config?.pools, pool)
   const partial = supportsPartialUpdate(status)
-  const lastTest = lastPoolTest(sessions, pool)
+  const lastTest = provider ? lastPoolTest(sessions, pool, provider.id) : null
+  const label = providerProductLabel(provider, pool)
   const sourceLabel = status?.configured ? CREDENTIAL_SOURCE_META[status.source].label : null
 
   const handleRemove = async (): Promise<void> => {
     try {
-      await clearCredentials(pool)
-      toast.success(`${PROXY_POOL_LABELS[pool]} keys removed`, 'The encrypted entry was deleted from this machine.')
+      await clearCredentials(provider?.id ?? providerId, pool)
+      toast.success(`${label} keys removed`, 'The encrypted entry was deleted from this machine.')
     } catch (err) {
       toast.fromError(err, 'Could not remove keys')
     } finally {
@@ -116,11 +133,24 @@ export function KeysWindowPage(): React.JSX.Element {
 
         {configError ? <ErrorAlert error={configError} title="Could not read the proxy configuration" onRetry={() => void loadConfig()} compact /> : null}
 
-        <Tabs idPrefix="keys" items={PROXY_POOLS.map((value) => ({ value, label: POOL_TAB_LABELS[value] }))} value={pool} onChange={setPool} aria-label="Proxy pool" />
+        <Field htmlFor="keys-provider" label="Provider" hint={provider ? `Parameter reference: ${provider.docsUrl}` : undefined}>
+          <Select
+            id="keys-provider"
+            value={provider?.id ?? providerId}
+            onChange={(e) => changeProvider(e.target.value)}
+            options={(providers ?? []).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+            disabled={providers === null || busy !== null}
+            aria-describedby={provider ? 'keys-provider-hint' : undefined}
+          />
+        </Field>
+
+        {products.length > 0 ? (
+          <Tabs idPrefix="keys" items={products.map((value) => ({ value, label: productLabelFor(provider, value) }))} value={pool} onChange={setPool} aria-label={`${provider?.displayName ?? 'Proxy'} product`} />
+        ) : null}
 
         <section {...tabPanelProps('keys', pool)} className="flex flex-col gap-5">
           {config === null ? (
-            <div className="flex flex-col gap-2" role="status" aria-label="Loading pool status">
+            <div className="flex flex-col gap-2" role="status" aria-label="Loading key status">
               <Skeleton className="h-4 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
             </div>
@@ -164,17 +194,26 @@ export function KeysWindowPage(): React.JSX.Element {
 
           {status?.configured && status.source === 'env' ? (
             <p role="note" className="text-xs text-muted-foreground">
-              Using the development .env login. Enter all fields to store keys for this pool in the encrypted vault.
+              Using the development .env login. Enter all fields to store keys for this product in the encrypted vault.
             </p>
           ) : null}
 
-          {config !== null ? (
-            <CredentialsForm key={pool} mode="update" pool={pool} current={status} partial={partial} compactSuccess idPrefix={`keys-${pool}`} />
+          {config !== null && provider ? (
+            <CredentialsForm
+              key={`${provider.id}-${pool}`}
+              mode="update"
+              provider={provider}
+              pool={pool}
+              current={status}
+              partial={partial}
+              compactSuccess
+              idPrefix={`keys-${provider.id}-${pool}`}
+            />
           ) : null}
 
           {status?.configured && status.source === 'vault' ? (
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-              <p className="text-xs text-muted-foreground">Removing deletes this pool’s encrypted entry. Launches through it stop working.</p>
+              <p className="text-xs text-muted-foreground">Removing deletes this product’s encrypted entry. Launches through it stop working.</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -202,8 +241,8 @@ export function KeysWindowPage(): React.JSX.Element {
 
       <ConfirmDialog
         open={confirmRemove}
-        title={`Remove ${PROXY_POOL_LABELS[pool]} keys?`}
-        description="The encrypted credentials for this pool are deleted from this machine. Launches and proxy tests through it fail until new keys are saved."
+        title={`Remove ${label} keys?`}
+        description="The encrypted credentials for this product are deleted from this machine. Launches and proxy tests through it fail until new keys are saved."
         confirmLabel="Remove keys"
         destructive
         loading={busy === 'clearing'}

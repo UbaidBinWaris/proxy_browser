@@ -33,11 +33,12 @@ export function parseSettingsTab(value: string | null | undefined): SettingsTab 
 }
 
 /** Collapsible sections of Settings → Advanced, in display order. Only Proxy keys starts open. */
-export const ADVANCED_SECTIONS = ['proxy-keys', 'targeting', 'browser-flags', 'ip-verification', 'network-inspector', 'proxy-sessions', 'logs'] as const
+export const ADVANCED_SECTIONS = ['proxy-keys', 'site-access', 'targeting', 'browser-flags', 'ip-verification', 'network-inspector', 'proxy-sessions', 'logs'] as const
 export type AdvancedSection = (typeof ADVANCED_SECTIONS)[number]
 
 export const ADVANCED_SECTION_LABELS: Record<AdvancedSection, string> = {
   'proxy-keys': 'Proxy keys',
+  'site-access': 'Site access tokens',
   targeting: 'Targeting & location match',
   'browser-flags': 'Browser flags',
   'ip-verification': 'IP verification',
@@ -71,7 +72,8 @@ export type SettingsField =
   | 'networkInspectorEnabled'
   | 'navigationTimeoutMs'
   | 'extraChromiumArgs'
-  | 'targetingEncoding'
+  | 'providerEncodings'
+  | 'defaultProviderId'
   | 'defaultProxyPool'
   | 'defaultTargetCountry'
   | 'locationMatchPolicy'
@@ -86,8 +88,9 @@ export interface SettingsFieldLocation {
 export const SETTINGS_FIELD_LOCATIONS: Record<SettingsField, SettingsFieldLocation> = {
   defaultFormUrl: { tab: 'general', section: null },
   singleSessionMode: { tab: 'general', section: null },
-  targetingEncoding: { tab: 'advanced', section: 'targeting' },
+  defaultProviderId: { tab: 'advanced', section: 'targeting' },
   defaultProxyPool: { tab: 'advanced', section: 'targeting' },
+  providerEncodings: { tab: 'advanced', section: 'targeting' },
   defaultTargetCountry: { tab: 'advanced', section: 'targeting' },
   locationMatchPolicy: { tab: 'advanced', section: 'targeting' },
   locationMatchAttempts: { tab: 'advanced', section: 'targeting' },

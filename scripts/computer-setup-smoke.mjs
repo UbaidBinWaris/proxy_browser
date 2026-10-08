@@ -31,7 +31,7 @@ try {
   assert.equal(installed.installedVersion, version)
   assert(installed.installedPath.startsWith(state))
   assert(installed.startMenuShortcut)
-  const entry = await readFile(join(state, 'applications', 'com.letsscall.proxy-qa-browser.desktop'), 'utf8')
+  const entry = await readFile(join(state, 'applications', 'com.ubaidbinwaris.proxy-qa-browser.desktop'), 'utf8')
   assert(entry.includes(`Exec="${installed.installedPath}"`))
   await app.close()
   app = null

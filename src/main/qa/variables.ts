@@ -50,6 +50,15 @@ export function resolveScenario(
         ? { value: step.action === 'goto' ? mapUrl(step.value) : replace(step.value) }
         : {}),
       ...('selector' in step ? { selector: replace(step.selector) } : {}),
+      // CSS fallbacks may be a former primary selector that used variables. Other fallback kinds are
+      // literal page text captured by the recorder and are never substituted.
+      ...('fallbacks' in step && step.fallbacks
+        ? {
+            fallbacks: step.fallbacks.map((fallback) =>
+              fallback.kind === 'css' ? { ...fallback, value: replace(fallback.value) } : fallback,
+            ),
+          }
+        : {}),
     })),
   })
   // The template schema accepts unresolved values for editing; execution never does.

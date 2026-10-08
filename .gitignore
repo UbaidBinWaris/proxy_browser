@@ -29,6 +29,7 @@ Thumbs.db
 .remember/
 .serena/
 .claude/settings.local.json
+.claude/worktrees/
 
 # Windows smoke test output (scripts/windows-smoke.cjs)
 smoke-output/

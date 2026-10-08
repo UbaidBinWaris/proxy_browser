@@ -6,6 +6,7 @@ import type { RecorderManager } from '../qa/recorder'
 import type { VisualStore } from '../qa/visual'
 import type { QaService } from '../qa/service'
 import type { GatewayManager } from '../qa/gateways'
+import type { SiteAccessStore } from '../site-access'
 import type { UpdateManager } from '../releases/updates'
 import type {
   AppPaths,
@@ -46,6 +47,8 @@ export interface IpcWindows {
 
 export interface IpcDeps {
   desktop?: DesktopIntegration
+  /** Site access tokens store (src/main/site-access); absent in tests that do not exercise it. */
+  siteAccess?: SiteAccessStore
   recorder?: RecorderManager
   visuals?: VisualStore
   qa?: QaService

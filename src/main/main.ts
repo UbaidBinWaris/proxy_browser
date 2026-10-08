@@ -14,8 +14,8 @@
  *      protocol, CSP header, IPC handlers, main window
  *
  * Credential precedence: vault (decrypted and holding credentials) → `.env`
- * (never in packaged builds) → none. The provider is re-pointed whenever the
- * vault changes.
+ * (never in packaged builds) → none. Every registered provider is re-pointed
+ * whenever the vault changes.
  *
  * Any failure during bootstrap is shown in a native error box and the app exits;
  * it never dies silently.
@@ -39,7 +39,7 @@ import { webkitLibsDirFromEnv } from './browser/browsers-path'
 import { nodeDetectFs } from './browser/engine-detect'
 import { sweepPostInstall } from './browser/installers/post-install-sweep'
 import { createProfileManager } from './browser/profile-manager'
-import { PROXY_ENV_KEYS, defaultEnvCandidates, loadDotEnv, readProxyEnv } from './config/env'
+import { defaultEnvCandidates, loadDotEnv, readProviderEnv, scrubProxySecretEnv } from './config/env'
 import { resolveAppPaths } from './config/paths'
 import { AppException } from './contracts'
 import type {
@@ -48,7 +48,7 @@ import type {
   CredentialVault,
   Database,
   Logger,
-  ProxyCredentials,
+  StoredProxyCredentials,
   TaskManager,
 } from './contracts'
 import { openDatabase } from './database/index'
@@ -60,7 +60,8 @@ import { createLocationsService } from './locations/locations-service'
 import { createLogger } from './logging/logger'
 import { compileSecrets, redactString } from './logging/redact'
 import { createIpChecker } from './proxy/ip-checker'
-import { DataImpulseProvider } from './proxy/providers/dataimpulse'
+import { dataImpulseDialect } from './proxy/providers/dataimpulse'
+import { BUILT_IN_DIALECTS, ProviderRegistry } from './proxy/providers/registry'
 import { createProxyManager } from './proxy/proxy-manager'
 import { createCredentialVault } from './security/credential-vault'
 import { createInstallStateStore } from './security/install-state'
@@ -81,6 +82,7 @@ import type { RecorderManager } from './qa/recorder'
 import { createVisualStore } from './qa/visual'
 import type { QaService } from './qa/service'
 import { createGatewayManager } from './qa/gateways'
+import { SITE_ACCESS_FILE_NAME, createSiteAccess } from './site-access'
 import { createUpdateManager } from './releases/updates'
 import type { UpdateConfig } from './releases/updates'
 import { resolveAppIconPath } from './windows/app-icon'
@@ -337,18 +339,37 @@ async function bootstrap(): Promise<Runtime> {
   }
   const sanitize = (text: string): string => redactString(text, compileSecrets(secrets))
 
-  const proxyEnv = app.isPackaged ? { config: null, missing: [] } : readProxyEnv()
-  // The provider keeps the credentials in memory; nothing else may read them. Removing them from
+  // Development .env: QA_PROVIDER* variables, or the DATAIMPULSE_PROXY_* alias (one login → the residential product).
+  const dialectInfo = (id: string): { defaults: { host: string; port: number }; extraFieldKeys: string[]; productKeys: string[] } | null => {
+    const dialect = BUILT_IN_DIALECTS.find((candidate) => candidate.id === id)
+    return dialect
+      ? {
+          defaults: dialect.capabilities.defaults,
+          extraFieldKeys: dialect.capabilities.extraCredentialFields.map((field) => field.key),
+          productKeys: dialect.capabilities.products.map((product) => product.key),
+        }
+      : null
+  }
+  const proxyEnv = app.isPackaged ? { config: null, missing: [] as string[], warnings: [] as string[] } : readProviderEnv(process.env, dialectInfo)
+  // The providers keep the credentials in memory; nothing else may read them. Removing them from
   // process.env keeps Playwright's browser processes and the installer child from inheriting them.
-  delete process.env[PROXY_ENV_KEYS.password]
-  delete process.env[PROXY_ENV_KEYS.username]
-  // The development .env knows one login only: it maps to the residential pool.
-  const envCredentials: ProxyCredentials | null = proxyEnv.config
-    ? { ...proxyEnv.config, pool: 'residential', sessionTemplate: null }
+  scrubProxySecretEnv(process.env)
+  const envCredentials: StoredProxyCredentials | null = proxyEnv.config
+    ? {
+        providerId: proxyEnv.config.providerId,
+        pool: proxyEnv.config.product ?? dialectInfo(proxyEnv.config.providerId)?.productKeys[0] ?? 'residential',
+        host: proxyEnv.config.host,
+        port: proxyEnv.config.port,
+        username: proxyEnv.config.username,
+        password: proxyEnv.config.password,
+        sessionTemplate: null,
+        extras: proxyEnv.config.extras,
+      }
     : null
   if (envCredentials) {
     logger.registerSecret(envCredentials.password)
     logger.registerSecret(`${envCredentials.username}:${envCredentials.password}`)
+    for (const value of Object.values(envCredentials.extras)) logger.registerSecret(value)
   }
 
   logger.info(SCOPE, 'app startup', {
@@ -361,8 +382,9 @@ async function bootstrap(): Promise<Runtime> {
     database: paths.database,
     logs: paths.logs,
     envFile: envFile.loadedFrom,
-    envCredentials: envCredentials !== null,
+    envCredentials: envCredentials ? envCredentials.providerId : null,
     envMissing: proxyEnv.missing,
+    envWarnings: proxyEnv.warnings,
   })
 
   const getSettings = (): ReturnType<Database['settings']['get']> => db.settings.get()
@@ -398,14 +420,25 @@ async function bootstrap(): Promise<Runtime> {
   if (webkitLibsDir)
     logger.info(SCOPE, `WebKit host libraries bundled at ${webkitLibsDir} (Playwright host validation skipped)`)
   const ipChecker = createIpChecker({ getSettings, logger })
-  const provider = new DataImpulseProvider({
-    ipChecker,
-    logger,
-    getTargetingEncoding: () => getSettings().targetingEncoding,
-    ...(process.env.DATAIMPULSE_SESSION_TEMPLATE ? { sessionTemplate: process.env.DATAIMPULSE_SESSION_TEMPLATE } : {}),
-  })
+  // Proxy providers: one GatewayProvider per built-in dialect; profiles pick theirs by id.
+  const providers = new ProviderRegistry({ ipChecker, logger })
+  for (const dialect of BUILT_IN_DIALECTS) {
+    providers.register(dialect, {
+      // Read at request time, so a changed setting applies to the next connection.
+      getEncoding: () => getSettings().providerOptions[dialect.id]?.encoding ?? dialect.capabilities.encodingOptions?.[0] ?? '',
+      ...(dialect.id === dataImpulseDialect.id && process.env.DATAIMPULSE_SESSION_TEMPLATE ? { sessionTemplate: process.env.DATAIMPULSE_SESSION_TEMPLATE } : {}),
+    })
+  }
   // The development .env applies until the vault (available after `ready`) says otherwise.
-  if (envCredentials) provider.setCredentials([envCredentials], 'env')
+  if (envCredentials) {
+    if (providers.has(envCredentials.providerId)) providers.get(envCredentials.providerId).setCredentials([envCredentials], 'env')
+    else logger.warn(SCOPE, `The development .env names an unknown proxy provider "${envCredentials.providerId}"; ignoring it`)
+  }
+  /** Where the active credentials come from: the vault when any provider uses it, else the .env, else none. */
+  const activeCredentialSource = (): 'vault' | 'env' | 'none' => {
+    const sources = providers.all().map((provider) => provider.getConfigStatus().source)
+    return sources.includes('vault') ? 'vault' : sources.includes('env') ? 'env' : 'none'
+  }
   const locations = createLocationsService({
     dataDir: resolveGeoNamesDir({
       isPackaged: app.isPackaged,
@@ -416,7 +449,8 @@ async function bootstrap(): Promise<Runtime> {
   })
   let vault: CredentialVault | null = null
   const proxy = createProxyManager({
-    provider,
+    providers,
+    defaultProviderId: () => getSettings().defaultProviderId,
     sessions: db.proxySessions,
     profiles: db.profiles,
     logger,
@@ -424,7 +458,9 @@ async function bootstrap(): Promise<Runtime> {
     defaultPool: () => getSettings().defaultProxyPool,
     onGatewayTest: (status, at) => vault?.recordProxyTest(status, at),
   })
-  const profiles = createProfileManager({ repo: db.profiles, logger })
+  const profiles = createProfileManager({ repo: db.profiles, logger, providers })
+  // Site access tokens: per device, encrypted with safeStorage once `ready` (unlocked below); never in backups or CI.
+  const siteAccess = createSiteAccess({ file: join(paths.data, SITE_ACCESS_FILE_NAME), logger })
   const browser = createBrowserManager({
     profiles,
     proxy,
@@ -437,11 +473,12 @@ async function bootstrap(): Promise<Runtime> {
     engineBusyMessage: busyMessage,
     liveSessions,
     findBrowserPid: async (sessionId) => sessionRootPids(await toolkit.listMarked(), sessionId)[0] ?? null,
+    siteAccess,
   })
   const launcher = createLauncher({
     profiles,
     browser,
-    targeting: provider,
+    targeting: providers,
     locations,
     getSettings,
     logger,
@@ -501,14 +538,24 @@ async function bootstrap(): Promise<Runtime> {
     wrapper: keyWrappers.primary,
     machine,
     install,
-    activeSource: () => provider.getConfigStatus().source,
+    activeSource: activeCredentialSource,
+    // Extra credential fields a provider declares secret are registered with the logger like passwords.
+    secretExtraKeys: (providerId) =>
+      providers.has(providerId)
+        ? providers.get(providerId).capabilities.extraCredentialFields.filter((field) => field.secret).map((field) => field.key)
+        : [],
   })
   vault = credentialVault
-  // Precedence per installation: a vault holding any pool wins outright; otherwise the development .env (residential); otherwise nothing.
-  const applyCredentialSource = (fromVault: ProxyCredentials[]): void => {
-    if (fromVault.length > 0) provider.setCredentials(fromVault, 'vault')
-    else if (envCredentials) provider.setCredentials([envCredentials], 'env')
-    else provider.setCredentials([], 'none')
+  // Precedence per installation: a vault holding any credentials wins outright (each provider gets its own
+  // products); otherwise the development .env (its provider only); otherwise nothing.
+  const applyCredentialSource = (fromVault: StoredProxyCredentials[]): void => {
+    const unknown = [...new Set(fromVault.map((entry) => entry.providerId).filter((id) => !providers.has(id)))]
+    if (unknown.length > 0) logger.warn(SCOPE, `The vault holds credentials for proxy providers this version does not support: ${unknown.join(', ')}; they are kept but not used`)
+    for (const provider of providers.all()) {
+      if (fromVault.length > 0) provider.setCredentials(fromVault.filter((entry) => entry.providerId === provider.name), 'vault')
+      else if (envCredentials && envCredentials.providerId === provider.name) provider.setCredentials([envCredentials], 'env')
+      else provider.setCredentials([], 'none')
+    }
   }
   applyCredentialSource(credentialVault.getAll())
   credentialVault.onChange(applyCredentialSource)
@@ -516,10 +563,14 @@ async function bootstrap(): Promise<Runtime> {
   const health = await credentialVault.status()
   logger.info(
     SCOPE,
-    `credential vault: backend=${health.keyBackendLabel} decryptOk=${health.decryptOk} source=${health.source} pools=${health.configuredPools.join(',') || 'none'}`,
+    `credential vault: backend=${health.keyBackendLabel} decryptOk=${health.decryptOk} source=${health.source} products=${
+      Object.entries(health.configuredProducts)
+        .map(([id, products]) => `${id}:${products.join('+')}`)
+        .join(',') || 'none'
+    }`,
     {
       keyBackend: health.keyBackend,
-      configuredPools: health.configuredPools,
+      configuredProducts: health.configuredProducts,
       keyPresent: health.keyPresent,
       vaultPresent: health.vaultPresent,
       permissionsOk: health.permissionsOk,
@@ -543,13 +594,18 @@ async function bootstrap(): Promise<Runtime> {
   const appUrl = isDev && rendererDevUrl ? rendererDevUrl : pathToFileURL(RENDERER_INDEX).toString()
   if (!db.qa) throw new AppException('INTERNAL', 'QA storage did not initialize.')
   const gateways = createGatewayManager(db.qa, keyWrappers.assessment.usable ? safeStorage : null, ipChecker, logger)
+  siteAccess.unlock(keyWrappers.assessment.usable ? safeStorage : null)
   const visuals = createVisualStore(join(paths.data, 'qa-baselines'))
   const recorder = createRecorderManager({
     profiles,
-    open: createQaSessionFactory(provisioner, proxy, sanitize, logger, {
-      resolve: gateways.resolve,
-      checker: ipChecker,
-    }),
+    open: createQaSessionFactory(
+      provisioner,
+      proxy,
+      sanitize,
+      logger,
+      { resolve: gateways.resolve, checker: ipChecker },
+      siteAccess,
+    ),
   })
   const qa = createQaService({
     canStart: () => !recorder.isBusy(),
@@ -563,6 +619,7 @@ async function bootstrap(): Promise<Runtime> {
       logger,
       { resolve: gateways.resolve, checker: ipChecker },
       visuals,
+      siteAccess,
     ),
     onUpdate: (batch) => broadcast(EVENTS.qaUpdate, batch),
   })
@@ -671,6 +728,7 @@ async function bootstrap(): Promise<Runtime> {
       recorder,
       visuals,
       gateways,
+      siteAccess: siteAccess.store,
       updates,
       desktop,
       files: {

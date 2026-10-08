@@ -20,6 +20,22 @@ In the scenario editor, enter a starting URL and choose **Record actions**. A se
 
 The main page is supported. Frames, shadow DOM, pop-ups, file uploads, rich-text editors, and special keyboard gestures need manual or future actions. HTTP document redirects follow the same isolation rules as automation. Closing the recording browser stops capture. Starting a test or a scheduled run while recording is refused; changing editor/workspace or cancelling the editor stops recording. Use synthetic data: ordinary text inputs are recorded as entered.
 
+### Self-healing selectors
+
+Pages change: an `id` gets renamed and a recorded `#submit-btn` stops matching. When the recorder captures a click, fill, select, check or uncheck step, it also stores up to four **fallbacks** for that element, most stable first: a test ID (`data-testid`, `data-test` or `data-qa`), the ARIA role with its accessible name, the associated label text, the placeholder, short visible text for buttons and links, and a CSS path. Fallbacks never contain field values; password fields and `data-qa-sensitive` elements are not recorded at all. The editor shows how many fallbacks each step has.
+
+During a run the primary selector is tried first, exactly as before. Only when it matches **no element at all** does the runner try the fallbacks in order, and it accepts one only when it matches **exactly one** element (and, for a role fallback, an element with that role). An element that exists but is hidden or disabled is a real failure and never heals. The primary selector and the fallbacks share the step timeout: the primary gets the first 60% to appear, the fallbacks the rest, so healing never lengthens a step. **Assertions and navigation never heal** — healing an expected-result check could hide a real bug.
+
+Choose the behaviour with **Self-healing** in the scenario editor:
+
+- **Off** — fallbacks are ignored; a selector that matches nothing fails the step.
+- **Warn** (default) — the step runs on the fallback and passes; the case is flagged **Healed** in Results and reports.
+- **Fail** — the step fails without acting, and the message names the suggested replacement selector.
+
+In **Results**, a healed step shows a **Healed** badge (or **Healing blocked** in fail mode) with the original and suggested selectors. Review the step's screenshot, then choose **Update selector in scenario**: the suggested selector becomes the step's primary selector, and the old one is kept as its first CSS fallback. The update uses the saved scenario's own fallback and is refused if the scenario changed since that run. Suggested selectors for roles, labels and text use Playwright's exact `internal:role`, `internal:label` and `internal:text` selectors; test IDs and placeholders use plain CSS. Scenarios saved before this feature have no fallbacks and behave as before; their mode defaults to warn.
+
+JSON reports include each healed step's original selector, the fallback used and the suggested selector, plus the batch's `healedSteps` count. JUnit adds a `healed` property and a `system-out` line per healed step; HTML shows a **Healed** badge. The CLI accepts `--healing off|warn|fail` to override every scenario in a manifest; without it, the manifest's value (or warn) applies.
+
 ### Variables and datasets
 
 Expand **Variables and datasets** in the editor. Default variables are a JSON object:
@@ -61,6 +77,10 @@ Approved baselines live separately from retained run evidence and configuration 
 
 Document navigation is restricted to the approved origins. **HTTP document redirects are blocked**, including redirects between approved origins: Playwright only routes the first request of an HTTP redirect chain. Use the final starting URL or explicit navigation steps. The form's ordinary scripts, images, and API resources can still request other origins; this is a navigation boundary, not a complete network-egress firewall. Arbitrary user-supplied JavaScript actions are not supported.
 
+### Site access tokens in automation
+
+If your own site's WAF, CAPTCHA or fraud scoring blocks QA runs, allowlist the runs on that site rather than evading the protection: configure a secret header in **Settings → Advanced → Site access tokens** and accept it on your staging host (WAF skip rule for that header, CAPTCHA vendor test keys, and tag submissions carrying it as test leads so they are never sold or counted). Enabled tokens are routed into every automation and recorder context of the desktop app and sent only to the exact origins they list; document redirects stay blocked by origin isolation, and the header is never re-sent across a redirect. Each case's results record `notes` such as `site access token "Staging" applied to https://staging.example.com` — never the value. Raw traces record request headers, so while any token is enabled an opt-in trace is skipped and the case notes say so. Tokens are per device: they are not included in configuration backups, scenario/suite exports or the CI command-line runner, which therefore runs without them. See the README section *Site access tokens (allowlisting your own QA traffic)* for matching rules and limits.
+
 For DataImpulse location matrices, the runner verifies the exit IP before opening the browser and requires an exact target match. Provider availability, IP-check services, and location accuracy remain external dependencies. No proxy credentials are needed for direct local tests.
 
 ## Custom proxy providers
@@ -97,6 +117,8 @@ Playwright traces can contain raw DOM and network data. They require both policy
 
 ## CI command-line runner
 
+For a ready-made Docker image (browsers included) and a reusable GitHub Action, see [CI runner](CI-RUNNER.md).
+
 Use **Export for CI** on a scenario, then run:
 
 ```bash
@@ -104,18 +126,35 @@ npm run build
 npm run qa -- --config /path/to/scenario.json --output qa-results
 ```
 
-The manifest contains `scenario`, `profile`, and optionally `matrix`. The optional matrix accepts `engines`, `devices`, `targets`, `concurrency`, and `retries`; the runner supplies its own scenario identifier. Suites use **Export suite for CI**, which includes their scenarios, profiles and workspace environments. To choose an exported environment or compare approved screenshots:
+The manifest contains `scenario`, `profile`, and optionally `matrix`. The optional matrix accepts `engines`, `devices`, `targets`, `concurrency`, and `retries`; the runner supplies its own scenario identifier, so a matrix needs no `scenarioId` (one written by an older export is accepted and ignored). Suites use **Export suite for CI**, which includes their scenarios, profiles and workspace environments. To choose an exported environment or compare approved screenshots:
 
 ```bash
 npm run qa -- --config suite.json --environment "Staging" --output qa-results
 npm run qa -- --config scenario.json --baselines approved.qavb --output qa-results
+npm run qa -- --config scenario.json --healing fail --output qa-results
 ```
+
+`--healing fail` is useful in CI when any healed selector should block a merge until the scenario is updated; see [Self-healing selectors](#self-healing-selectors).
 
 Environment names must be unique in the exported manifest. The CLI uses the exported environment settings; it never resolves desktop IDs directly. One optional custom gateway from environment variables applies to the entire CLI run. Imported baselines are temporary copies, and missing/changed comparisons exit with a test failure.
 
 Install the required browser engines before running. The CLI uses a temporary in-memory database and fresh contexts, never the desktop's credential vault. Its browser downloads are not automatic.
 
-For a DataImpulse profile, provide `DATAIMPULSE_PROXY_HOST`, `DATAIMPULSE_PROXY_PORT`, `DATAIMPULSE_PROXY_USERNAME`, and `DATAIMPULSE_PROXY_PASSWORD` through CI secrets. For a custom gateway, provide `QA_PROXY_SERVER` and, for HTTP authentication, `QA_PROXY_USERNAME` and `QA_PROXY_PASSWORD`. Custom gateway credentials override profile routing. No `.env` file is loaded, and credential environment variables are removed before launching browsers.
+Proxy credentials for profiles that use a built-in proxy provider come from these variables (set the secret ones through CI secrets):
+
+| Variable | Meaning |
+| --- | --- |
+| `QA_PROVIDER` | Provider id, e.g. `dataimpulse`. Must match the provider named by the manifest's proxied profiles (profiles exported by v1.3.0 name none and are DataImpulse profiles) |
+| `QA_PROVIDER_PRODUCT` | Product key, e.g. `residential` or `mobile`. Default: the product of the first proxied profile in the manifest |
+| `QA_PROVIDER_HOST`, `QA_PROVIDER_PORT` | Gateway; default: the provider's documented gateway (DataImpulse: `gw.dataimpulse.com`, `823`) |
+| `QA_PROVIDER_USERNAME`, `QA_PROVIDER_PASSWORD` | Login (secret) |
+| `QA_PROVIDER_EXTRA_<KEY>` | Provider-specific credential fields, e.g. a zone (`<KEY>` matches the field key case-insensitively; secret fields are redacted like passwords) |
+
+`DATAIMPULSE_PROXY_HOST`, `DATAIMPULSE_PROXY_PORT`, `DATAIMPULSE_PROXY_USERNAME` and `DATAIMPULSE_PROXY_PASSWORD` remain supported as an alias for `QA_PROVIDER=dataimpulse`; when any `QA_PROVIDER*` variable is set they are ignored (with a warning). Incomplete or invalid `QA_PROVIDER*` variables, or credentials for another provider than the manifest's profiles use, exit with code 2 naming the variables (never their values). Manifests exported by v1.3.0 (proxy modes `dataimpulse-sticky` / `dataimpulse-rotating`) load unchanged.
+
+For a custom gateway, provide `QA_PROXY_SERVER` and, for HTTP authentication, `QA_PROXY_USERNAME` and `QA_PROXY_PASSWORD`. Custom gateway credentials override profile routing. No `.env` file is loaded, and every credential variable (logins, passwords, `QA_PROVIDER_EXTRA_*`) is removed from the process environment before browsers launch.
+
+Configuration errors name the failing field and the reason, e.g. `QA configuration error: Invalid manifest: matrix.engines.0: Invalid option: …`; values from the manifest or the environment are never echoed.
 
 Outputs: `results.json`, `results.xml` (JUnit), `results.html`, and an `artifacts/` directory. Exit codes: 0 passed, 1 failed, 2 invalid configuration, 130 cancelled. SIGINT/SIGTERM cancel active work and close browsers. Never commit real form data or credentials in exported manifests.
 

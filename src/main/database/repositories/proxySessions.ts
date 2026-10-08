@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 
-import { TARGET_MATCHES } from '@shared/types'
-import type { ProxyPool, ProxySession, ProxyStatus, TargetMatch } from '@shared/types'
+import { DEFAULT_PRODUCT_KEY, DEFAULT_PROVIDER_ID, TARGET_MATCHES } from '@shared/types'
+import type { ProxySession, ProxyStatus, TargetMatch } from '@shared/types'
 
 import { AppException } from '../../contracts'
 import type { ProxySessionContext, ProxySessionRepository } from '../../contracts'
@@ -12,7 +12,7 @@ import { parseTargetJson, targetToJson } from './profiles'
 const COLUMNS = `id, profile_id, provider, pool, target_json, targeting_string, target_match, session_id, status, last_ip, country,
   country_code, region, city, postal_code, isp, asn, latency_ms, last_checked_at, last_error, created_at, updated_at`
 
-const DEFAULT_CONTEXT: ProxySessionContext = { pool: 'residential', target: null, targetingString: null }
+const DEFAULT_CONTEXT: ProxySessionContext = { providerId: DEFAULT_PROVIDER_ID, pool: DEFAULT_PRODUCT_KEY, target: null, targetingString: null }
 
 export function parseTargetMatch(value: Cell): TargetMatch | null {
   const text = asStringOrNull(value)
@@ -23,8 +23,8 @@ function rowToSession(row: Row): ProxySession {
   return {
     id: asString(row.id),
     profileId: asStringOrNull(row.profile_id),
-    provider: 'dataimpulse',
-    pool: (asStringOrNull(row.pool) ?? 'residential') as ProxyPool,
+    provider: asStringOrNull(row.provider) ?? DEFAULT_PROVIDER_ID,
+    pool: asStringOrNull(row.pool) ?? DEFAULT_PRODUCT_KEY,
     target: parseTargetJson(row.target_json),
     targetingString: asStringOrNull(row.targeting_string),
     targetMatch: parseTargetMatch(row.target_match),
@@ -50,8 +50,12 @@ function notFound(id: string): AppException {
   return new AppException('NOT_FOUND', 'Proxy session not found. Re-test the proxy to create a new one.', `proxy session id ${id}`)
 }
 
+function providerOf(context: ProxySessionContext): string {
+  return context.providerId ?? DEFAULT_PROVIDER_ID
+}
+
 function sameContext(session: ProxySession, context: ProxySessionContext): boolean {
-  return session.pool === context.pool && session.targetingString === context.targetingString && targetToJson(session.target) === targetToJson(context.target)
+  return session.provider === providerOf(context) && session.pool === context.pool && session.targetingString === context.targetingString && targetToJson(session.target) === targetToJson(context.target)
 }
 
 export function createProxySessionRepository(db: DatabaseSync): ProxySessionRepository {
@@ -65,12 +69,12 @@ export function createProxySessionRepository(db: DatabaseSync): ProxySessionRepo
   )
   const insert = db.prepare(`
     INSERT INTO proxy_sessions (id, profile_id, provider, pool, target_json, targeting_string, session_id, status, created_at, updated_at)
-    VALUES (?, ?, 'dataimpulse', ?, ?, ?, ?, 'untested', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'untested', ?, ?)
   `)
-  /** A new session id or a new pool/target means a new exit IP: the cached result is reset. */
+  /** A new session id or a new provider/pool/target means a new exit IP: the cached result is reset. */
   const resetContext = db.prepare(`
     UPDATE proxy_sessions SET
-      session_id = ?, pool = ?, target_json = ?, targeting_string = ?, target_match = NULL, status = 'untested', last_ip = NULL,
+      session_id = ?, provider = ?, pool = ?, target_json = ?, targeting_string = ?, target_match = NULL, status = 'untested', last_ip = NULL,
       country = NULL, country_code = NULL, region = NULL, city = NULL, postal_code = NULL, isp = NULL, asn = NULL, latency_ms = NULL,
       last_checked_at = NULL, last_error = NULL, updated_at = ?
     WHERE id = ?
@@ -107,7 +111,7 @@ export function createProxySessionRepository(db: DatabaseSync): ProxySessionRepo
     getByProfile,
 
     /**
-     * One row per profile. A changed sticky session id, pool or target means a
+     * One row per profile. A changed sticky session id, provider, pool or target means a
      * new exit IP, so the cached IP/status is reset to `untested`; an unchanged
      * context only bumps `updatedAt`.
      */
@@ -119,14 +123,14 @@ export function createProxySessionRepository(db: DatabaseSync): ProxySessionRepo
           if (existing.sessionId === sessionId && sameContext(existing, context)) {
             touch.run(ts, existing.id)
           } else {
-            resetContext.run(nullable(sessionId), context.pool, targetToJson(context.target), nullable(context.targetingString), ts, existing.id)
+            resetContext.run(nullable(sessionId), providerOf(context), context.pool, targetToJson(context.target), nullable(context.targetingString), ts, existing.id)
           }
           const updated = get(existing.id)
           if (!updated) throw notFound(existing.id)
           return updated
         }
         const id = newId()
-        insert.run(id, profileId, context.pool, targetToJson(context.target), nullable(context.targetingString), nullable(sessionId), ts, ts)
+        insert.run(id, profileId, providerOf(context), context.pool, targetToJson(context.target), nullable(context.targetingString), nullable(sessionId), ts, ts)
         const created = get(id)
         if (!created) throw new AppException('INTERNAL', 'Proxy session was not saved. Try again.')
         return created

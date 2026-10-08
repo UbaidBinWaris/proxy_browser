@@ -47,7 +47,11 @@ Starting with v1.2.0, future releases can be imported through
 version and release notes, then click **Restart with v…**. The app verifies
 the publisher signature, platform, version, size and SHA-256, copies the update
 off USB, and restarts after closing its browser sessions. An existing computer
-copy is upgraded at the same path, so shortcuts and pins stay valid.
+copy is upgraded at the same path, so shortcuts and pins stay valid. Exception:
+1.4.0 changed the app ID. The app rewrites its own Desktop and Start-menu
+shortcuts during the update, but Windows taskbar pins made by the user keep the
+old ID and open the app as a separate taskbar button: unpin and pin it again
+once after updating to 1.4.0.
 
 A release must be newer than the running version. No background network update
 checks are needed. Opening a newer EXE/AppImage directly also works; click
@@ -80,8 +84,15 @@ Then:
 
 The version command updates `package.json` and `package-lock.json` together
 and rejects lower or inconsistent versions. Keep the package name and app ID
-`com.letsscall.proxy-qa-browser` stable across releases; changing them can
+`com.ubaidbinwaris.proxy-qa-browser` stable across releases; changing them can
 break existing data paths and pins.
+
+Releases before 1.4.0 used a different app ID. Newer releases accept install
+markers, USB manifests and Linux menu entries carrying it (compared by SHA-256
+in `src/main/desktop/app-identity.ts`) and replace them on the next setup or
+update. Older releases accept only their own ID in **USB** manifests, so while
+computers still run 1.3.x and update from USB, build releases with
+`PROXY_QA_MANIFEST_APP_ID=<previous app ID>`. Online updates do not check the ID.
 
 ## Publisher key
 

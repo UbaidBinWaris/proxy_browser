@@ -1,7 +1,20 @@
 import { z } from 'zod'
-import type { BrowserEngine, BrowserEngineInfo, DevicePresetId, DevicePresetInfo, GeoTarget, ProxyPool, QuickLaunchInput, TargetMode } from '@shared/types'
-import { BROWSER_ENGINES, BrowserEngineSchema, DEVICE_TYPE_LABELS, DevicePresetIdSchema, ProxyPoolSchema, QuickLaunchInputSchema, TargetModeSchema, isAutomaticInstallMethod } from '@shared/types'
-import { POOL_SHORT_LABELS, countryTarget, describeTarget } from './targeting'
+import type { BrowserEngine, BrowserEngineInfo, DevicePresetId, DevicePresetInfo, GeoTarget, ProductKey, ProviderId, QuickLaunchInput, TargetMode } from '@shared/types'
+import {
+  BROWSER_ENGINES,
+  BrowserEngineSchema,
+  DEFAULT_PRODUCT_KEY,
+  DEFAULT_PROVIDER_ID,
+  DEVICE_TYPE_LABELS,
+  DevicePresetIdSchema,
+  ProductKeySchema,
+  ProviderIdSchema,
+  QuickLaunchInputSchema,
+  TargetModeSchema,
+  isAutomaticInstallMethod,
+} from '@shared/types'
+import type { ProviderLike } from './providers'
+import { countryTarget, describeTarget, poolShortLabel } from './targeting'
 import type { PoolChoice } from './targeting'
 
 // ---------------------------------------------------------------------------
@@ -10,6 +23,8 @@ import type { PoolChoice } from './targeting'
 
 /** String-backed launcher form; `buildQuickLaunchInput` converts and validates it. */
 export interface LauncherFormState {
+  /** Proxy provider of `pool` (kept when the pool switches to 'none'). */
+  providerId: ProviderId
   pool: PoolChoice
   mode: TargetMode
   /** ISO-2 country for `country` mode (also the country of every other mode's target). */
@@ -30,13 +45,15 @@ export type LauncherFormErrors = Partial<Record<keyof LauncherFormState, string>
 export const DEFAULT_LAUNCHER_PRESET: DevicePresetId = 'windows-desktop'
 
 export interface LauncherDefaults {
-  defaultProxyPool?: ProxyPool
+  defaultProviderId?: ProviderId
+  defaultProxyPool?: ProductKey
   defaultTargetCountry?: string
 }
 
 export function defaultLauncherForm(defaults: LauncherDefaults = {}): LauncherFormState {
   return {
-    pool: defaults.defaultProxyPool ?? 'residential',
+    providerId: defaults.defaultProviderId ?? DEFAULT_PROVIDER_ID,
+    pool: defaults.defaultProxyPool ?? DEFAULT_PRODUCT_KEY,
     mode: 'state',
     country: (defaults.defaultTargetCountry ?? 'us').toLowerCase(),
     target: null,
@@ -58,7 +75,8 @@ export const LAUNCHER_PREFS_KEY = 'proxyqa.launcher.v1'
 
 export const LauncherPrefsSchema = z
   .object({
-    pool: z.union([ProxyPoolSchema, z.literal('none')]),
+    providerId: ProviderIdSchema,
+    pool: z.union([z.literal('none'), ProductKeySchema]),
     mode: TargetModeSchema,
     engine: BrowserEngineSchema,
     devicePreset: DevicePresetIdSchema,
@@ -74,13 +92,14 @@ export interface PrefsStorage {
 }
 
 export function prefsFromForm(form: LauncherFormState): Required<LauncherPrefs> {
-  return { pool: form.pool, mode: form.mode, engine: form.engine, devicePreset: form.devicePreset, sticky: form.sticky }
+  return { providerId: form.providerId, pool: form.pool, mode: form.mode, engine: form.engine, devicePreset: form.devicePreset, sticky: form.sticky }
 }
 
 export function applyLauncherPrefs(form: LauncherFormState, prefs: LauncherPrefs | null | undefined): LauncherFormState {
   if (!prefs) return form
   return {
     ...form,
+    providerId: prefs.providerId ?? form.providerId,
     pool: prefs.pool ?? form.pool,
     mode: prefs.mode ?? form.mode,
     engine: prefs.engine ?? form.engine,
@@ -163,6 +182,7 @@ export function buildQuickLaunchInput(
     startUrl: startUrl === '' ? null : startUrl,
     engine: form.engine,
     devicePreset: form.devicePreset.trim(),
+    providerId: form.providerId,
     proxyPool: form.pool,
     target: launcherTarget(form),
     sticky: form.pool === 'none' ? false : form.sticky,
@@ -246,8 +266,8 @@ export function compatiblePresets(presets: readonly DevicePresetInfo[], engine: 
   return presets.filter((preset) => !engine || preset.supportedEngines.includes(engine))
 }
 
-/** A random configured pool; 'none' when no pool is configured. */
-export function pickRandomPool(configuredPools: readonly ProxyPool[], rng: Rng = Math.random): PoolChoice {
+/** A random configured product; 'none' when no product is configured. */
+export function pickRandomPool(configuredPools: readonly ProductKey[], rng: Rng = Math.random): PoolChoice {
   return pickRandom(configuredPools, rng) ?? 'none'
 }
 
@@ -294,7 +314,7 @@ export interface RandomAllResult {
 
 /** "Random all" (the location is drawn separately through `locations.random`): pool → device → engine, always compatible. */
 export function randomAll(params: {
-  configuredPools: readonly ProxyPool[]
+  configuredPools: readonly ProductKey[]
   presets: readonly DevicePresetInfo[]
   engines: readonly BrowserEngineInfo[] | null | undefined
   rng?: Rng
@@ -313,10 +333,10 @@ export function randomAll(params: {
 // ---------------------------------------------------------------------------
 
 /** Placeholder for "Save as profile": "NJ · Newark · iPhone 15 · Residential" / "Direct · Windows desktop". */
-export function suggestProfileName(form: LauncherFormState, preset: DevicePresetInfo | null | undefined): string {
+export function suggestProfileName(form: LauncherFormState, preset: DevicePresetInfo | null | undefined, provider?: Pick<ProviderLike, 'capabilities'> | null): string {
   const device = preset?.label ?? form.devicePreset
   const target = launcherTarget(form)
-  const parts = form.pool === 'none' ? ['Direct', device] : [describeTarget(target), device, POOL_SHORT_LABELS[form.pool]]
+  const parts = form.pool === 'none' ? ['Direct', device] : [describeTarget(target), device, poolShortLabel(form.pool, provider)]
   return parts
     .filter((part) => part.trim().length > 0 && part !== '—')
     .join(' · ')
@@ -359,6 +379,7 @@ export function deviceSummary(preset: Pick<DevicePresetInfo, 'deviceType' | 'vie
 
 /** Field focus order for the first validation error. */
 export const LAUNCHER_FIELD_ORDER: readonly (keyof LauncherFormState)[] = [
+  'providerId',
   'pool',
   'mode',
   'country',

@@ -6,7 +6,9 @@ import { EngineIcon } from '@/components/icons/BrandIcon'
 import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@/components/ui/Table'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
-import { describeTarget, locationAttemptsLabel, poolShortLabel } from '@/lib/targeting'
+import { describeTarget, locationAttemptsLabel } from '@/lib/targeting'
+import { recordPoolLabel } from '@/lib/providers'
+import { useProviders } from '@/hooks/useProviders'
 import { historyRunPath } from '@/lib/navigation'
 import { describeVerifiedLocation, formatDate, orDash } from '@/lib/utils'
 
@@ -16,6 +18,7 @@ export interface RunsTableProps {
 
 /** Test runs, newest first. Rows navigate to the run detail; the profile name is a real link for keyboard users. */
 export function RunsTable({ runs }: RunsTableProps): React.JSX.Element {
+  const providers = useProviders()
   const navigate = useNavigate()
   const open = (run: TestRun): void => {
     void navigate(historyRunPath(run.id))
@@ -74,7 +77,7 @@ export function RunsTable({ runs }: RunsTableProps): React.JSX.Element {
             </TableCell>
             <TableCell className="whitespace-nowrap font-mono text-xs text-muted-foreground">{run.devicePreset}</TableCell>
             <TableCell>
-              <Badge variant={run.proxyPool ? 'default' : 'info'}>{poolShortLabel(run.proxyPool ?? 'none')}</Badge>
+              <Badge variant={run.proxyPool ? 'default' : 'info'}>{recordPoolLabel(providers, run.provider, run.proxyPool)}</Badge>
             </TableCell>
             <TableCell className="max-w-[160px]">
               <span className="block truncate text-muted-foreground" title={describeTarget(run.target)}>

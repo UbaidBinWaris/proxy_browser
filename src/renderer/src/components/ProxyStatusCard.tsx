@@ -1,5 +1,5 @@
 import { CheckCircle2, Loader2, Network, RotateCw, ShieldAlert, ShieldQuestion } from 'lucide-react'
-import type { AppError, GeoTarget, IpInfo, ProxyPool, TargetMatch } from '@shared/types'
+import type { AppError, GeoTarget, IpInfo, ProductKey, TargetMatch } from '@shared/types'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
@@ -11,6 +11,7 @@ import { sessionLabelFor } from '@/lib/launch'
 import type { ConnectionKind } from '@/lib/launch'
 import { describeTarget, locationAttemptsLabel, poolLabel, resolveTargetMatch, targetMatchSentence } from '@/lib/targeting'
 import { cn, formatDate, orDash } from '@/lib/utils'
+import type { ProviderLike } from '@/lib/providers'
 
 export interface ProxyStatusCardProps {
   ip: IpInfo | null
@@ -22,8 +23,10 @@ export interface ProxyStatusCardProps {
    * ("none" / "rotating" / sticky id). Defaults to sticky when a session id is present, rotating otherwise.
    */
   kind?: ConnectionKind
-  /** Provider pool the connection goes through (shown as a badge; omitted for direct connections). */
-  pool?: ProxyPool | null
+  /** Provider product the connection goes through (shown as a badge; omitted for direct connections). */
+  pool?: ProductKey | null
+  /** The provider of `pool`, for labels ("DataImpulse Residential"). */
+  provider?: Pick<ProviderLike, 'displayName' | 'capabilities'> | null
   /** Requested exit location, compared with the verified IP. */
   target?: GeoTarget | null
   /** Verdict recorded by the main process (derived from target + ip when null). */
@@ -57,11 +60,21 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
 const DIRECT_NOTE = "Browser is connecting without a proxy; this is the machine's own exit IP."
 
 /** Pool · requested target · targeting string, shown under the heading of proxied cards. */
-function TargetingLine({ pool, target, targetingString }: { pool: ProxyPool | null | undefined; target: GeoTarget | null | undefined; targetingString: string | null | undefined }): React.JSX.Element | null {
+function TargetingLine({
+  pool,
+  provider,
+  target,
+  targetingString,
+}: {
+  pool: ProductKey | null | undefined
+  provider: Pick<ProviderLike, 'displayName' | 'capabilities'> | null | undefined
+  target: GeoTarget | null | undefined
+  targetingString: string | null | undefined
+}): React.JSX.Element | null {
   if (!pool && !target && !targetingString) return null
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      {pool ? <Badge variant="default">{poolLabel(pool)}</Badge> : null}
+      {pool ? <Badge variant="default">{poolLabel(pool, provider)}</Badge> : null}
       {target ? (
         <span>
           Requested <span className="font-medium text-foreground">{describeTarget(target)}</span>
@@ -91,6 +104,7 @@ export function ProxyStatusCard({
   sessionId,
   kind,
   pool = null,
+  provider = null,
   target = null,
   targetMatch = null,
   targetingString = null,
@@ -106,7 +120,7 @@ export function ProxyStatusCard({
   const connection: ConnectionKind = kind ?? (sessionId ? 'sticky' : 'rotating')
   const direct = connection === 'direct'
   const sessionLabel = sessionLabelFor(connection, sessionId)
-  const targeting = direct || !showTargetingLine ? null : <TargetingLine pool={pool} target={target} targetingString={targetingString} />
+  const targeting = direct || !showTargetingLine ? null : <TargetingLine pool={pool} provider={provider} target={target} targetingString={targetingString} />
   const attemptLabel = locationAttemptsLabel({ locationAttempts, locationMaxAttempts })
 
   if (testing) {
@@ -123,7 +137,7 @@ export function ProxyStatusCard({
                 'Detecting the machine’s own exit IP (no proxy)…'
               ) : (
                 <>
-                  Connecting through {pool ? poolLabel(pool) : 'DataImpulse'} and verifying the exit IP (session: <span className="font-mono">{sessionLabel}</span>{attemptLabel ? `, ${attemptLabel}` : ''})…
+                  Connecting through {pool ? poolLabel(pool, provider) : (provider?.displayName ?? 'the proxy')} and verifying the exit IP (session: <span className="font-mono">{sessionLabel}</span>{attemptLabel ? `, ${attemptLabel}` : ''})…
                 </>
               )}
             </p>

@@ -387,6 +387,7 @@ describe('QA input validation and evidence privacy', () => {
       engine: h.profile.engine,
       devicePreset: h.profile.devicePreset,
       proxyPool: null,
+      provider: null,
       target: null,
       targetingString: null,
       targetMatch: null,

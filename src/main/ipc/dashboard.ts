@@ -44,7 +44,7 @@ export function dashboardHandlers(deps: IpcDeps): HandlerSpec[] {
         failedProxies: deps.db.proxySessions.countByStatus('failed'),
         currentIp: currentIpFromSessions(sessions, settings.ipCheckProvider),
         recentRuns: deps.db.testRuns.list(RECENT_RUNS_LIMIT),
-        proxyConfigured: deps.proxy.getConfigStatus().configured,
+        proxyConfigured: deps.proxy.providers().some((provider) => provider.status.configured),
         browsers: await deps.provisioner.status(),
       }
     }),

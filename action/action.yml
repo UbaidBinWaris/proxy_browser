@@ -1,0 +1,99 @@
+name: Proxy QA Browser runner
+description: >-
+  Run an exported Proxy QA Browser scenario or suite manifest headlessly in the
+  proxy-qa-runner container and upload the JSON, JUnit XML and HTML reports.
+  For authorized QA of web forms you own. Linux runners with Docker only.
+author: Ubaid Bin Waris
+branding:
+  icon: check-square
+  color: blue
+
+# Proxy credentials are NOT inputs. Put them in the step's `env:` from `secrets.*`
+# (QA_PROVIDER, QA_PROVIDER_*, DATAIMPULSE_PROXY_*, QA_PROXY_*). Every variable in
+# those families that is set and non-empty is forwarded to the container by name.
+# See docs/CI-RUNNER.md.
+inputs:
+  config:
+    description: Path to the exported scenario or suite manifest (JSON), inside the workspace.
+    required: true
+  output:
+    description: Report directory, inside the workspace.
+    required: false
+    default: qa-results
+  environment:
+    description: Name of an environment exported in the manifest (passed as --environment).
+    required: false
+    default: ''
+  baselines:
+    description: Approved screenshot baseline pack (.qavb) inside the workspace (passed as --baselines).
+    required: false
+    default: ''
+  healing:
+    description: >-
+      Self-healing override for every scenario: off, warn or fail (passed as --healing only when
+      set). Needs a runner image whose CLI supports --healing.
+    required: false
+    default: ''
+  image:
+    description: Runner image. Pin a version tag (or a digest) that matches this action's ref.
+    required: false
+    default: ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0
+  docker-network:
+    description: >-
+      Docker network for the runner container. `host` (default) lets scenarios reach services
+      started earlier in the job on localhost.
+    required: false
+    default: host
+  upload-artifact:
+    description: Upload the report directory as a workflow artifact (true or false).
+    required: false
+    default: 'true'
+  artifact-name:
+    description: Artifact name. Make it unique when the action runs more than once per workflow run.
+    required: false
+    default: qa-results
+
+outputs:
+  exit-code:
+    description: >-
+      Runner exit code: 0 passed, 1 test failure, 2 invalid configuration, 130 cancelled
+      (125 means Docker could not start the container).
+    value: ${{ steps.run.outputs.exit-code }}
+  results-json:
+    description: Absolute path of results.json on the runner.
+    value: ${{ steps.run.outputs.results-json }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_ENVIRONMENT: ${{ inputs.environment }}
+        INPUT_BASELINES: ${{ inputs.baselines }}
+        INPUT_HEALING: ${{ inputs.healing }}
+        INPUT_IMAGE: ${{ inputs.image }}
+        INPUT_DOCKER_NETWORK: ${{ inputs.docker-network }}
+      run: bash "$GITHUB_ACTION_PATH/run.sh"
+
+    - if: inputs.upload-artifact == 'true' && steps.run.outputs.output-dir != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.run.outputs.output-dir }}
+        if-no-files-found: warn
+
+    - shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+      run: |
+        case "$CODE" in
+          0) exit 0 ;;
+          1) echo "Failing: QA test failure (exit 1)." ;;
+          2) echo "Failing: invalid configuration (exit 2)." ;;
+          130) echo "Failing: run cancelled (exit 130)." ;;
+          *) echo "Failing: runner exit code ${CODE:-unknown}." ;;
+        esac
+        exit "${CODE:-1}"

@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { EVENTS } from '@shared/ipc'
 import type { BrowserEngineInfo } from '@shared/types'
-import type { MatrixInput, QaBatch, QaScenario, QaSnapshot, QaSuite } from '@shared/qa'
+import { Bandage } from 'lucide-react'
+import type { MatrixInput, QaBatch, QaHealedSelector, QaScenario, QaSnapshot, QaSuite } from '@shared/qa'
+import { countHealedSteps } from '@shared/qa'
 import { PageHeader } from '@/components/ui/PageHeader'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
@@ -28,6 +31,42 @@ const TABS: Array<{ value: Tab; label: string }> = [
   { value: 'data', label: 'Data controls' },
   { value: 'audit', label: 'Audit history' },
 ]
+/** A step whose primary selector matched nothing and a fallback matched exactly one element. */
+function HealedStep({
+  healed,
+  disabled,
+  onUpdate,
+}: {
+  healed: QaHealedSelector
+  disabled: boolean
+  onUpdate: () => void
+}): React.JSX.Element {
+  return (
+    <div className="mt-1 flex flex-col gap-1.5 rounded-md border border-warning/30 p-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="warning">
+          <Bandage className="h-3 w-3" aria-hidden="true" />
+          {healed.blocked ? 'Healing blocked' : 'Healed'}
+        </Badge>
+        <span className="text-muted-foreground">
+          {healed.blocked
+            ? 'Self-healing is set to fail, so this step did not run.'
+            : 'The primary selector matched nothing; a fallback matched one element.'}
+        </span>
+      </div>
+      <p className="break-all font-mono">
+        <span className="sr-only">Original selector: </span>
+        {healed.originalSelector}
+        <span aria-hidden="true"> → </span>
+        <span className="sr-only">Suggested selector: </span>
+        {healed.suggestedSelector}
+      </p>
+      <Button size="sm" variant="outline" className="self-start" disabled={disabled} onClick={onUpdate}>
+        Update selector in scenario
+      </Button>
+    </div>
+  )
+}
 function Results({
   batch,
   busy,
@@ -38,6 +77,7 @@ function Results({
   perform: (fn: () => Promise<void>) => Promise<void>
 }): React.JSX.Element {
   const active = batch.status === 'queued' || batch.status === 'running'
+  const healedSteps = batch.healedSteps ?? countHealedSteps(batch.cases)
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,6 +85,7 @@ function Results({
           <h2 className="font-semibold">{batch.scenarioName}</h2>
           <p className="text-xs text-muted-foreground">
             {new Date(batch.startedAt).toLocaleString()} · {batch.status} · {batch.completed}/{batch.total} completed
+            {healedSteps ? ` · ${healedSteps} healed step${healedSteps === 1 ? '' : 's'} to review` : ''}
           </p>
         </div>
         <div className="flex gap-2">
@@ -138,6 +179,12 @@ function Results({
                     {item.status}
                     {item.status === 'passed' && item.attempt > 1 ? ' after retry' : ''}
                   </span>
+                  {item.status === 'passed' && item.steps.some((step) => step.healed) ? (
+                    <Badge variant="warning" className="ml-2">
+                      <Bandage className="h-3 w-3" aria-hidden="true" />
+                      Healed
+                    </Badge>
+                  ) : null}
                   <p className="text-xs text-muted-foreground">
                     {item.durationMs} ms · attempt {item.attempt}
                   </p>
@@ -169,6 +216,23 @@ function Results({
                             >
                               Screenshot
                             </Button>
+                          ) : null}
+                          {step.healed ? (
+                            <HealedStep
+                              healed={step.healed}
+                              disabled={busy || active}
+                              onUpdate={() => {
+                                void perform(async () => {
+                                  const scenario = await unwrap(
+                                    getApi().qa.updateHealedSelector(batch.id, item.id, step.index),
+                                  )
+                                  toast.success(
+                                    'Selector updated',
+                                    `${scenario.name}, step ${step.index + 1}. The old selector is kept as a fallback.`,
+                                  )
+                                })
+                              }}
+                            />
                           ) : null}
                           {step.visual ? (
                             <div className="flex flex-wrap items-center gap-1">

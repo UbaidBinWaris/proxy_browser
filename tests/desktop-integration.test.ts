@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import { DESKTOP_APP_ID } from '../src/shared/desktop'
 import { createDesktopIntegration, desktopEntry, fileSha256 } from '../src/main/desktop/integration'
 import type { DesktopIntegrationOptions } from '../src/main/desktop/integration'
 import { captureRelaunchEnvironment, restoreRelaunchEnvironment } from '../src/main/desktop/relaunch-env'
+import { LEGACY_APP_ID_SHA256, createAppIdMatcher, isLegacyDesktopEntryName } from '../src/main/desktop/app-identity'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -290,3 +291,71 @@ it('restores user browser overrides and discards expired wrapper environment on 
    expect(f.restart).toHaveBeenCalledWith(pending.executable)
    expect(await readFile(pending.executable, 'utf8')).toBe('new online application')
  })
+
+describe('legacy application identity', () => {
+  const legacyId = 'com.example.legacy-app'
+  const legacy = createAppIdMatcher(DESKTOP_APP_ID, [createHash('sha256').update(legacyId).digest('hex')])
+
+  it('accepts the current and listed legacy identities only', () => {
+    expect(legacy.isAccepted(DESKTOP_APP_ID)).toBe(true)
+    expect(legacy.isLegacy(DESKTOP_APP_ID)).toBe(false)
+    expect(legacy.isAccepted(legacyId)).toBe(true)
+    expect(legacy.isLegacy(legacyId)).toBe(true)
+    expect(legacy.isAccepted('com.example.other-app')).toBe(false)
+    expect(isLegacyDesktopEntryName(`${legacyId}.desktop`, legacy)).toBe(true)
+    expect(isLegacyDesktopEntryName(`${DESKTOP_APP_ID}.desktop`, legacy)).toBe(false)
+    expect(isLegacyDesktopEntryName(legacyId, legacy)).toBe(false)
+  })
+  it('stores legacy identities only as SHA-256 digests', () => {
+    expect(LEGACY_APP_ID_SHA256.length).toBeGreaterThan(0)
+    for (const digest of LEGACY_APP_ID_SHA256) expect(digest).toMatch(/^[a-f0-9]{64}$/)
+  })
+  it('updates an install made under a legacy identity and replaces its Linux menu entry', async () => {
+    const f = await fixture()
+    const application = join(f.options.root, 'Application')
+    await mkdir(application, { recursive: true })
+    await writeFile(join(application, 'Proxy-QA-Browser.AppImage'), 'old application')
+    await writeFile(
+      join(application, 'proxy-qa-application.json'),
+      JSON.stringify({ appId: legacyId, platform: 'linux', version: '1.1.0', installedAt: new Date().toISOString() }),
+    )
+    await mkdir(f.options.menuDirectory, { recursive: true })
+    await writeFile(join(f.options.menuDirectory, `${legacyId}.desktop`), '[Desktop Entry]\n')
+    await writeFile(join(f.options.menuDirectory, 'unrelated.desktop'), '[Desktop Entry]\n')
+
+    const manager = createDesktopIntegration({ ...f.options, appIds: legacy })
+    expect((await manager.status()).installedVersion).toBe('1.1.0')
+    const result = await manager.setup({ desktop: false, startMenu: true })
+
+    expect(result.installedVersion).toBe('1.2.0')
+    await expect(stat(join(f.options.menuDirectory, `${legacyId}.desktop`))).rejects.toThrow()
+    expect(await readFile(join(f.options.menuDirectory, 'unrelated.desktop'), 'utf8')).toBe('[Desktop Entry]\n')
+    expect(await readFile(join(f.options.menuDirectory, `${DESKTOP_APP_ID}.desktop`), 'utf8')).toContain('Exec=')
+    const marker = JSON.parse(await readFile(join(application, 'proxy-qa-application.json'), 'utf8'))
+    expect(marker.appId).toBe(DESKTOP_APP_ID)
+  })
+  it('rewrites managed Windows shortcuts of a legacy install with the current identity', async () => {
+    const f = await fixture('win32')
+    const application = join(f.options.root, 'Application')
+    await mkdir(application, { recursive: true })
+    await writeFile(join(application, 'Proxy-QA-Browser.exe'), 'old application')
+    await writeFile(
+      join(application, 'proxy-qa-application.json'),
+      JSON.stringify({ appId: legacyId, platform: 'win32', version: '1.1.0', installedAt: new Date().toISOString() }),
+    )
+    const manager = createDesktopIntegration({ ...f.options, appIds: legacy })
+    await manager.setup({ desktop: true, startMenu: true })
+    expect(f.shortcuts).toHaveLength(2)
+    expect(f.shortcuts.every((shortcut) => shortcut.appUserModelId === DESKTOP_APP_ID)).toBe(true)
+    const marker = JSON.parse(await readFile(join(application, 'proxy-qa-application.json'), 'utf8'))
+    expect(marker.appId).toBe(DESKTOP_APP_ID)
+  })
+  it('accepts signed USB manifests carrying a legacy identity and rejects unknown ones', async () => {
+    const f = await fixture()
+    const manager = createDesktopIntegration({ ...f.options, appIds: legacy })
+    const accepted = await f.manifest({ appId: legacyId })
+    expect((await manager.inspectUsb(accepted.path)).version).toBe('1.3.0')
+    const rejected = await f.manifest({ appId: 'com.example.other-app' })
+    await expect(manager.inspectUsb(rejected.path)).rejects.toThrow('different application')
+  })
+})

@@ -3,7 +3,7 @@ import { ScenarioInputSchema } from '@shared/qa'
 import type { QaRecording } from '@shared/qa'
 import { parseDatasetCsv } from '@shared/qa-csv'
 import { getApi, unwrap } from '@/lib/api'
-import type { QaGateway, QaScenario, QaStep, ScenarioInput } from '@shared/qa'
+import type { QaGateway, QaHealingMode, QaScenario, QaStep, ScenarioInput } from '@shared/qa'
 import type { Profile } from '@shared/types'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -73,6 +73,7 @@ export function ScenarioEditor({
   const [masks, setMasks] = useState(scenario?.maskSelectors.join('\n') ?? '')
   const [steps, setSteps] = useState<QaStep[]>(scenario?.steps ?? [{ action: 'assertStatus', value: 200 }])
   const [trace, setTrace] = useState(scenario?.captureTrace ?? false)
+  const [healing, setHealing] = useState<QaHealingMode>(scenario?.healing ?? 'warn')
   const [timeout, setTimeout] = useState(scenario?.timeoutMs ?? 15000)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -122,6 +123,7 @@ export function ScenarioEditor({
         .map((mask) => mask.trim())
         .filter(Boolean),
       captureTrace: trace,
+      healing,
       timeoutMs: timeout,
       visualKey: scenario?.visualKey,
     })
@@ -227,6 +229,22 @@ export function ScenarioEditor({
             max={60000}
             value={timeout}
             onChange={(event) => setTimeout(Number(event.target.value))}
+          />
+        </Field>
+        <Field
+          htmlFor="qa-healing"
+          label="Self-healing"
+          hint="If an action’s selector matches nothing, try its recorded fallbacks. Assertions never heal."
+        >
+          <Select
+            id="qa-healing"
+            value={healing}
+            onChange={(event) => setHealing(event.target.value as QaHealingMode)}
+            options={[
+              { value: 'off', label: 'Off — fail when the selector matches nothing' },
+              { value: 'warn', label: 'Warn — pass and flag the step as healed' },
+              { value: 'fail', label: 'Fail — fail and suggest the replacement' },
+            ]}
           />
         </Field>
         <Field
@@ -369,6 +387,16 @@ export function ScenarioEditor({
                 placeholder="CSS selector, e.g. #email"
                 onChange={(event) => updateStep(index, { ...step, selector: event.target.value })}
               />
+            ) : null}
+            {'fallbacks' in step && step.fallbacks?.length ? (
+              <span
+                className="text-xs text-muted-foreground"
+                title={step.fallbacks
+                  .map((fallback) => `${fallback.kind}: ${fallback.value}${fallback.name ? ` (${fallback.name})` : ''}`)
+                  .join('\n')}
+              >
+                {step.fallbacks.length} fallback{step.fallbacks.length === 1 ? '' : 's'}
+              </span>
             ) : null}
             {step.action === 'assertScreenshot' ? (
               <>

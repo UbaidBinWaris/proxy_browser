@@ -53,6 +53,8 @@ const api: ProxyQaApi = {
     deleteSuite: (id) => invoke(IPC.qa.deleteSuite, id),
     exportSuite: (id) => invoke(IPC.qa.exportSuite, id),
     approveBaseline: (batchId, caseId, stepIndex) => invoke(IPC.qa.approveBaseline, batchId, caseId, stepIndex),
+    updateHealedSelector: (batchId, caseId, stepIndex) =>
+      invoke(IPC.qa.updateHealedSelector, batchId, caseId, stepIndex),
     exportBaselines: (id) => invoke(IPC.qa.exportBaselines, id),
     startRecording: (input) => invoke(IPC.qa.startRecording, input),
     recording: () => invoke(IPC.qa.recording),
@@ -95,12 +97,15 @@ const api: ProxyQaApi = {
     presets: () => invoke(IPC.profiles.presets),
   },
   proxy: {
-    getConfigStatus: () => invoke(IPC.proxy.getConfigStatus),
-    // The pool argument is only forwarded when given, so older callers send exactly what they did before.
-    testConnection: (profileId, pool) =>
+    providers: () => invoke(IPC.proxy.providers),
+    getConfigStatus: (providerId) => (providerId === undefined ? invoke(IPC.proxy.getConfigStatus) : invoke(IPC.proxy.getConfigStatus, providerId)),
+    // Optional arguments are only forwarded when given, so older callers send exactly what they did before.
+    testConnection: (profileId, pool, providerId) =>
       pool === undefined
         ? invoke(IPC.proxy.testConnection, profileId)
-        : invoke(IPC.proxy.testConnection, profileId, pool),
+        : providerId === undefined
+          ? invoke(IPC.proxy.testConnection, profileId, pool)
+          : invoke(IPC.proxy.testConnection, profileId, pool, providerId),
     getCurrentIp: (profileId) => invoke(IPC.proxy.getCurrentIp, profileId),
     listSessions: () => invoke(IPC.proxy.listSessions),
     rotateSession: (profileId) => invoke(IPC.proxy.rotateSession, profileId),
@@ -144,7 +149,7 @@ const api: ProxyQaApi = {
     status: () => invoke(IPC.security.status),
     testCredentials: (input) => invoke(IPC.security.testCredentials, input),
     saveCredentials: (input) => invoke(IPC.security.saveCredentials, input),
-    clearCredentials: (pool) => invoke(IPC.security.clearCredentials, pool),
+    clearCredentials: (providerId, product) => invoke(IPC.security.clearCredentials, providerId, product),
     rotateKey: () => invoke(IPC.security.rotateKey),
     revealLocations: (which) => invoke(IPC.security.revealLocations, which),
     updateCredentials: (input) => invoke(IPC.security.updateCredentials, input),
@@ -175,6 +180,12 @@ const api: ProxyQaApi = {
   setup: {
     status: () => invoke(IPC.setup.status),
     complete: () => invoke(IPC.setup.complete),
+  },
+  siteAccess: {
+    status: () => invoke(IPC.siteAccess.status),
+    save: (input, id) => (id === undefined ? invoke(IPC.siteAccess.save, input) : invoke(IPC.siteAccess.save, input, id)),
+    setEnabled: (id, enabled) => invoke(IPC.siteAccess.setEnabled, id, enabled),
+    delete: (id) => invoke(IPC.siteAccess.delete, id),
   },
   events: {
     on: onEvent,

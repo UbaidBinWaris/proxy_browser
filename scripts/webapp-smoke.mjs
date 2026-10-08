@@ -21,7 +21,7 @@ for (const platform of ['win32', 'linux']) {
   assets.push({ platform, arch: 'x64', fileName, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
 }
 function envelope(data) { const payload = JSON.stringify(data); return { payload, signature: sign(null, Buffer.from(payload), keys.privateKey).toString('base64') } }
-const data = { format: 1, appId: 'com.letsscall.proxy-qa-browser', version, releasedAt: '2026-10-08T10:00:00.000Z', notes: ['A test-only release for browser verification.'], assets }
+const data = { format: 1, appId: 'com.ubaidbinwaris.proxy-qa-browser', version, releasedAt: '2026-10-08T10:00:00.000Z', notes: ['A test-only release for browser verification.'], assets }
 await writeFile(join(folder, 'Proxy-QA-Browser-Update.json'), JSON.stringify(envelope(data)))
 await writeFile(join(folder, 'update.json'), JSON.stringify(envelope({ version, releasedAt: data.releasedAt, notes: data.notes, assets: assets.map(a => ({ ...a, url: `${origin}/api/download/${version}/${a.fileName}` })) })))
 await writeFile(join(state, 'current.json'), JSON.stringify({ version }))
