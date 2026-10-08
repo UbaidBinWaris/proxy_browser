@@ -41,7 +41,7 @@
   "author": "Ubaid Bin Waris",
   "dependencies": {
     "dotenv": "18.0.5",
-    "pixelmatch": "7.1.0",
+    "pixelmatch": "7.2.0",
     "playwright-core": "1.63.0",
     "pngjs": "7.0.0",
     "zod": "4.6.5"
