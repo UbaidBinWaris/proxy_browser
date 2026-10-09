@@ -43,7 +43,7 @@
   "author": "Ubaid Bin Waris",
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
-    "axe-core": "4.13.0",
+    "axe-core": "4.14.0",
     "dotenv": "18.0.5",
     "pixelmatch": "7.1.0",
     "playwright-core": "1.63.0",
