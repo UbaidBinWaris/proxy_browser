@@ -30,9 +30,17 @@ const APP_ID = 'com.ubaidbinwaris.proxy-qa-browser'
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const results = []
+/** Failures as GitHub annotations: readable through the public API, unlike step logs (admin only). */
+function annotate(title, message) {
+  if (process.env.GITHUB_ACTIONS !== 'true') return
+  const text = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+  console.log(`::error title=${title}::${text}`)
+}
+
 function check(name, ok, detail = '') {
   results.push({ name, ok: Boolean(ok), detail: String(detail) })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`)
+  if (!ok) annotate('macOS smoke', `${name}${detail ? ` (${detail})` : ''}`)
 }
 
 /** The unpacked .app for this Mac's architecture (electron-builder: release/mac-arm64 or release/mac). */
@@ -244,6 +252,7 @@ const isDirectRun = process.argv[1] && path.resolve(process.argv[1]) === fileURL
 if (isDirectRun)
   main().catch((err) => {
     console.error('MACOS SMOKE TEST CRASHED:', err)
+    annotate('macOS smoke crashed', err?.stack || err)
     try {
       mkdirSync(OUT, { recursive: true })
       writeFileSync(path.join(OUT, 'results.json'), JSON.stringify({ crashed: String(err?.stack || err), results }, null, 2))

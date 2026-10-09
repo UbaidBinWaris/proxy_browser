@@ -31,9 +31,17 @@ const OUT = path.join(ROOT, 'smoke-output')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const results = []
+/** Failures as GitHub annotations: readable through the public API, unlike step logs (admin only). */
+function annotate(title, message) {
+  if (process.env.GITHUB_ACTIONS !== 'true') return
+  const text = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+  console.log(`::error title=${title}::${text}`)
+}
+
 function check(name, ok, detail = '') {
   results.push({ name, ok: Boolean(ok), detail: String(detail) })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`)
+  if (!ok) annotate('Windows smoke', `${name}${detail ? ` (${detail})` : ''}`)
 }
 
 /** Running instances of an image name, from `tasklist /FO CSV` (hidden window). */
@@ -448,6 +456,7 @@ module.exports = { checkComputerSetup }
 
 if (require.main === module) main().catch((err) => {
   console.error('SMOKE TEST CRASHED:', err)
+    annotate('Windows smoke crashed', err?.stack || err)
   try {
     fs.writeFileSync(
       path.join(OUT, 'results.json'),

@@ -37,10 +37,19 @@ const out = join(ROOT, 'release-update-smoke')
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms))
 const checks = []
+/** Failures as GitHub annotations: readable through the public API, unlike step logs (admin only). */
+function annotate(title, message) {
+  if (process.env.GITHUB_ACTIONS !== 'true') return
+  const text = String(message).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')
+  console.log(`::error title=${title}::${text}`)
+}
 const check = (name, ok, detail = '') => {
   checks.push(name)
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`)
-  if (!ok) throw new Error(`Update smoke failed: ${name}${detail ? ` (${detail})` : ''}`)
+  if (!ok) {
+    annotate('Update smoke', `${name}${detail ? ` (${detail})` : ''}`)
+    throw new Error(`Update smoke failed: ${name}${detail ? ` (${detail})` : ''}`)
+  }
 }
 
 const keyFile = join(out, 'test-public-key.pem')
@@ -241,6 +250,10 @@ try {
   }
   failed = false
   console.log(JSON.stringify({ result: 'UPDATE SMOKE PASSED', platform: process.platform, from: base, to: next, checks }, null, 2))
+} catch (error) {
+  // Timeouts and crashes (check() already annotated its own failures).
+  if (!String(error?.message).startsWith('Update smoke failed:')) annotate('Update smoke', error?.stack || error)
+  throw error
 } finally {
   if (failed) await diagnose().catch((error) => console.log('diagnostics failed:', error.message))
   killAppsUsing(userData)
