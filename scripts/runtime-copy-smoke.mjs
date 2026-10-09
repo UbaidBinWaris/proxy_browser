@@ -38,7 +38,7 @@ try {
       fileSystem: raw, platform: 'win32', arch: 'x64', isPackaged: true, version: '1.3.0',
       executable: path.join(source, 'Proxy-QA-Browser.exe'), resourcesPath: path.join(source, 'resources'),
       root: path.join(temp, 'local'), desktopDirectory: path.join(temp, 'Desktop'), menuDirectory: path.join(temp, 'menu'),
-      updatesDirectory: path.join(temp, 'updates'), appImage: null, portableExecutable: null, publicKey: null,
+      updatesDirectory: path.join(temp, 'usb-updates'), onlineDownloadsDirectory: path.join(temp, 'updates'), appImage: null, portableExecutable: null, publicKey: null,
       releaseNotes: [], reveal: () => {}, restart: () => {}, writeWindowsShortcut: () => true,
     })
     const status = await manager.setup({ desktop: false, startMenu: false })

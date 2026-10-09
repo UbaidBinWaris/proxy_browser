@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DESKTOP_APP_ID } from '../src/shared/desktop'
-import { createDesktopIntegration, desktopEntry, fileSha256 } from '../src/main/desktop/integration'
+import { createDesktopIntegration, desktopEntry, fileSha256, newerInstalledCopy } from '../src/main/desktop/integration'
 import type { DesktopIntegrationOptions } from '../src/main/desktop/integration'
 import { captureRelaunchEnvironment, restoreRelaunchEnvironment } from '../src/main/desktop/relaunch-env'
 import { LEGACY_APP_ID_SHA256, createAppIdMatcher, isLegacyDesktopEntryName } from '../src/main/desktop/app-identity'
+import { createUpdateManager } from '../src/main/releases/updates'
+import { updateDirectories } from '../src/main/desktop/update-paths'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -41,7 +43,8 @@ async function fixture(platform = 'linux', version = '1.2.0') {
     resourcesPath: join(runtime, 'resources'),
     desktopDirectory: join(folder, 'Desktop'),
     menuDirectory: join(folder, 'menu'),
-    updatesDirectory: join(folder, 'userData', 'updates'),
+    updatesDirectory: updateDirectories(join(folder, 'userData', 'data')).staged,
+    onlineDownloadsDirectory: updateDirectories(join(folder, 'userData', 'data')).downloads,
     publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
     releaseNotes: ['New release'],
     writeWindowsShortcut: (path, value) => {
@@ -232,6 +235,51 @@ describe('signed USB updates', () => {
     expect(f.restart).not.toHaveBeenCalled()
     await expect(stat(join(f.options.root, 'pending-usb-update.json'))).rejects.toThrow()
   })
+  it('turns an updated Windows portable copy into the computer copy with Desktop and Start shortcuts', async () => {
+    const f = await fixture('win32')
+    const update = await f.manifest()
+    await f.manager.inspectUsb(update.path)
+    await f.manager.applyUsb()
+    const distribution = f.restart.mock.calls[0]![0] as string
+    const next = createDesktopIntegration({ ...f.options, version: '1.3.0', portableExecutable: distribution })
+    await next.finishPendingUpdate()
+    const after = await next.status()
+    expect(after.installedVersion).toBe('1.3.0')
+    expect(f.shortcuts.map((shortcut) => shortcut.target)).toEqual([after.installedPath, after.installedPath])
+    await expect(stat(join(f.options.root, 'pending-usb-update.json'))).rejects.toThrow()
+  })
+  it('turns an updated Linux AppImage into the computer copy with Desktop and menu entries', async () => {
+    const f = await fixture()
+    const update = await f.manifest()
+    await f.manager.inspectUsb(update.path)
+    await f.manager.applyUsb()
+    const next = createDesktopIntegration({ ...f.options, version: '1.3.0', appImage: f.restart.mock.calls[0]![0] as string })
+    await next.finishPendingUpdate()
+    expect(await next.status()).toMatchObject({ installedVersion: '1.3.0', desktopShortcut: true, startMenuShortcut: true })
+  })
+  it('keeps the shortcut choices of an existing computer copy when it updates', async () => {
+    const f = await fixture()
+    await f.manager.setup({ desktop: false, startMenu: true })
+    const update = await f.manifest()
+    await f.manager.inspectUsb(update.path)
+    await f.manager.applyUsb()
+    const next = createDesktopIntegration({ ...f.options, version: '1.3.0', appImage: f.restart.mock.calls[0]![0] as string })
+    await next.finishPendingUpdate()
+    expect(await next.status()).toMatchObject({ installedVersion: '1.3.0', desktopShortcut: false, startMenuShortcut: true })
+  })
+  it('offers the newer computer copy when an older copy is opened, and opens it on request', async () => {
+    const f = await fixture()
+    await writeFile(f.options.appImage!, 'portable linux app 1.3.0')
+    const newer = createDesktopIntegration({ ...f.options, version: '1.3.0' })
+    const installed = await newer.setup({ desktop: false, startMenu: true })
+    expect(newerInstalledCopy(await newer.status())).toBeNull()
+    const older = createDesktopIntegration({ ...f.options, version: '1.2.0' })
+    expect(newerInstalledCopy(await older.status())).toBe('1.3.0')
+    await older.openInstalled()
+    expect(f.restart).toHaveBeenCalledWith(installed.installedPath)
+    const unsupported = createDesktopIntegration({ ...f.options, version: '1.2.0', isPackaged: false })
+    expect(newerInstalledCopy(await unsupported.status())).toBeNull()
+  })
   it('never auto-applies a pending update from a different running file', async () => {
     const f = await fixture()
     const update = await f.manifest()
@@ -275,8 +323,8 @@ it('restores user browser overrides and discards expired wrapper environment on 
  it('prepares an online update only from the managed directory and rechecks its hash before restarting', async () => {
    const f = await fixture()
    await f.manager.setup({ desktop: true, startMenu: true })
-   await mkdir(f.options.updatesDirectory, { recursive: true })
-   const path = join(f.options.updatesDirectory, 'download.AppImage')
+   await mkdir(f.options.onlineDownloadsDirectory, { recursive: true })
+   const path = join(f.options.onlineDownloadsDirectory, 'download.AppImage')
    await writeFile(path, 'new online application')
    const asset = { platform: 'linux' as const, arch: 'x64' as const, fileName: 'download.AppImage', size: (await stat(path)).size, sha256: await fileSha256(path), url: 'https://releases.test/download.AppImage' }
    await expect(f.manager.applyOnline({ path: f.options.appImage!, version: '1.3.0', asset })).rejects.toThrow('managed')
@@ -357,5 +405,47 @@ describe('legacy application identity', () => {
     expect((await manager.inspectUsb(accepted.path)).version).toBe('1.3.0')
     const rejected = await f.manifest({ appId: 'com.example.other-app' })
     await expect(manager.inspectUsb(rejected.path)).rejects.toThrow('different application')
+  })
+})
+
+describe('online update end to end (downloader → installer, as wired in main.ts)', () => {
+  it('applies a signed online update downloaded by the real update manager on Windows', async () => {
+    const f = await fixture('win32')
+    const dirs = updateDirectories(join(f.folder, 'userData', 'data'))
+    const bytes = Buffer.from('new signed windows application')
+    const fileName = 'Proxy-QA-Browser-1.3.0-Windows-x64.exe'
+    const payload = JSON.stringify({
+      version: '1.3.0',
+      releasedAt: new Date().toISOString(),
+      notes: ['Update notes'],
+      assets: [
+        {
+          platform: 'win32',
+          arch: 'x64',
+          url: `https://releases.test/api/download/1.3.0/${fileName}`,
+          fileName,
+          size: bytes.length,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
+        },
+      ],
+    })
+    const envelope = { payload, signature: sign(null, Buffer.from(payload), f.keys.privateKey).toString('base64') }
+    const updates = createUpdateManager({
+      config: { feedUrl: 'https://releases.test/api/updates/stable', publicKey: f.options.publicKey! },
+      currentVersion: '1.2.0',
+      platform: 'win32',
+      arch: 'x64',
+      directory: dirs.downloads,
+      fetchImpl: async (url) => (url.endsWith('/stable') ? Response.json(envelope) : new Response(bytes)),
+    })
+    const manager = createDesktopIntegration({ ...f.options, updatesDirectory: dirs.staged, onlineDownloadsDirectory: dirs.downloads })
+
+    expect(await updates.check()).toMatchObject({ available: true, version: '1.3.0' })
+    await manager.applyOnline(await updates.downloadRelease())
+
+    const pending = JSON.parse(await readFile(join(f.options.root, 'pending-usb-update.json'), 'utf8'))
+    expect(pending).toMatchObject({ version: '1.3.0', managed: false })
+    expect(f.restart).toHaveBeenCalledWith(pending.executable)
+    expect(await readFile(pending.executable)).toEqual(bytes)
   })
 })

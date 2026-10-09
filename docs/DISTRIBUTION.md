@@ -53,6 +53,29 @@ shortcuts during the update, but Windows taskbar pins made by the user keep the
 old ID and open the app as a separate taskbar button: unpin and pin it again
 once after updating to 1.4.0.
 
+**Online updates** (**App & updates → Download v… and restart**) follow the same
+path: the verified download is staged, the app restarts into it, and the new
+version finishes the update. Releases before the 1.4.x fix failed with *"The
+update is outside the managed download directory"*; computers on those
+versions install the fixed release once by downloading it from the website.
+
+**A portable copy that updates becomes the computer copy.** If the app was run
+straight from a downloaded EXE/AppImage (no computer copy yet), the updated
+version sets up the computer copy with Desktop and Start/Applications menu
+shortcuts, so the next launch opens the new version. If an older EXE/AppImage
+is opened later while a newer computer copy exists, the app offers to open the
+newer version instead.
+
+On Linux the app starts the new release itself instead of using Electron's
+relauncher: the relauncher runs with `no_new_privs`, and an AppImage started
+from it cannot mount through FUSE ("Cannot mount AppImage, please check your
+FUSE setup"). The new release waits for the old process to exit before it
+takes the single-instance lock (`src/main/desktop/restart.ts`).
+
+`node scripts/update-smoke.mjs` tests this end to end with real packaged
+builds (old release → signed update → restart → new release finishes); the
+deploy workflow runs it on Windows and does not publish when it fails.
+
 A release must be newer than the running version. No background network update
 checks are needed. Opening a newer EXE/AppImage directly also works; click
 **Update computer copy** afterward. Keep the old app until the new one opens

@@ -36,7 +36,7 @@ async function fixture() {
     platform: 'win32', arch: 'x64', isPackaged: true, version: '1.3.0',
     executable: join(runtime, 'Proxy-QA-Browser.exe'), resourcesPath: join(runtime, 'resources'),
     root: join(root, 'local'), desktopDirectory: join(root, 'Desktop'), menuDirectory: menu,
-    updatesDirectory: join(root, 'updates'), appImage: null, portableExecutable: null,
+    updatesDirectory: join(root, 'usb-updates'), onlineDownloadsDirectory: join(root, 'updates'), appImage: null, portableExecutable: null,
     publicKey: null, releaseNotes: [], restart: () => {}, reveal: () => {},
     writeWindowsShortcut: (file, options) => { writeFileSync(file, JSON.stringify(options)); return true },
   })

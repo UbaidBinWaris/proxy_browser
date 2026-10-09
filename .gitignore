@@ -8,6 +8,7 @@ node_modules/
 out/
 dist/
 release/
+release-update-smoke/
 *.tsbuildinfo
 
 # Self-contained build inputs (scripts/bundle-browsers.mjs): ~1 GB of Playwright

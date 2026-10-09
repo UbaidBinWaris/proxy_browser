@@ -25,9 +25,25 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
-const publicKeyPath = join(ROOT, 'resources', 'updates', 'public-key.pem')
-const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
-const notes = JSON.parse(readFileSync(join(ROOT, 'resources', 'release-notes.json'), 'utf8'))[version] ?? []
+/**
+ * Update smoke builds only (scripts/update-smoke.mjs): a throwaway publisher key, their own version and
+ * output folder. Refused for signed releases, so a production build can never trust a test key, and an
+ * output folder is required, so test artifacts never land in release/.
+ */
+const testKeyFile = process.env.PROXY_QA_TEST_PUBLIC_KEY_FILE?.trim() || null
+const testOutput = process.env.PROXY_QA_TEST_OUTPUT?.trim() || null
+const testVersion = process.env.PROXY_QA_TEST_VERSION?.trim() || null
+if ((testKeyFile || testOutput || testVersion) && !(testKeyFile && testOutput))
+  throw new Error('Update smoke builds need both PROXY_QA_TEST_PUBLIC_KEY_FILE and PROXY_QA_TEST_OUTPUT.')
+if (testKeyFile && process.env.PROXY_QA_SIGNED_RELEASE === '1')
+  throw new Error('A signed release cannot embed a test publisher key.')
+if (testVersion && !/^\d+\.\d+\.\d+$/.test(testVersion)) throw new Error('PROXY_QA_TEST_VERSION must be major.minor.patch.')
+
+const publicKeyPath = testKeyFile ?? join(ROOT, 'resources', 'updates', 'public-key.pem')
+const packageVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
+const version = testVersion ?? packageVersion
+const releaseNotes = JSON.parse(readFileSync(join(ROOT, 'resources', 'release-notes.json'), 'utf8'))
+const notes = releaseNotes[version] ?? releaseNotes[packageVersion] ?? []
 
 const BUNDLE_WINDOWS_BROWSERS = process.env.PROXY_QA_BUNDLE_BROWSERS === '1'
 
@@ -91,7 +107,7 @@ const config = {
   productName: 'Proxy-QA-Browser',
   copyright: 'Copyright © 2026 Ubaid Bin Waris',
   directories: {
-    output: 'release',
+    output: testOutput ?? 'release',
     buildResources: 'build',
   },
   files: ['out/**/*', 'package.json', '!**/*.map'],
@@ -136,6 +152,7 @@ const config = {
   publish: null,
   ...(process.env.PROXY_QA_SIGNED_RELEASE === '1' ? { forceCodeSigning: true } : {}),
   extraMetadata: {
+    ...(testVersion ? { version: testVersion } : {}),
     ...(buildingLinux ? { desktopName: 'com.ubaidbinwaris.proxy-qa-browser.desktop' } : {}),
     qaReleaseNotes: notes,
     ...(existsSync(publicKeyPath) ? { qaOfflineUpdates: { publicKey: readFileSync(publicKeyPath, 'utf8') } } : {}),

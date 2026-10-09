@@ -58,7 +58,10 @@ export interface DesktopIntegrationOptions {
   root: string
   desktopDirectory: string
   menuDirectory: string
+  /** Where the executable a USB or online update restarts into is staged. */
   updatesDirectory: string
+  /** Where the online update manager writes verified downloads; the only accepted source for `applyOnline`. */
+  onlineDownloadsDirectory: string
   publicKey: string | null
   releaseNotes: string[]
   writeWindowsShortcut: (
@@ -278,6 +281,12 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       await writeShortcuts({ desktop: false, startMenu: true })
       opts.reveal((await exists(menuShortcut)) ? menuShortcut : installedExecutable)
     },
+    /** Restart into the computer copy, whatever its version (used when an older copy was opened). */
+    async openInstalled(): Promise<void> {
+      const current = await status()
+      if (!current.installedPath) throw new AppException('INVALID_INPUT', 'Set up the app on this computer first.')
+      opts.restart(current.installedPath)
+    },
     async launchInstalled(): Promise<void> {
       const current = await status()
       if (!current.installedPath || current.installedVersion !== opts.version)
@@ -317,7 +326,7 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       requireSupported()
       if (!newerVersion(update.version, opts.version) || update.asset.platform !== opts.platform || update.asset.arch !== opts.arch)
         throw new AppException('INVALID_INPUT', 'The verified update is incompatible with this computer.')
-      if (dirname(resolve(update.path)) !== resolve(opts.updatesDirectory))
+      if (dirname(resolve(update.path)) !== resolve(opts.onlineDownloadsDirectory))
         throw new AppException('INVALID_INPUT', 'The update is outside the managed download directory.')
       await verifyAsset(update.path, update.asset)
       selected = { source: update.path, asset: update.asset, release: {
@@ -379,9 +388,23 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
         return
       if ((await fileSha256(distributionFile)) !== pending.sha256)
         throw new AppException('INVALID_INPUT', 'The prepared USB update has changed.')
-      if (pending.managed) await exclusive(() => install({ desktop: pending.desktop, startMenu: pending.startMenu }))
+      // A portable copy that updated itself becomes the computer copy. Otherwise the file the user
+      // opens next (their downloaded EXE or AppImage) would still be the old release.
+      const shortcuts = pending.managed
+        ? { desktop: pending.desktop, startMenu: pending.startMenu }
+        : { desktop: true, startMenu: true }
+      await exclusive(() => install(shortcuts))
       await rm(path)
     },
   }
 }
 export type DesktopIntegration = ReturnType<typeof createDesktopIntegration>
+
+/**
+ * The version of a newer computer copy when an older copy (an old downloaded EXE or AppImage)
+ * was opened instead; null when there is nothing better to offer.
+ */
+export function newerInstalledCopy(status: DesktopStatus): string | null {
+  if (!status.supported || status.runningInstalledCopy || !status.installedVersion || !status.installedPath) return null
+  return newerVersion(status.installedVersion, status.currentVersion) ? status.installedVersion : null
+}

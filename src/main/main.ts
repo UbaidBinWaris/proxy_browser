@@ -20,6 +20,7 @@
  * Any failure during bootstrap is shown in a native error box and the app exits;
  * it never dies silently.
  */
+import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -29,8 +30,11 @@ import originalFs from 'original-fs'
 
 import { EVENTS } from '@shared/ipc'
 import { DESKTOP_APP_ID, DESKTOP_APP_NAME, USB_MANIFEST_NAME } from '@shared/desktop'
-import { createDesktopIntegration } from './desktop/integration'
+import { createDesktopIntegration, newerInstalledCopy } from './desktop/integration'
+import type { DesktopIntegration } from './desktop/integration'
 import { restoreRelaunchEnvironment } from './desktop/relaunch-env'
+import { pidToAwait, restartPlan, waitForExit } from './desktop/restart'
+import { updateDirectories } from './desktop/update-paths'
 
 import { createBrowserManager } from './browser/browser-manager'
 import { createBrowserProvisioner } from './browser/browser-provisioner'
@@ -137,6 +141,11 @@ if (!app.isPackaged && process.env.PROXY_QA_TEST_DATA_DIR)
 protocol.registerSchemesAsPrivileged([
   { scheme: SCREENSHOT_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
 ])
+
+// Started by a previous release that is restarting into this one (Linux, see desktop/restart.ts):
+// let it exit first so the single-instance lock is free.
+const previousRelease = pidToAwait(process.argv)
+if (previousRelease !== null) waitForExit(previousRelease)
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
@@ -273,6 +282,31 @@ function createWindow(appUrl: string, logger: Logger): BrowserWindow {
   loadRenderer(window)
   if (isDev && rendererDevUrl) window.webContents.openDevTools({ mode: 'detach' })
   return window
+}
+
+/** Offer the newer computer copy when an older copy was opened; choosing it restarts into that copy. */
+async function offerNewerCopy(
+  window: BrowserWindow,
+  desktop: DesktopIntegration,
+  current: string,
+  newer: string,
+  logger: Logger,
+): Promise<void> {
+  try {
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'info',
+      title: DESKTOP_APP_NAME,
+      message: `Version ${newer} is set up on this computer`,
+      detail: `You opened an older copy (version ${current}). Open the installed version to use your latest update.`,
+      buttons: [`Open version ${newer}`, `Keep using ${current}`],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (response === 0) await desktop.openInstalled()
+  } catch (err) {
+    logger.warn(SCOPE, 'Could not open the newer computer copy', { error: err })
+  }
 }
 
 function installCspHeader(csp: string): void {
@@ -629,12 +663,13 @@ async function bootstrap(): Promise<Runtime> {
     qaOfflineUpdates?: { publicKey: string }
     qaReleaseNotes?: string[]
   }
+  const updateDirs = updateDirectories(paths.data)
   const updates = createUpdateManager({
     config: metadata.qaUpdates ?? null,
     currentVersion: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
-    directory: join(paths.data, 'updates'),
+    directory: updateDirs.downloads,
   })
   const desktop = createDesktopIntegration({
     fileSystem: originalFs.promises,
@@ -655,7 +690,8 @@ async function bootstrap(): Promise<Runtime> {
       process.platform === 'win32'
         ? join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
         : join(process.env.XDG_DATA_HOME ?? join(app.getPath('home'), '.local', 'share'), 'applications'),
-    updatesDirectory: join(paths.data, 'usb-updates'),
+    updatesDirectory: updateDirs.staged,
+    onlineDownloadsDirectory: updateDirs.downloads,
     publicKey: metadata.qaOfflineUpdates?.publicKey ?? null,
     releaseNotes: metadata.qaReleaseNotes ?? [],
     writeWindowsShortcut: (path, options) => shell.writeShortcutLink(path, 'create', options),
@@ -672,7 +708,9 @@ async function bootstrap(): Promise<Runtime> {
     },
     restart: (executable) => {
       restoreRelaunchEnvironment(process.env)
-      app.relaunch({ execPath: executable, args: [`--user-data-dir=${paths.userData}`] })
+      const plan = restartPlan(process.platform, [`--user-data-dir=${paths.userData}`], process.pid)
+      if (plan.kind === 'relaunch') app.relaunch({ execPath: executable, args: plan.args })
+      else spawn(executable, plan.args, { detached: true, stdio: 'ignore', env: process.env }).unref()
       setTimeout(() => app.quit(), 250)
     },
   })
@@ -755,6 +793,9 @@ async function bootstrap(): Promise<Runtime> {
 
   mainWindow = createWindow(appUrl, logger)
   const localApp = await desktop.status()
+  // An old downloaded EXE/AppImage was opened while a newer computer copy exists (e.g. after an update).
+  const newerCopy = newerInstalledCopy(localApp)
+  if (newerCopy) void offerNewerCopy(mainWindow, desktop, localApp.currentVersion, newerCopy, logger)
   const relaunchExecutable = localApp.installedPath ?? process.env.PORTABLE_EXECUTABLE_FILE
   if (process.platform === 'win32' && relaunchExecutable)
     mainWindow.setAppDetails({

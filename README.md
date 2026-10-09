@@ -1557,6 +1557,14 @@ npm run typecheck && npm run lint
   `ELECTRON_RUN_AS_NODE`, and keep credentials out of logs. Note that
   `_electron.launch` passes `--password-store=basic`, so on Linux the vault falls
   back to the machine-derived key during such runs — a property of the harness.
+- **Update smoke test** — `node scripts/update-smoke.mjs` (after `npm run build`)
+  builds an "old" and a "new" packaged release with a throwaway publisher key,
+  opens the old one, verifies a signed update, restarts, and checks on disk
+  that the new release finished the update by itself (computer copy, menu and
+  Desktop shortcuts, pending update cleared). Linux runs it locally in an
+  isolated `HOME`; on Windows it runs only in CI (`CI=true`) because it uses
+  the machine's real Start menu. The deploy workflow's `update-smoke` job runs
+  it on `windows-latest` and blocks publishing when it fails.
 - **Windows smoke test** — `scripts/windows-smoke.cjs` drives
   `release/win-unpacked/Proxy-QA-Browser.exe` the same way and checks: Windows
   DPAPI key backend and `%LOCALAPPDATA%` key path, no credentials baked in,
