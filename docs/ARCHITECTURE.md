@@ -132,9 +132,9 @@ saved profile.
 ┌────────────────────────────────┴───────────────────────────────────────┐
 │  Renderer (React 19 + Zustand + Tailwind)                              │
 │  Main window: Launch (default) · Sessions · History (+ run detail /    │
-│  network) · Profiles · Settings (General · Browsers · Advanced ·       │
-│  About; Advanced = Proxy keys, Targeting, Flags, IP check, Network     │
-│  inspector, Proxy session history, Logs)                               │
+│  network) · Profiles · QA automation · Settings (General · Browsers ·  │
+│  Advanced · App & updates; Advanced = Proxy keys, Targeting, Flags,    │
+│  IP check, Network inspector, Proxy session history, Logs)             │
 │  Keys window (#/keys): the same renderer, keys view only              │
 └────────────────────────────────────────────────────────────────────────┘
 ```

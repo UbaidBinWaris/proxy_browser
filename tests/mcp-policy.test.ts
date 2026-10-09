@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -125,9 +125,10 @@ describe('workspace containment', () => {
   afterAll(() => rmSync(root, { recursive: true, force: true }))
 
   it('resolves relative and absolute paths inside the workspace', async () => {
-    const expected = join(workspace, 'suites', 'signup.json')
+    // Results are real paths: macOS's /var is /private/var, and Windows expands 8.3 short names (RUNNER~1).
+    const expected = join(realpathSync.native(workspace), 'suites', 'signup.json')
     await expect(resolveInWorkspace(workspace, 'suites/signup.json')).resolves.toBe(expected)
-    await expect(resolveInWorkspace(workspace, expected)).resolves.toBe(expected)
+    await expect(resolveInWorkspace(workspace, join(workspace, 'suites', 'signup.json'))).resolves.toBe(expected)
     await expect(resolveInWorkspace(workspace, 'inside-link.json')).resolves.toBe(expected)
   })
 

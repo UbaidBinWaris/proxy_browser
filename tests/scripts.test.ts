@@ -394,7 +394,8 @@ describe('package.json build scripts', () => {
 })
 
 describe('macOS CI', () => {
-  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'macos.yml'), 'utf8')
+  // Normalised: Windows checks text files out with CRLF line endings.
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'macos.yml'), 'utf8').replace(/\r\n/g, '\n')
 
   it('runs on push to main, pull requests and manually, on macos-latest, with read-only permissions', () => {
     expect(workflow).toMatch(/on:\n\s+pull_request:\n\s+workflow_dispatch:\n\s+push:\n\s+branches: \[main\]/)

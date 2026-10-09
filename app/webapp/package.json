@@ -7,6 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "node ../../scripts/sync-docs.mjs --allow-missing",
     "dev": "next dev --hostname 127.0.0.1 --port 4500",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 4500",
@@ -14,11 +15,12 @@
     "test": "node --import tsx --test --test-isolation=none tests/*.test.ts"
   },
   "dependencies": {
+    "marked": "18.0.14",
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "zod": "4.6.5",
-    "tsx": "4.23.0"
+    "tsx": "4.23.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

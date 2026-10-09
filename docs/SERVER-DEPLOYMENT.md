@@ -49,17 +49,20 @@ Do not put the administrator token in chat, Git, `NEXT_PUBLIC_*`, or the desktop
 
 ## GitHub Actions setup — required once
 
-Create a GitHub **production** environment for `UbaidBinWaris/proxy_browser`. Releases deploy from **version tags**, so under **Deployment branches and tags** choose *Selected branches and tags* and add the tag rule `v*` (plus `main` if you also start manual runs from it); without the tag rule GitHub refuses tag deployments. Add these three environment secrets in **Settings → Environments → production → Environment secrets**:
+Create a GitHub **production** environment for `UbaidBinWaris/proxy_browser`. Releases deploy from **version tags**, so under **Deployment branches and tags** choose *Selected branches and tags* and add the tag rule `v*` (plus `main` if you also start manual runs from it); without the tag rule GitHub refuses tag deployments. Add these environment secrets in **Settings → Environments → production → Environment secrets**:
 
 | Secret | File to use privately |
 | --- | --- |
 | `DEPLOY_SSH_KEY` | `.deploy/github-actions-deploy` — dedicated OpenSSH private deployment key |
 | `DEPLOY_KNOWN_HOSTS` | `.deploy/github-actions-known-hosts` — verified public server host-key line |
 | `RELEASE_SIGNING_PRIVATE_KEY` | `.release-keys/private-key.pem` — the existing Ed25519 publisher private key |
+| `DEPLOY_HOST` | The server's host name or IP address (from your private notes, e.g. `.deploy/SERVER-PRIVATE.md`) |
+| `DEPLOY_USER` | The SSH user CI deploys as |
+| `DEPLOY_PORT` | The SSH port (optional; 22 when unset) |
 
-Use each file's complete contents, preserving newlines. Never commit these private files. Keep a separate encrypted backup of the publisher key. The dedicated deployment key's public half is authorized on the server with `restrict` to disable forwarding and PTY access. The requested SSH account is **root**, port **22**. The server's existing server→GitHub clone key is separate from this Actions→server key.
+Use each file's complete contents, preserving newlines. Never commit these private files. Keep a separate encrypted backup of the publisher key. The dedicated deployment key's public half is authorized on the server with `restrict` to disable forwarding and PTY access. The server address, SSH user and port are private: store them as the production environment secrets `DEPLOY_HOST`, `DEPLOY_USER` and (optionally, default 22) `DEPLOY_PORT`; `deploy/configure-ci-ssh.sh` reads them and refuses to run without them. The server's existing server→GitHub clone key is separate from this Actions→server key.
 
-Verified server Ed25519 fingerprint during setup: `SHA256:ZGYPf6iz0GtZNQaujl7X6jatJYrD8wdqQIAjFDDLk50`. Verify it independently before replacing the known-hosts secret if the server key changes.
+Verify the server's Ed25519 host-key fingerprint out of band (for example on the server's console with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) before creating or replacing the known-hosts secret. Keep the server address, SSH user and fingerprint in private notes, not in this repository.
 
 Push the local source changes, lockfiles, webapp, deployment scripts, and `.github/workflows/deploy.yml` to `main`. Git metadata writes and pushes are not performed by the local implementation task. Protect `main` and deployment workflow changes; the signing secret can authorize executable updates. Configure environment approvals only if you want a manual gate on every deployment.
 
@@ -122,13 +125,13 @@ Choose a local version above the currently published server version, especially 
 Upload a release (replace 1.3.0 with the actual version):
 
 ```bash
-ssh root@78.46.58.254 'mkdir -p /var/lib/proxy-browser/staging/1.3.0'
+ssh <deploy-user>@<server> 'mkdir -p /var/lib/proxy-browser/staging/1.3.0'
 rsync -av --partial \
   release/Proxy-QA-Browser-1.3.0-Windows-x64.exe \
   release/Proxy-QA-Browser-1.3.0-x86_64.AppImage \
   release/Proxy-QA-Browser-Update.json release/update.json \
-  root@78.46.58.254:/var/lib/proxy-browser/staging/1.3.0/
-ssh root@78.46.58.254 'bash /opt/proxy-browser/deploy/publish-release.sh 1.3.0'
+  <deploy-user>@<server>:/var/lib/proxy-browser/staging/1.3.0/
+ssh <deploy-user>@<server> 'bash /opt/proxy-browser/deploy/publish-release.sh 1.3.0'
 ```
 
 To include macOS, copy the `-macOS-*.dmg`/`.zip` files built on a Mac into `release/` before `npm run release:server` (they are signed into both manifests) and add them to the `rsync` list. The `--partial` transfer retains incomplete data for retry. Publication rehashes all completed files. `/admin` also accepts the two binaries (plus optional macOS files) and two signed manifests; large browser uploads need the provided Nginx limits. The SSH path is preferable for resumable large transfers.
@@ -149,11 +152,12 @@ Production website archive:
 
 ```bash
 npm run brand:sync
+npm run docs:sync          # docs/site/*.md, release notes and NOTICE → app/webapp/content/
 npm run webapp:build
 bash deploy/package-webapp.sh
-scp .deploy/webapp.tar.gz root@78.46.58.254:/var/tmp/proxy-browser-webapp.tar.gz
+scp .deploy/webapp.tar.gz <deploy-user>@<server>:/var/tmp/proxy-browser-webapp.tar.gz
 # Deploy using the actual 40-character source commit SHA:
-ssh root@78.46.58.254 'bash /opt/proxy-browser/deploy/install-webapp.sh /var/tmp/proxy-browser-webapp.tar.gz YOUR_COMMIT_SHA'
+ssh <deploy-user>@<server> 'bash /opt/proxy-browser/deploy/install-webapp.sh /var/tmp/proxy-browser-webapp.tar.gz YOUR_COMMIT_SHA'
 ```
 
 Releases live outside this archive and survive website deployment. Source `.env` is never copied by the automatic deployment workflow, so it cannot overwrite manually configured server secrets.

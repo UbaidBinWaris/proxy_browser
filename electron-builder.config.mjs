@@ -57,7 +57,7 @@ const BUNDLE_WINDOWS_BROWSERS = process.env.PROXY_QA_BUNDLE_BROWSERS === '1'
 /**
  * Windows code signing through Azure Trusted Signing, enabled only when all four values are set
  * (CI passes them from repository secrets). Authentication uses AZURE_TENANT_ID, AZURE_CLIENT_ID and
- * AZURE_CLIENT_SECRET, read by electron-builder itself. See docs/DISTRIBUTION.md → Code signing.
+ * AZURE_CLIENT_SECRET, read by electron-builder itself. See docs/SERVER-DEPLOYMENT.md → Windows code signing.
  */
 const azureSigningValues = {
   endpoint: process.env.PROXY_QA_AZURE_SIGN_ENDPOINT?.trim(),

@@ -27,7 +27,8 @@
     "webapp:dev": "npm run dev --prefix app/webapp",
     "webapp:build": "npm run build --prefix app/webapp",
     "webapp:test": "npm test --prefix app/webapp",
-    "brand:sync": "node scripts/sync-brand.mjs"
+    "brand:sync": "node scripts/sync-brand.mjs",
+    "docs:sync": "node scripts/sync-docs.mjs"
   },
   "repository": {
     "type": "git",

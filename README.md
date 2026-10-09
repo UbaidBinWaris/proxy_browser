@@ -74,13 +74,13 @@ published on the download site yet. These builds contain no proxy credentials.
 
 | Platform | File | Size (v1.2.0 build) | Browsers | Signed | Updates |
 | --- | --- | --- | --- | --- | --- |
-| Windows 10/11 x64 | `Proxy-QA-Browser-1.2.0-Windows-x64.exe` (portable) | 102,438,716 bytes (≈ 98 MiB) | Downloaded on first run | When Azure Trusted Signing is configured | In the app (online or USB) |
-| Linux x86-64 | `Proxy-QA-Browser-1.2.0-x86_64.AppImage` | 569,483,398 bytes (≈ 543 MiB) | Chromium, Firefox and WebKit built in | n/a | In the app (online or USB) |
+| Windows 10/11 x64 | `Proxy-QA-Browser-<version>-Windows-x64.exe` (portable) | ≈ 100 MiB | Downloaded on first run | When Azure Trusted Signing is configured | In the app (online or USB) |
+| Linux x86-64 | `Proxy-QA-Browser-<version>-x86_64.AppImage` | ≈ 545 MiB | Chromium, Firefox and WebKit built in | n/a | In the app (online or USB) |
 | macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (+ `.zip`) | built from source | Downloaded on first run | Ad-hoc unless Apple credentials are configured | The app checks; you download from the website |
 
 ### Windows (portable EXE)
 
-1. Copy `Proxy-QA-Browser-1.2.0-Windows-x64.exe` anywhere (Desktop, Downloads,
+1. Copy `Proxy-QA-Browser-<version>-Windows-x64.exe` anywhere (Desktop, Downloads,
    a USB stick). There is no installer and you do not need administrator rights.
 2. Double-click it. The EXE is **not code-signed**, so Windows SmartScreen may
    show *"Windows protected your PC"*. Click **More info** → **Run anyway**.
@@ -114,15 +114,15 @@ open window to the front.
 1. Make the file executable and run it:
 
    ```bash
-   chmod +x Proxy-QA-Browser-1.2.0-x86_64.AppImage
-   ./Proxy-QA-Browser-1.2.0-x86_64.AppImage
+   chmod +x Proxy-QA-Browser-<version>-x86_64.AppImage
+   ./Proxy-QA-Browser-<version>-x86_64.AppImage
    ```
 
 2. AppImages mount themselves with **FUSE 2**. If you see
    `dlopen(): error loading libfuse.so.2`, install it — Arch: `sudo pacman -S
    fuse2`; Ubuntu 24.04: `sudo apt install libfuse2t64`; older Debian/Ubuntu:
    `sudo apt install libfuse2` — or run it with
-   `./Proxy-QA-Browser-1.2.0-x86_64.AppImage --appimage-extract-and-run`.
+   `./Proxy-QA-Browser-<version>-x86_64.AppImage --appimage-extract-and-run`.
 3. The AppImage is **self-contained**: Chromium, Firefox and WebKit are inside,
    together with the Ubuntu libraries Playwright's WebKit needs on other
    distributions (ICU 74, flite 2.2, libxml2 2.9). Nothing is downloaded and
@@ -183,7 +183,7 @@ Terminals hosted by an Electron app (VS Code, Cursor, …) often export
 window opens**. Start it without that variable:
 
 ```bash
-env -u ELECTRON_RUN_AS_NODE ./Proxy-QA-Browser-1.2.0-x86_64.AppImage
+env -u ELECTRON_RUN_AS_NODE ./Proxy-QA-Browser-<version>-x86_64.AppImage
 ```
 
 Double-clicking the file in a file manager is not affected.
@@ -198,7 +198,7 @@ automatically. Nothing in it contacts the proxy unless you press **Test connecti
 | --- | --- | --- |
 | 1. **Welcome** | What will happen, how the vault key is protected on this machine (**Key protection**, e.g. *Windows DPAPI (current user)*, *GNOME Keyring / libsecret*), and the **Vault file** / **Key file** paths with **Reveal vault folder** / **Reveal key folder** | **Get started** |
 | 2. **Browsers** | Chromium (**Required**), Firefox and WebKit with their status. Entering this step queues every missing engine as a background download, one after another; each is verified with a headless test launch (no window) and shows **Verified ✓** with *Files found · Version … · Headless test launch* ticks | Wait for Chromium, then **Continue**; **Skip for now** appears when Chromium is there, no download is running and Firefox or WebKit is still missing. On a failure: **Retry install** |
-| 3. **Proxy credentials** | **Proxy provider** (one entry per built-in provider; today **DataImpulse**), then the provider's first product as **Required** — for DataImpulse **DataImpulse Residential**: **Proxy host** (the provider's default gateway, `gw.dataimpulse.com`), **Port** (`823`), **Username**, **Password**, any provider-specific fields, and *Advanced: sticky session template* (providers that support templates). Below it, each further product is **Optional**, e.g. **Add DataImpulse Mobile credentials** | **Test connection** (one request through the proxy, nothing saved), then **Save encrypted**; then **Continue**. Without credentials: **Skip for now** |
+| 3. **Proxy credentials** | **Proxy provider** (one entry per built-in provider: **DataImpulse** and the community-verified providers), then the provider's first product as **Required** — for DataImpulse **DataImpulse Residential**: **Proxy host** (the provider's default gateway, `gw.dataimpulse.com`), **Port** (`823`), **Username**, **Password**, any provider-specific fields, and *Advanced: sticky session template* (providers that support templates). Below it, each further product is **Optional**, e.g. **Add DataImpulse Mobile credentials** | **Test connection** (one request through the proxy, nothing saved), then **Save encrypted**; then **Continue**. Without credentials: **Skip for now** |
 | 4. **Done** (*"You're set"*) | Summary of browsers, proxy credentials and vault health, plus anything still pending | **Open launcher** |
 
 - The **AppImage** ships its browsers, so its wizard has nothing to install:
@@ -219,9 +219,9 @@ automatically. Nothing in it contacts the proxy unless you press **Test connecti
 
 ### Sidebar and status pill
 
-The sidebar has five destinations, in this order: **Launch** (the start page),
-**Sessions** (with a green count of open browsers), **History**, **Profiles**
-and **Settings**. Below them is the **Tasks** button (a spinner and a count
+The sidebar has six destinations, in this order: **Launch** (the start page),
+**QA automation**, **Sessions** (with a green count of open browsers),
+**History**, **Profiles** and **Settings**. Below them is the **Tasks** button (a spinner and a count
 while installs run, a check when all finished, a red dot and *Failed* after a
 failure), and at the bottom the app version and one pill: **Proxy ready** when
 at least one pool has keys, **Proxy not set** otherwise. Clicking the pill
@@ -1213,7 +1213,7 @@ The app only talks to:
 
 | Destination | When |
 | --- | --- |
-| The DataImpulse gateway (`gw.dataimpulse.com:823`) | Proxy tests, exit-IP checks and all traffic of proxied browser sessions |
+| The selected provider's gateway (DataImpulse: `gw.dataimpulse.com:823`) | Proxy tests, exit-IP checks and all traffic of proxied browser sessions |
 | The selected IP-check service (ip-api.com, ipinfo.io or ipwho.is) | Every exit-IP check (through the proxy, or directly for Direct sessions); one fallback service on failure |
 | The start URL / your form | Browser sessions |
 | Playwright's browser download CDN | Downloading the bundled engines (Windows, development) |
@@ -1359,8 +1359,10 @@ plan and login**, entered in their own first-run setup. The builds are
 complain. To avoid that, sign the EXE with a Windows code-signing certificate
 (OV or EV from a certificate authority, or a cloud signing service such as
 Azure Trusted Signing); electron-builder can sign during `npm run
-build:windows` when signing is configured — no signing is configured in this
-repository today.
+build:windows` when signing is configured. The build and deploy workflow
+already support Azure Trusted Signing: add the secrets listed in
+[docs/SERVER-DEPLOYMENT.md → Windows code signing](docs/SERVER-DEPLOYMENT.md#windows-code-signing-optional-recommended-before-public-releases)
+and releases are signed automatically; without them the EXE stays unsigned.
 
 **Does it work the same on Windows and Linux?**
 The features are the same. The differences:
@@ -1535,7 +1537,7 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | `npm run dev` | `electron-vite dev`: main, preload and renderer with hot reload (DevTools open detached) |
 | `npm run build` | `electron-vite build` → `out/main` (app, `qa-cli.js`, `qa-mcp.js`), `out/preload`, `out/renderer`; then `scripts/check-headless-entries.mjs` verifies that the two headless entries load no Electron |
 | `npm run preview` | `electron-vite preview`: run the built `out/` without packaging |
-| `npm test` | `vitest run` (891 tests) |
+| `npm test` | `vitest run` (the full unit and integration suite) |
 | `npm run test:watch` | `vitest` in watch mode |
 | `npm run typecheck` | `tsc` for `tsconfig.node.json` (main, preload, shared, renderer `lib`/`stores`, tests) and `tsconfig.web.json` (renderer) |
 | `npm run lint` | ESLint (typescript-eslint; `no-explicit-any`, `consistent-type-imports`) |
@@ -1668,7 +1670,7 @@ No column ever holds a login or password.
 ### Testing
 
 ```bash
-npm test                    # 869 tests including real Chromium recording and visual comparisons
+npm test                    # unit and integration tests, incl. real-browser recording and visual comparisons
 npx vitest run tests/dataimpulse.test.ts
 npm run typecheck && npm run lint
 ```

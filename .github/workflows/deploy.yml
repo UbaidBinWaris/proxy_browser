@@ -31,9 +31,12 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           bash deploy/configure-ci-ssh.sh
-          ssh proxy-browser-production 'test "$(id -un)" = root && test -d /var/lib/proxy-browser/staging && echo "Deployment SSH authentication and host-key verification passed"'
+          ssh proxy-browser-production 'test -d /var/lib/proxy-browser/staging && test -w /var/lib/proxy-browser/staging && echo "Deployment SSH authentication and host-key verification passed"'
       - name: Clear ephemeral SSH key
         if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy
@@ -88,6 +91,9 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           RELEASE_FILE: ${{ steps.asset.outputs.fileName }}
         run: |
@@ -170,6 +176,9 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           RELEASE_FILE: ${{ steps.asset.outputs.fileName }}
         run: |
@@ -195,6 +204,8 @@ jobs:
       - run: npm ci --prefix app/webapp
       - run: npm audit --prefix app/webapp --omit=dev
       - run: node scripts/sync-brand.mjs
+      # Strict: fails when a page in docs/site/manifest.json is missing or its title does not match.
+      - run: node scripts/sync-docs.mjs
       - run: npm test --prefix app/webapp
       - run: npm run typecheck --prefix app/webapp
       - run: npm run build --prefix app/webapp
@@ -205,6 +216,9 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
         run: |
@@ -248,6 +262,9 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
           COMMIT_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}

@@ -5,6 +5,7 @@
  * with size/checksum checks, winget command/progress handling, the per-OS
  * install method, the auto-saved path rules and the install watcher.
  */
+import { execFileSync } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, lstatSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -64,6 +65,14 @@ afterEach(() => {
 })
 
 const hasTar = findCommand('tar') !== null
+/** GNU tar (Linux); macOS ships BSD tar, which has no --format=gnu. */
+const hasGnuTar = hasTar && (() => {
+  try {
+    return execFileSync('tar', ['--version'], { encoding: 'utf8' }).includes('GNU tar')
+  } catch {
+    return false
+  }
+})()
 const hasXz = findCommand('xz') !== null
 
 // ---------------------------------------------------------------------------
@@ -130,7 +139,7 @@ describe('tar extraction', () => {
     expect(safeJoin('/dest', './')).toBeNull()
   })
 
-  it.runIf(hasTar && process.platform !== 'win32')('the in-process reader extracts a GNU system-tar tarball with executable modes and long names', async () => {
+  it.runIf(hasGnuTar && process.platform !== 'win32')('the in-process reader extracts a GNU system-tar tarball with executable modes and long names', async () => {
     const longName = `opt/vendor/${'deep-directory-name/'.repeat(6)}resources.pak`
     const tgz = systemTarGz(
       [

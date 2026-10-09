@@ -213,10 +213,12 @@ that have credentials on this server can be checked.
 
 The tool runs every engine × device × target combination as one case. Steps use
 the scenario step schema of the desktop app and the manifests (`src/shared/qa.ts`):
-`goto`, `fill`, `click`, `select`, `check`, `uncheck`, `assertVisible`,
-`assertText`, `assertUrl`, `assertStatus` and `assertScreenshot`. Action steps
-may carry `fallbacks` for self-healing. No other actions exist. In particular,
-there is no arbitrary JavaScript, no file upload and no download. A `goto` step
+actions (`goto`, `fill`, `click`, `select`, `check`, `uncheck`, `switchPage`),
+assertions (`assertVisible`, `assertText`, `assertUrl`, `assertStatus`,
+`assertScreenshot`) and the compliance, accessibility and performance check steps.
+Action steps may carry `fallbacks` for self-healing. `upload` steps need the
+scenario's embedded fixtures, which `run_check` does not take: use `run_manifest`
+with an exported scenario for uploads. There is no arbitrary JavaScript and no download. A `goto` step
 needs an absolute URL on an allowlisted origin.
 
 Example arguments:

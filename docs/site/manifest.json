@@ -1,0 +1,51 @@
+{
+  "$comment": "Table of contents for the documentation published at https://proxybrowser.ubaidbinwaris.com/docs. Each page is docs/site/<slug>.md; scripts/sync-docs.mjs copies them into the website at build time.",
+  "sections": [
+    {
+      "title": "Getting started",
+      "pages": [
+        { "slug": "introduction", "title": "Introduction", "description": "What Proxy QA Browser is, who it is for, and responsible use." },
+        { "slug": "install", "title": "Install", "description": "Download and run on Windows, Linux and macOS." },
+        { "slug": "first-run", "title": "First run", "description": "Set-up wizard, browsers and proxy keys." }
+      ]
+    },
+    {
+      "title": "Using the app",
+      "pages": [
+        { "slug": "launching", "title": "Launching browsers", "description": "Launch, sessions, history and profiles." },
+        { "slug": "proxy-providers", "title": "Proxy providers", "description": "DataImpulse, Bright Data, Oxylabs, Decodo and IPRoyal; sticky and rotating sessions." },
+        { "slug": "locations-and-devices", "title": "Locations and devices", "description": "Country, state, city and ZIP targeting, exit-IP verification and device presets." },
+        { "slug": "browsers", "title": "Browsers", "description": "Bundled and installed engines, one-click installs and detection." },
+        { "slug": "site-access-tokens", "title": "Site access tokens", "description": "Allowlist your own QA traffic on your WAF, CAPTCHA or fraud scoring." },
+        { "slug": "updates", "title": "Updates", "description": "Online and USB updates, the computer copy and the update check." }
+      ]
+    },
+    {
+      "title": "QA automation",
+      "pages": [
+        { "slug": "automation", "title": "Scenarios and matrices", "description": "Recorder, steps, datasets, suites, environments, schedules and reports." },
+        { "slug": "checks", "title": "Compliance, accessibility and performance checks", "description": "Consent and TCPA checks, axe-core accessibility and performance budgets." },
+        { "slug": "self-healing", "title": "Self-healing selectors", "description": "Fallback locators, healed steps and updating scenarios." },
+        { "slug": "ci-runner", "title": "CI runner", "description": "Command-line runner, Docker image and GitHub Action." },
+        { "slug": "mcp-server", "title": "MCP server", "description": "Let AI assistants run QA checks on origins you allow." }
+      ]
+    },
+    {
+      "title": "Reference",
+      "pages": [
+        { "slug": "security-and-privacy", "title": "Security and privacy", "description": "Credential vault, what is stored, network connections and data locations." },
+        { "slug": "settings", "title": "Settings reference", "description": "Every setting and what it does." },
+        { "slug": "troubleshooting", "title": "Troubleshooting", "description": "Common problems and error codes." },
+        { "slug": "faq", "title": "FAQ", "description": "Frequently asked questions." }
+      ]
+    },
+    {
+      "title": "Developers",
+      "pages": [
+        { "slug": "architecture", "title": "Architecture", "description": "How the app is put together." },
+        { "slug": "contributing", "title": "Contributing", "description": "Development setup, conventions and project scope." },
+        { "slug": "building-and-releasing", "title": "Building and releasing", "description": "Builds, signing, releases and deployment." }
+      ]
+    }
+  ]
+}
