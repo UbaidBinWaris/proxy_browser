@@ -446,7 +446,9 @@ export function createBrowserProvisioner(opts: BrowserProvisionerOptions): Brows
   ): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       const label = targets.join(', ')
-      const args = [cliPath, 'install', ...targets]
+      // --no-shell: the app runs Chromium through the 'chromium' channel (browser/launch-channel.ts), so the
+      // separate headless shell (~100 MB) would only cost download time and disk space.
+      const args = [cliPath, 'install', ...(targets.includes('chromium') ? ['--no-shell'] : []), ...targets]
       const tail: string[] = []
       let lastPercent: number | null = null
       let lastLoggedPercent: number | null = null

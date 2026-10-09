@@ -1,4 +1,5 @@
 import { chromium, firefox, webkit } from 'playwright-core'
+import { bundledChromiumChannel } from '../browser/launch-channel'
 import type { Browser } from 'playwright-core'
 import type { Profile } from '@shared/types'
 import type { QaExecution, ScenarioInput } from '@shared/qa'
@@ -75,6 +76,8 @@ export function createQaSessionFactory(
         headless,
         timeout: 45000,
         ...(info.kind === 'installed' && info.executablePath ? { executablePath: info.executablePath } : {}),
+        // Full Chromium in new-headless mode: the separate headless shell is never shipped or downloaded.
+        ...bundledChromiumChannel(info),
         ...(info.family === 'webkit' && libsDir ? { env: webkitLaunchEnv(libsDir) } : {}),
         ...(connection
           ? {

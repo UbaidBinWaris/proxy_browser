@@ -164,6 +164,8 @@ jobs:
           # Exact key only: a partial restore could add old browser revisions to the AppImage.
           key: linux-bundle-${{ hashFiles('package-lock.json', 'scripts/bundle-browsers.mjs') }}
       - run: npm run build:linux
+      # Headless QA runs must work with the browsers the AppImage ships (no Chromium headless shell).
+      - run: node scripts/bundled-qa-smoke.mjs build/browsers/linux
       - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/computer-setup-smoke.mjs
         env:

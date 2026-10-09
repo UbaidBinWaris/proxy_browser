@@ -435,4 +435,17 @@ describe('install cancellation and busy engines', () => {
     // The lock is free again.
     await expect(provisioner.install('chromium', () => undefined, { signal: AbortSignal.abort() })).rejects.toMatchObject({ message: 'The installation was cancelled.' })
   })
+
+  it.skipIf(process.platform === 'win32')('installs Chromium without the unused headless shell', async () => {
+    const paths = fakePaths(root)
+    mkdirSync(paths.browsers, { recursive: true })
+    // Stand-in for "electron cli.js install …" that records the arguments it was given.
+    const argsFile = path.join(root, 'installer-args.txt')
+    const fakeInstaller = path.join(root, 'record-installer.sh')
+    writeFileSync(fakeInstaller, `#!/bin/sh\nprintf '%s\\n' "$@" > "${argsFile}"\n`, { mode: 0o755 })
+    const provisioner = createBrowserProvisioner({ paths, logger: fakeLogger(), isPackaged: true, execPath: fakeInstaller, resourcesPath: path.join(root, 'resources'), versionCacheFile: null })
+    await provisioner.install('chromium', () => undefined).catch(() => undefined) // nothing is really installed
+    const args = readFileSync(argsFile, 'utf8').trim().split('\n')
+    expect(args.slice(1)).toEqual(['install', '--no-shell', 'chromium'])
+  })
 })

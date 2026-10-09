@@ -18,7 +18,7 @@
 /* global process, console, setTimeout, window */
 import { _electron as electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
@@ -130,7 +130,15 @@ async function main() {
     const info = (await api(() => window.api.app.getInfo())).data
     check('platform is darwin', info.platform === 'darwin', info.platform)
     check('packaged build', info.isPackaged === true)
-    check('user data in the requested folder', path.resolve(info.userDataPath) === path.resolve(userData), info.userDataPath)
+    // Compare real paths: on macOS the temp folder /var/folders/… is reported as /private/var/folders/….
+    const realOrSelf = (dir) => {
+      try {
+        return realpathSync.native(dir)
+      } catch {
+        return path.resolve(dir)
+      }
+    }
+    check('user data in the requested folder', realOrSelf(info.userDataPath) === realOrSelf(userData), info.userDataPath)
     await win.screenshot({ path: path.join(OUT, '01-first-run.png') })
 
     const desktop = await api(() => window.api.desktop.status())

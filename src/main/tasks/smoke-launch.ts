@@ -19,6 +19,7 @@ import type { BrowserEngineFamily, BrowserEngineInfo } from '@shared/types'
 import type { Logger } from '../contracts'
 import { webkitLaunchEnv } from '../browser/browsers-path'
 import { shortErrorText } from '../browser/error-mapping'
+import { bundledChromiumChannel } from '../browser/launch-channel'
 import { withTimeout } from '../util/timeout'
 import type { ProcessToolkit } from '../system/processes'
 import { sessionMarkerArg, sessionRootPids } from '../system/processes'
@@ -50,7 +51,7 @@ export function smokeLaunchOptions(info: BrowserEngineInfo, markerId: string, ti
   const options: LaunchOptions = { headless: true, timeout: timeoutMs }
   if (info.family === 'chromium') options.args = [sessionMarkerArg(markerId)]
   if (info.kind === 'installed' && info.executablePath) options.executablePath = info.executablePath
-  else if (info.id === 'chromium') options.channel = 'chromium'
+  Object.assign(options, bundledChromiumChannel(info))
   if (info.family === 'webkit' && webkitLibsDir) options.env = webkitLaunchEnv(webkitLibsDir)
   return options
 }
