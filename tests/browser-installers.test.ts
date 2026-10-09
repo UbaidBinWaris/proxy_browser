@@ -51,7 +51,7 @@ import {
 } from '../src/main/browser/installers/winget'
 import type { SpawnFn } from '../src/main/browser/installers/system-tools'
 import { extractZipFile, listZipEntries } from '../src/main/browser/installers/zip-archive'
-import { NO_WINGET_NOTE, OPERA_GX_LINUX_NOTE, UNSUPPORTED_ARCH_NOTE, installMethodFor } from '../src/main/browser/install-support'
+import { MACOS_DOWNLOAD_PAGE_NOTE, NO_WINGET_NOTE, OPERA_GX_LINUX_NOTE, UNSUPPORTED_ARCH_NOTE, installMethodFor } from '../src/main/browser/install-support'
 import { memoryExecutablePathStore, originOf, originsAfterUserEdit, reconcileExecutablePaths, withAutoSavedPath, withoutPath } from '../src/main/browser/executable-paths'
 import { TAR_END, bsdAr, fakeDeb, fakeFetch, gnuAr, systemTarGz, ustarFile, ustarHeader, zipArchive } from './helpers/archives'
 
@@ -581,12 +581,15 @@ describe('installMethodFor', () => {
     expect(installMethodFor('opera', { ...win, winget: false })).toEqual({ method: 'download-page', note: NO_WINGET_NOTE })
   })
 
-  it('macOS: Playwright runs the Chrome/Edge installers, the rest open the vendor page; bundled engines are bundled', () => {
-    const mac = { platform: 'darwin' as const, arch: 'arm64', winget: false }
-    expect(installMethodFor('chrome', mac).method).toBe('playwright')
-    expect(installMethodFor('msedge', mac).method).toBe('playwright')
-    expect(installMethodFor('brave', mac).method).toBe('download-page')
-    expect(installMethodFor('webkit', mac).method).toBe('bundled')
+  it('macOS: every vendor browser opens its download page (never sudo/Playwright installers); bundled engines are bundled', () => {
+    for (const arch of ['arm64', 'x64']) {
+      const mac = { platform: 'darwin' as const, arch, winget: false }
+      for (const engine of INSTALLED_BROWSER_ENGINES)
+        expect(installMethodFor(engine, mac), engine).toEqual({ method: 'download-page', note: MACOS_DOWNLOAD_PAGE_NOTE })
+      expect(installMethodFor('webkit', mac).method).toBe('bundled')
+      expect(installMethodFor('firefox', mac).method).toBe('bundled')
+    }
+    expect(MACOS_DOWNLOAD_PAGE_NOTE).toMatch(/Applications/)
     expect(installMethodFor('opera', { platform: 'freebsd', arch: 'x64', winget: false }).method).toBe('download-page')
   })
 })

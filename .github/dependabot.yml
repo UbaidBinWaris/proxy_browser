@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Updated by hand together with the Docker runner base image (mcr.microsoft.com/playwright:v<same>)
+      # and the bundled browser revisions; a lone bump breaks the CI runner image.
+      - dependency-name: playwright-core
+      # Electron majors change Chromium and Node; test them deliberately.
+      - dependency-name: electron
+        update-types: ['version-update:semver-major']
     groups:
       dev-dependencies:
         dependency-type: development

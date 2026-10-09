@@ -42,6 +42,10 @@ const api: ProxyQaApi = {
     chooseUsb: () => invoke(IPC.desktop.chooseUsb),
     applyUsb: () => invoke(IPC.desktop.applyUsb),
     applyOnline: () => invoke(IPC.desktop.applyOnline),
+    retryPendingUpdate: () => invoke(IPC.desktop.retryPendingUpdate),
+    dismissUpdateNotice: () => invoke(IPC.desktop.dismissUpdateNotice),
+    updateAvailability: () => invoke(IPC.desktop.updateAvailability),
+    openDownloadPage: () => invoke(IPC.desktop.openDownloadPage),
   },
   qa: {
     visualImages: (batchId, caseId, stepIndex) => invoke(IPC.qa.visualImages, batchId, caseId, stepIndex),
@@ -59,6 +63,7 @@ const api: ProxyQaApi = {
     startRecording: (input) => invoke(IPC.qa.startRecording, input),
     recording: () => invoke(IPC.qa.recording),
     stopRecording: () => invoke(IPC.qa.stopRecording),
+    chooseFixture: () => invoke(IPC.qa.chooseFixture),
     saveGateway: (input, id) =>
       id === undefined ? invoke(IPC.qa.saveGateway, input) : invoke(IPC.qa.saveGateway, input, id),
     testGateway: (id) => invoke(IPC.qa.testGateway, id),

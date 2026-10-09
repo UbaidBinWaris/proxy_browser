@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { getApi, unwrap } from '@/lib/api'
 import { toast } from '@/stores/toasts'
+import { useUpdatesStore } from '@/stores/updates'
+import { updateBadge } from '@/lib/updates'
 
 export function DesktopSetupCard({ compact = false }: { compact?: boolean }): React.JSX.Element | null {
   const [status, setStatus] = useState<DesktopStatus | null>(null)
@@ -16,6 +18,14 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   const [preview, setPreview] = useState<UsbUpdatePreview | null>(null)
   const [online, setOnline] = useState<UpdateStatus | null>(null)
   const [pinHelp, setPinHelp] = useState(false)
+  // The startup check's result (sidebar badge) until this card's own check answers.
+  const known = updateBadge(useUpdatesStore((s) => s.availability), status?.currentVersion)
+  const applyCheck = useUpdatesStore((s) => s.applyCheck)
+  const checkOnline = async (): Promise<UpdateStatus> => {
+    const value = await unwrap(getApi().qa.checkUpdates())
+    applyCheck(value)
+    return value
+  }
   useEffect(() => {
     let active = true
     unwrap(getApi().desktop.status())
@@ -33,7 +43,7 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   useEffect(() => {
     if (compact) return
     let active = true
-    unwrap(getApi().qa.checkUpdates()).then(value => { if (active) setOnline(value) }).catch(() => undefined)
+    checkOnline().then(value => { if (active) setOnline(value) }).catch(() => undefined)
     return () => { active = false }
   }, [compact])
 
@@ -50,6 +60,9 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   }
   if (compact && (!status || !status.supported)) return null
   const windows = status?.platform === 'win32'
+  const mac = status?.platform === 'darwin'
+  // macOS: no computer setup; the signed feed is checked and the website's download page is offered.
+  const viaDownloadPage = status?.updateDelivery === 'download-page'
   const installed = !!status?.installedPath
   const currentInstalled = installed && status?.installedVersion === status?.currentVersion
   return (
@@ -75,8 +88,8 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                   v{status.currentVersion}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {windows ? 'Windows' : status.platform === 'linux' ? 'Linux' : status.platform} · {status.arch} ·{' '}
-                  {status.runningInstalledCopy ? 'Computer copy' : 'Portable copy'}
+                  {windows ? 'Windows' : status.platform === 'linux' ? 'Linux' : mac ? 'macOS' : status.platform} · {status.arch}
+                  {mac ? '' : ` · ${status.runningInstalledCopy ? 'Computer copy' : 'Portable copy'}`}
                 </span>
               </div>
             )}
@@ -189,9 +202,10 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                   <p className="text-sm font-medium">Online updates</p>
                   <p className="text-xs text-muted-foreground">Check the publisher’s server for a signed release. Close browser sessions before restarting; your local data and shortcuts are kept.</p>
                   <div className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="outline" disabled={!!busy} loading={busy === 'check-online'} onClick={() => void action('check-online', async () => setOnline(await unwrap(getApi().qa.checkUpdates())))}>Check for updates</Button>
+                    <Button size="sm" variant="outline" disabled={!!busy} loading={busy === 'check-online'} onClick={() => void action('check-online', async () => setOnline(await checkOnline()))}>Check for updates</Button>
                     {online?.available && <Button size="sm" disabled={!!busy} loading={busy === 'apply-online'} onClick={() => void action('apply-online', async () => { await unwrap(getApi().desktop.applyOnline()) })}>Download v{online.version} and restart</Button>}
                   </div>
+                  {!online && known && <p role="status" className="text-xs text-muted-foreground">{`${known.label}. Checking the signed release…`}</p>}
                   {online && <p role="status" className="text-xs text-muted-foreground">{!online.configured ? 'Online updates are not configured in this build.' : online.available ? `Verified release v${online.version} is available.` : `You are running v${online.currentVersion}; no newer compatible release is available.`}</p>}
                   {busy === 'apply-online' && <p role="status" className="text-xs text-muted-foreground">Downloading and verifying the update. Large files can take several minutes. The app will restart when verification finishes.</p>}
                 </div>}
@@ -250,6 +264,56 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                           Restart with v{preview.version}
                         </Button>
                       </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : viaDownloadPage ? (
+              <>
+                <p className="max-w-prose text-sm text-muted-foreground">
+                  Keep Proxy QA Browser in Applications: open the disk image and drag the app there. To update,
+                  download the new version from the website and replace the app; your profiles and local data are
+                  kept.
+                </p>
+                {!compact && (
+                  <div className="space-y-3 border-t border-border pt-5">
+                    <p className="text-sm font-medium">Updates</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!!busy}
+                        loading={busy === 'check-online'}
+                        onClick={() => void action('check-online', async () => setOnline(await checkOnline()))}
+                      >
+                        Check for updates
+                      </Button>
+                      {online?.available && status.downloadPageUrl && (
+                        <Button
+                          size="sm"
+                          disabled={!!busy}
+                          leftIcon={<ArrowUpRight aria-hidden="true" />}
+                          onClick={() =>
+                            void action('download-page', async () => {
+                              await unwrap(getApi().desktop.openDownloadPage())
+                            })
+                          }
+                        >
+                          Download v{online.version}
+                        </Button>
+                      )}
+                    </div>
+                    {!online && known && (
+                      <p role="status" className="text-xs text-muted-foreground">{`${known.label}. Checking the signed release…`}</p>
+                    )}
+                    {online && (
+                      <p role="status" className="text-xs text-muted-foreground">
+                        {!online.configured
+                          ? 'Online updates are not configured in this build.'
+                          : online.available
+                            ? `Verified release v${online.version} is available. It opens on the website; replace the app in Applications after downloading.`
+                            : `You are running v${online.currentVersion}; no newer release for this Mac is available.`}
+                      </p>
                     )}
                   </div>
                 )}

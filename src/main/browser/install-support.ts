@@ -9,8 +9,11 @@
  *   'download-page'. Other Linux architectures → 'download-page';
  * - Windows: every installed-kind browser through winget when it is available →
  *   'winget', otherwise the vendor page plus an install watcher → 'download-page';
- * - macOS: Chrome and Edge through Playwright's CLI (vendor .pkg) → 'playwright',
- *   everything else → 'download-page'.
+ * - macOS: every installed-kind browser → 'download-page' (the vendor page opens, the user
+ *   drags the app from the vendor's .dmg into /Applications or ~/Applications, and the install
+ *   watcher detects it). Playwright's `install chrome|msedge` is deliberately not used: it runs
+ *   the vendor .pkg through `sudo installer`, which needs a terminal for the password prompt
+ *   (a GUI app has none) and replaces any existing system-wide copy.
  *
  * The download URLs double as the allow-list for `shell.openExternal`: nothing
  * else can ever be opened from the renderer.
@@ -32,9 +35,6 @@ export const DOWNLOAD_URLS: Readonly<Record<InstalledBrowserEngine, string>> = {
 
 /** Every URL the app may hand to `shell.openExternal`. */
 export const ALLOWED_DOWNLOAD_URLS: ReadonlySet<string> = new Set(Object.values(DOWNLOAD_URLS))
-
-/** Channels Playwright's CLI can install on behalf of the app (`cli.js install <channel>`, macOS). */
-export const PLAYWRIGHT_INSTALLABLE_CHANNELS: readonly BrowserEngine[] = ['chrome', 'msedge']
 
 /** Host facts that decide the install method. */
 export interface InstallHost {
@@ -58,7 +58,8 @@ export const WINGET_MACHINE_NOTE = 'Installs silently with winget. Windows may a
 export const WINGET_EDGE_NOTE = 'Usually preinstalled on Windows; otherwise installs silently with winget.'
 export const NO_WINGET_NOTE = "winget (App Installer) is not available, so the vendor's download page opens and the app detects the browser as soon as it is installed."
 export const DOWNLOAD_PAGE_NOTE = "Opens the vendor's download page; the app detects the browser as soon as it is installed."
-export const PLAYWRIGHT_NOTE = "Runs the vendor's official installer; macOS may ask for your password."
+export const MACOS_DOWNLOAD_PAGE_NOTE =
+  "Opens the vendor's download page. Open the downloaded disk image and drag the browser into Applications; the app detects it as soon as it is there."
 export const UNSUPPORTED_ARCH_NOTE = 'Automatic install is only available for x86-64 Linux. Install it from the vendor; it is detected automatically.'
 
 const LINUX_METHODS: Readonly<Record<InstalledBrowserEngine, InstallMethodInfo>> = {
@@ -91,8 +92,7 @@ export function installMethodFor(engine: BrowserEngine, host: InstallHost): Inst
       return { method: 'winget', note: WINGET_USER_SCOPE.has(engine) ? WINGET_USER_NOTE : WINGET_MACHINE_NOTE }
     }
     case 'darwin':
-      if (PLAYWRIGHT_INSTALLABLE_CHANNELS.includes(engine)) return { method: 'playwright', note: PLAYWRIGHT_NOTE }
-      return { method: 'download-page', note: DOWNLOAD_PAGE_NOTE }
+      return { method: 'download-page', note: MACOS_DOWNLOAD_PAGE_NOTE }
     default:
       return { method: 'download-page', note: DOWNLOAD_PAGE_NOTE }
   }

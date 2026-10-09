@@ -245,7 +245,7 @@ describe('locateExecutable / describeInstalledEngine', () => {
     expect(describeInstalledEngine('vivaldi', located, null, windows)).toMatchObject({ installMethod: 'winget', installNote: WINGET_USER_NOTE })
     expect(describeInstalledEngine('chrome', located, null, windows)).toMatchObject({ installMethod: 'winget', installNote: WINGET_MACHINE_NOTE })
     expect(describeInstalledEngine('chrome', located, null, { ...windows, winget: false })).toMatchObject({ installMethod: 'download-page', installNote: NO_WINGET_NOTE })
-    expect(describeInstalledEngine('msedge', located, null, mac)).toMatchObject({ installMethod: 'playwright', downloadUrl: 'https://www.microsoft.com/edge/download' })
+    expect(describeInstalledEngine('msedge', located, null, mac)).toMatchObject({ installMethod: 'download-page', downloadUrl: 'https://www.microsoft.com/edge/download' })
     expect(describeInstalledEngine('opera', located, null, mac)).toMatchObject({ installMethod: 'download-page', downloadUrl: 'https://www.opera.com/download' })
     expect(describeInstalledEngine('opera', located, null, linux, true)).toMatchObject({ managedInstall: true })
   })

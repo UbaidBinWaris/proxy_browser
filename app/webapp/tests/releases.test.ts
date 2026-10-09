@@ -77,3 +77,43 @@ test('symlinks cannot be published as assets', async () => {
   const outside = join(root, 'outside'); await writeFile(outside, 'fixture-win32-1.4.0'); await symlink(outside, join(folder, f.data.assets[0]!.fileName))
   await writeFile(join(folder, f.data.assets[1]!.fileName), 'fixture-linux-1.4.0'); await assert.rejects(publishRelease(f.usb, f.feed)); assert.equal((await currentRelease())?.version, '1.3.0')
 })
+/** A release with the required Windows/Linux pair plus optional macOS downloads (`macAssets`). */
+function macFixture(version: string, files: Array<['arm64' | 'x64', 'dmg' | 'zip']> = [['arm64', 'dmg'], ['x64', 'zip']]) {
+  const base = fixture(version)
+  const macAssets = files.map(([arch, ext]) => { const bytes = Buffer.from(`fixture-darwin-${arch}-${ext}-${version}`); return { platform: 'darwin' as const, arch, fileName: `Proxy-QA-Browser-${version}-macOS-${arch}.${ext}`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } })
+  const data = { ...base.data, macAssets }
+  const online = { ...base.online, macAssets: macAssets.map(a => ({ ...a, url: `${origin}/api/download/${version}/${a.fileName}` })) }
+  return { data, online, usb: envelope(data), feed: envelope(online) }
+}
+test('macOS downloads are optional: both manifests must list the same files, URLs and hashes', () => {
+  const key = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+  const f = macFixture('1.5.0')
+  assert.equal(verifyPair(f.usb, f.feed, key, origin).macAssets?.length, 2)
+  assert.equal(verifyPair(fixture('1.5.0').usb, fixture('1.5.0').feed, key, origin).macAssets, undefined)
+  const { macAssets: _dropped, ...withoutMac } = f.online
+  assert.throws(() => verifyPair(f.usb, envelope(withoutMac), key, origin), /macOS release assets disagree/)
+  const wrongUrl = macFixture('1.5.0'); wrongUrl.online.macAssets[0]!.url = 'https://evil.example/app.dmg'
+  assert.throws(() => verifyPair(wrongUrl.usb, envelope(wrongUrl.online), key, origin), /macOS release assets disagree/)
+  const wrongHash = macFixture('1.5.0'); wrongHash.online.macAssets[1]!.sha256 = '0'.repeat(64)
+  assert.throws(() => verifyPair(wrongHash.usb, envelope(wrongHash.online), key, origin), /macOS release assets disagree/)
+  const wrongArch = macFixture('1.5.0'); wrongArch.data.macAssets[0]!.arch = 'x64'; wrongArch.online.macAssets[0]!.arch = 'x64'
+  assert.throws(() => verifyPair(envelope(wrongArch.data), envelope(wrongArch.online), key, origin), /macOS release assets disagree/)
+  const exe = macFixture('1.5.0'); exe.data.macAssets[0]!.fileName = 'Proxy-QA-Browser-1.5.0-macOS-arm64.exe'
+  assert.throws(() => verifyPair(envelope(exe.data), f.feed, key, origin))
+  // A darwin file can never take the place of a required Windows or Linux asset.
+  const swapped = macFixture('1.5.0'); (swapped.data.assets as unknown[])[1] = swapped.data.macAssets[0]
+  assert.throws(() => verifyPair(envelope(swapped.data), f.feed, key, origin))
+})
+test('a release with macOS downloads publishes only after every file verifies, and serves the DMG', async () => {
+  const f = macFixture('1.5.0')
+  for (const a of f.data.assets) await uploadAsset('1.5.0', a.fileName, upload(`fixture-${a.platform}-1.5.0`))
+  for (const a of f.data.macAssets) await uploadAsset('1.5.0', a.fileName, upload('tampered'))
+  await assert.rejects(publishRelease(f.usb, f.feed)); assert.equal((await currentRelease())?.version, '1.3.0')
+  for (const a of f.data.macAssets) await uploadAsset('1.5.0', a.fileName, upload(`fixture-darwin-${a.arch}-${a.fileName.endsWith('.dmg') ? 'dmg' : 'zip'}-1.5.0`))
+  await publishRelease(f.usb, f.feed)
+  const current = await currentRelease(); assert.equal(current?.version, '1.5.0'); assert.deepEqual(current?.macAssets?.map(a => a.fileName), f.data.macAssets.map(a => a.fileName))
+  const dmg = f.data.macAssets[0]!
+  const response = await downloadResponse(new Request(`${origin}/api/download/1.5.0/${dmg.fileName}`), '1.5.0', dmg.fileName)
+  assert.equal(await response.text(), 'fixture-darwin-arm64-dmg-1.5.0'); assert.equal(response.headers.get('etag'), `"${dmg.sha256}"`)
+  await assert.rejects(downloadResponse(new Request(origin), '1.5.0', 'Proxy-QA-Browser-1.5.0-macOS-x64.dmg'))
+})

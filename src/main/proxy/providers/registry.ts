@@ -10,13 +10,17 @@
  */
 import { AppException } from '../../contracts'
 import type { IpChecker, Logger, ProxyProviderResolver } from '../../contracts'
+import { brightDataDialect } from './brightdata'
 import { dataImpulseDialect } from './dataimpulse'
+import { decodoDialect } from './decodo'
 import type { ProviderCapabilities, ProviderDialect, ProviderId } from './dialect'
 import { GatewayProvider } from './gateway-provider'
+import { ipRoyalDialect } from './iproyal'
+import { oxylabsDialect } from './oxylabs'
 import type { GatewayProviderSettings } from './gateway-provider'
 
 /** Every built-in dialect, in picker order. */
-export const BUILT_IN_DIALECTS: readonly ProviderDialect[] = [dataImpulseDialect]
+export const BUILT_IN_DIALECTS: readonly ProviderDialect[] = [dataImpulseDialect, brightDataDialect, oxylabsDialect, decodoDialect, ipRoyalDialect]
 
 export interface ProviderRegistryDeps {
   ipChecker: IpChecker

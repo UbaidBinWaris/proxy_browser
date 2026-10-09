@@ -340,7 +340,7 @@ describe('createBrowserProvisioner', () => {
     const win = { platform: 'win32' as const, arch: 'x64', winget: true }
     expect(installMethodFor('chrome', win).method).toBe('winget')
     expect(installMethodFor('brave', { ...win, winget: false }).method).toBe('download-page')
-    expect(installMethodFor('msedge', { platform: 'darwin', arch: 'arm64', winget: false }).method).toBe('playwright')
+    expect(installMethodFor('msedge', { platform: 'darwin', arch: 'arm64', winget: false }).method).toBe('download-page')
     expect(installMethodFor('chrome', { platform: 'linux', arch: 'x64', winget: false }).method).toBe('vendor-package')
     expect(installMethodFor('chromium', win).method).toBe('bundled')
     expect(isAllowedDownloadUrl('https://brave.com/download/')).toBe(true)

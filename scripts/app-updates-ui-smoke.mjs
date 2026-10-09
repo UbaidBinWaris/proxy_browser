@@ -24,8 +24,9 @@ try {
     browserWindow.setBounds({ width: 1280, height: 1100 })
     browserWindow.show()
     browserWindow.focus()
-    const state = { setup: [], pins: 0, launches: 0, apply: 0, online: 0, failSetup: true, failUsb: true, cancelUsb: false,
-      status: { supported: true, platform: 'win32', arch: 'x64', currentVersion: '1.2.0', installedVersion: null, installedPath: null, runningInstalledCopy: false, desktopShortcut: false, startMenuShortcut: false, offlineUpdatesReady: true, releaseNotes: ['Faster Windows launches from the computer copy.'], warnings: [] } }
+    const state = { setup: [], pins: 0, launches: 0, apply: 0, online: 0, retries: 0, dismissed: 0, failSetup: true, failUsb: true, failRetry: true, cancelUsb: false,
+      status: { supported: true, platform: 'win32', arch: 'x64', currentVersion: '1.2.0', installedVersion: null, installedPath: null, runningInstalledCopy: false, desktopShortcut: false, startMenuShortcut: false, offlineUpdatesReady: true, releaseNotes: ['Faster Windows launches from the computer copy.'], warnings: [],
+        lastUpdate: { version: '1.2.0', status: 'failed', message: 'The prepared USB update has changed.', at: '2026-10-09T08:00:00.000Z' } } }
     globalThis.qaDesktopUi = state
     const replace = (channel, handler) => { ipcMain.removeHandler(channel); ipcMain.handle(channel, handler) }
     const ok = (data) => ({ ok: true, data })
@@ -46,11 +47,42 @@ try {
     replace('qa:check-updates', () => ok({ configured: true, available: true, currentVersion: '1.2.0', version: '1.3.0', fileName: 'Proxy-QA-Browser-1.3.0-Windows-x64.exe' }))
     replace('desktop:apply-online', () => { state.online++; return ok(undefined) })
     replace('desktop:apply-usb', () => { state.apply++; return ok(undefined) })
+    // The simulated install runs v1.2.0 everywhere (sidebar version, badge comparison, About facts).
+    replace('app:get-info', () => ok({ version: '1.2.0', platform: 'win32', userDataPath: 'C:\\Users\\Tester\\AppData\\Roaming\\proxy-qa-browser', dataPath: 'C:\\Users\\Tester\\AppData\\Roaming\\proxy-qa-browser\\data', isPackaged: true }))
+    replace('desktop:update-availability', () => ok({ available: true, version: '1.3.0', checkedAt: '2026-10-09T08:00:00.000Z' }))
+    replace('desktop:retry-pending-update', () => {
+      state.retries++
+      if (state.failRetry) { state.failRetry = false; return { ok: false, error: { code: 'INVALID_INPUT', message: 'The prepared USB update has changed.' } } }
+      state.status.lastUpdate = { version: '1.2.0', status: 'succeeded', message: 'Your shortcuts and local data were kept.', at: '2026-10-09T08:01:00.000Z' }
+      return ok(state.status)
+    })
+    replace('desktop:dismiss-update-notice', () => { state.dismissed++; state.status.lastUpdate = null; return ok(undefined) })
   })
   await page.waitForFunction(() => Boolean(window.api))
   assert((await page.evaluate(() => window.api.setup.complete())).ok)
-  await page.evaluate(() => { window.location.hash = '#/settings/about' })
+  await page.evaluate(() => { window.location.hash = '#/launch' })
   await page.reload()
+  // Startup check result: the sidebar badge, without the App & updates card's own check.
+  const badge = page.getByRole('link', { name: /Update available: v1\.3\.0/ })
+  await badge.waitFor()
+  assert.equal(await badge.getByText('Update', { exact: true }).isVisible(), true)
+  // Update result notice: a failure with Retry and a link to App & updates.
+  const failure = page.getByRole('alert').filter({ hasText: 'Update to v1.2.0 did not finish' })
+  await failure.waitFor()
+  await failure.getByText('The prepared USB update has changed.').waitFor()
+  assert.equal(await failure.getByRole('link', { name: 'Open App & updates' }).count(), 1)
+  await page.screenshot({ path: join(output, 'update-notice.png') })
+  await failure.getByRole('button', { name: 'Retry update' }).click()
+  await page.getByText('The update still did not finish').waitFor()
+  await failure.waitFor() // still failed: the stored outcome is shown again
+  await failure.getByRole('button', { name: 'Retry update' }).click()
+  const success = page.getByRole('status').filter({ hasText: 'Updated to v1.2.0' })
+  await success.waitFor()
+  await success.getByRole('button', { name: 'Dismiss update notice' }).click()
+  await success.waitFor({ state: 'detached' })
+  assert.deepEqual(await app.evaluate(() => ({ retries: globalThis.qaDesktopUi.retries, dismissed: globalThis.qaDesktopUi.dismissed })), { retries: 2, dismissed: 1 })
+  while (await page.getByRole('button', { name: 'Dismiss notification' }).count()) await page.getByRole('button', { name: 'Dismiss notification' }).first().click()
+  await badge.click()
   await page.getByRole('heading', { name: 'App & updates', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Download v1.3.0 and restart' }).click()
   await page.getByRole('checkbox', { name: 'Desktop shortcut' }).uncheck()
@@ -79,8 +111,15 @@ try {
   assert.deepEqual(calls, { pins: 1, launches: 1, apply: 1, online: 1 })
   await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(720, 650); win.setSize(760, 1050) })
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'App screen should not overflow horizontally')
+  // A later startup-check event moves the badge to the newer release.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('event:update-available', { available: true, version: '1.4.0', checkedAt: '2026-10-09T09:00:00.000Z' }))
+  await page.getByRole('link', { name: /Update available: v1\.4\.0/ }).waitFor()
+  await page.evaluate(() => { window.location.hash = '#/settings/general' })
+  const startupSwitch = page.getByRole('switch', { name: 'Check for updates on startup' })
+  await startupSwitch.waitFor()
+  assert.equal(await startupSwitch.getAttribute('aria-checked'), 'true')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['online update discovery and restart', 'setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png' }, null, 2))
+  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['startup update badge', 'update failure notice', 'retry failure and success', 'dismiss notice', 'update-available event', 'startup check setting', 'online update discovery and restart', 'setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png', notice: 'smoke-output/update-notice.png' }, null, 2))
 } finally {
   if (app) await app.close().catch(() => {})
   await rm(stateDir, { recursive: true, force: true })

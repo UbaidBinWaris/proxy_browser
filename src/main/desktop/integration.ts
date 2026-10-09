@@ -3,11 +3,12 @@ import { createReadStream } from 'node:fs'
 import * as fileSystem from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { z } from 'zod'
-import { AppIdSchema, DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema } from '@shared/desktop'
+import { AppIdSchema, DESKTOP_APP_ID, DESKTOP_APP_NAME, UsbReleaseSchema, updateDeliveryFor } from '@shared/desktop'
 import type { DesktopSetupOptions, DesktopStatus, UsbRelease, UsbUpdatePreview } from '@shared/desktop'
 import { AppException } from '../contracts'
 import type { UpdateManager } from '../releases/updates'
 import { newerVersion } from '../releases/updates'
+import { LAST_UPDATE_FILE, createUpdateOutcomeStore, updateFailureMessage, visibleUpdateOutcome } from './update-outcome'
 import { appIdMatcher as defaultAppIdMatcher, isLegacyDesktopEntryName } from './app-identity'
 import type { AppIdMatcher } from './app-identity'
 
@@ -19,6 +20,19 @@ const InstallMarkerSchema = z.object({
 })
 const MARKER = 'proxy-qa-application.json'
 const PENDING = 'pending-usb-update.json'
+const PendingUpdateSchema = z.object({
+  version: z.string(),
+  executable: z.string(),
+  sha256: z.string(),
+  managed: z.boolean(),
+  desktop: z.boolean(),
+  startMenu: z.boolean(),
+})
+/**
+ * What finishing a pending update did: nothing was waiting ('none'), the record belongs to another
+ * version or file ('skipped'), or this version replaced the computer copy ('finished').
+ */
+export type PendingUpdateResult = 'none' | 'skipped' | 'finished'
 const exists = async (path: string): Promise<boolean> =>
   fileSystem.stat(path)
     .then(() => true)
@@ -80,14 +94,31 @@ export interface DesktopIntegrationOptions {
   onInstalled?: (executable: string) => void
   /** Which identities count as this application; defaults to the current plus legacy identities. */
   appIds?: AppIdMatcher
+  /** Clock for the stored update outcome (tests). */
+  now?: () => Date
+  /** The publisher's download page (from the signed feed's origin); null when the build has no feed. */
+  downloadPageUrl?: string | null
+  /** Opens `downloadPageUrl` in the default browser; nothing else is ever passed to it. */
+  openExternal?: (url: string) => Promise<void>
+}
+
+/** Why computer setup is unavailable, worded for the platform the app runs on. */
+export function unsupportedSetupMessage(platform: string): string {
+  return platform === 'darwin'
+    ? 'On macOS, drag Proxy QA Browser from its disk image into Applications. New versions are downloaded from the website.'
+    : 'Computer setup is available in the Windows EXE and Linux AppImage releases.'
 }
 
 export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
   const { chmod, copyFile, cp, lstat, mkdir, readdir, readFile, rename, rm, writeFile } = opts.fileSystem ?? fileSystem
   const windows = opts.platform === 'win32'
   const appIds = opts.appIds ?? defaultAppIdMatcher
+  // macOS is never "supported" here: the .app is installed by dragging it from the DMG into
+  // Applications, and new versions come from the download page (updateDeliveryFor('darwin')).
   const supported =
     opts.isPackaged && opts.arch === 'x64' && (windows || (opts.platform === 'linux' && !!opts.appImage))
+  const updateDelivery = updateDeliveryFor(opts.platform)
+  const downloadPageUrl = opts.downloadPageUrl ?? null
   const application = join(opts.root, 'Application')
   const previous = join(opts.root, 'Application.previous')
   const executableName = windows ? 'Proxy-QA-Browser.exe' : 'Proxy-QA-Browser.AppImage'
@@ -97,16 +128,17 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
   const menuShortcut = join(opts.menuDirectory, shortcutName)
   const currentExecutable = windows ? opts.executable : opts.appImage
   const distributionFile = windows ? opts.portableExecutable : opts.appImage
+  const outcomes = createUpdateOutcomeStore({
+    path: join(opts.root, LAST_UPDATE_FILE),
+    fileSystem: opts.fileSystem ?? fileSystem,
+    ...(opts.now ? { now: opts.now } : {}),
+  })
   let warnings: string[] = []
   let busy = false
   let selected: { release: UsbRelease; asset: UsbRelease['assets'][number]; source: string } | null = null
 
   const requireSupported = (): void => {
-    if (!supported)
-      throw new AppException(
-        'INVALID_INPUT',
-        'Computer setup is available in the Windows EXE and Linux AppImage releases.',
-      )
+    if (!supported) throw new AppException('INVALID_INPUT', unsupportedSetupMessage(opts.platform))
   }
   const readMarker = async (folder = application) => {
     try {
@@ -134,6 +166,9 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
       offlineUpdatesReady: !!opts.publicKey,
       releaseNotes: opts.releaseNotes,
       warnings,
+      lastUpdate: visibleUpdateOutcome(await outcomes.read(), opts.version),
+      updateDelivery,
+      downloadPageUrl,
     }
   }
   const exclusive = async <T>(run: () => Promise<T>): Promise<T> => {
@@ -270,6 +305,51 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
         'The USB update file is incomplete or has changed. Copy the release again.',
       )
   }
+  /** Failures are recorded without masking the original error (the outcome file is best effort). */
+  const recordFailure = async (version: string, error: unknown): Promise<void> => {
+    await outcomes.record(version, 'failed', updateFailureMessage(error)).catch(() => undefined)
+  }
+  const finishPending = async (): Promise<PendingUpdateResult> => {
+    const path = join(opts.root, PENDING)
+    if (!supported || !(await exists(path))) return 'none'
+    let pending: z.infer<typeof PendingUpdateSchema>
+    try {
+      pending = PendingUpdateSchema.parse(JSON.parse(await readFile(path, 'utf8')))
+    } catch {
+      // An unreadable record can never complete; drop it so the next check or USB update starts clean.
+      await rm(path, { force: true })
+      const error = new AppException(
+        'INVALID_INPUT',
+        'The prepared update record is unreadable. Check for updates again or open the new release directly.',
+      )
+      await recordFailure(opts.version, error)
+      throw error
+    }
+    if (
+      pending.version !== opts.version ||
+      !distributionFile ||
+      resolve(pending.executable) !== resolve(distributionFile)
+    )
+      return 'skipped'
+    try {
+      if ((await fileSha256(distributionFile)) !== pending.sha256)
+        throw new AppException('INVALID_INPUT', 'The prepared USB update has changed.')
+      // A portable copy that updated itself becomes the computer copy. Otherwise the file the user
+      // opens next (their downloaded EXE or AppImage) would still be the old release.
+      const shortcuts = pending.managed
+        ? { desktop: pending.desktop, startMenu: pending.startMenu }
+        : { desktop: true, startMenu: true }
+      await exclusive(() => install(shortcuts))
+      await rm(path)
+    } catch (error) {
+      await recordFailure(pending.version, error)
+      throw error
+    }
+    await outcomes
+      .record(pending.version, 'succeeded', 'Your shortcuts and local data were kept.')
+      .catch(() => undefined)
+    return 'finished'
+  }
   return {
     status,
     setup: (options: DesktopSetupOptions) => exclusive(() => install(options)),
@@ -366,35 +446,34 @@ export function createDesktopIntegration(opts: DesktopIntegrationOptions) {
         }
       })
     },
-    /** The verified new USB runtime can replace the old local copy now that the old process has exited. */
-    async finishPendingUpdate(): Promise<void> {
-      const path = join(opts.root, PENDING)
-      if (!supported || !(await exists(path))) return
-      const pending = z
-        .object({
-          version: z.string(),
-          executable: z.string(),
-          sha256: z.string(),
-          managed: z.boolean(),
-          desktop: z.boolean(),
-          startMenu: z.boolean(),
-        })
-        .parse(JSON.parse(await readFile(path, 'utf8')))
-      if (
-        pending.version !== opts.version ||
-        !distributionFile ||
-        resolve(pending.executable) !== resolve(distributionFile)
-      )
-        return
-      if ((await fileSha256(distributionFile)) !== pending.sha256)
-        throw new AppException('INVALID_INPUT', 'The prepared USB update has changed.')
-      // A portable copy that updated itself becomes the computer copy. Otherwise the file the user
-      // opens next (their downloaded EXE or AppImage) would still be the old release.
-      const shortcuts = pending.managed
-        ? { desktop: pending.desktop, startMenu: pending.startMenu }
-        : { desktop: true, startMenu: true }
-      await exclusive(() => install(shortcuts))
-      await rm(path)
+    /**
+     * The verified new USB or online runtime replaces the old local copy now that the old process has
+     * exited. The result (success or a user-safe failure message) is stored for the update notice.
+     */
+    finishPendingUpdate: finishPending,
+    /** Run the pending update again after a failure (the notice's Retry); returns the fresh status. */
+    async retryPendingUpdate(): Promise<DesktopStatus> {
+      const result = await finishPending()
+      if (result === 'none') {
+        await outcomes.dismiss()
+        throw new AppException('INVALID_INPUT', 'No update is waiting to finish. Check for updates in App & updates.')
+      }
+      if (result === 'skipped')
+        throw new AppException(
+          'INVALID_INPUT',
+          'The prepared update belongs to another copy of the app. Open the new release to finish it.',
+        )
+      return status()
+    },
+    /** Hide the update notice; a pending update that failed is still retried on the next start. */
+    async dismissUpdateNotice(): Promise<void> {
+      await outcomes.dismiss()
+    },
+    /** Open the publisher's download page (macOS updates); the URL comes from the build, never from IPC. */
+    async openDownloadPage(): Promise<void> {
+      if (!downloadPageUrl || !opts.openExternal)
+        throw new AppException('INVALID_INPUT', 'This build has no download page. Get the new version from the publisher.')
+      await opts.openExternal(downloadPageUrl)
     },
   }
 }

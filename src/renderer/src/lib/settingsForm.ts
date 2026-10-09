@@ -40,6 +40,7 @@ export interface SettingsFormState {
   locationMatchPolicy: LocationMatchPolicy
   /** Editor text; validated as a whole number in the shared range. */
   locationMatchAttempts: string
+  checkUpdatesOnStartup: boolean
 }
 
 export type SettingsFormErrors = Partial<Record<keyof SettingsFormState, string>>
@@ -62,6 +63,7 @@ export function settingsFormFrom(settings: AppSettings): SettingsFormState {
     defaultTargetCountry: settings.defaultTargetCountry.toUpperCase(),
     locationMatchPolicy: settings.locationMatchPolicy,
     locationMatchAttempts: String(settings.locationMatchAttempts),
+    checkUpdatesOnStartup: settings.checkUpdatesOnStartup,
   }
 }
 
@@ -130,6 +132,7 @@ export function validateSettingsForm(
     defaultTargetCountry: form.defaultTargetCountry.trim().toLowerCase(),
     locationMatchPolicy: form.locationMatchPolicy,
     locationMatchAttempts: numberOrNaN(form.locationMatchAttempts),
+    checkUpdatesOnStartup: form.checkUpdatesOnStartup,
   })
   if (!parsed.success) {
     for (const issue of parsed.error.issues) {

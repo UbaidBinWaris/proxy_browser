@@ -1,8 +1,10 @@
 # Versioning and USB distribution
 
-This is one desktop app for different Windows and Linux computers. Each device
-keeps its own profiles, settings, credentials and browser downloads. There is
-no server or sign-in requirement, and no separate Windows setup installer.
+This is one desktop app for different Windows, Linux and macOS computers. Each
+device keeps its own profiles, settings, credentials and browser downloads.
+There is no server or sign-in requirement, and no separate Windows setup
+installer. Computer setup and USB/in-app updates below apply to Windows and
+Linux; macOS works differently — see [macOS](#macos).
 
 ## Set up each computer once
 
@@ -76,9 +78,28 @@ takes the single-instance lock (`src/main/desktop/restart.ts`).
 builds (old release → signed update → restart → new release finishes); the
 deploy workflow runs it on Windows and does not publish when it fails.
 
-A release must be newer than the running version. No background network update
-checks are needed. Opening a newer EXE/AppImage directly also works; click
-**Update computer copy** afterward. Keep the old app until the new one opens
+**The update result is shown after the restart.** The new version records how
+finishing the update went in `last-update.json` next to the pending-update
+record (`%LOCALAPPDATA%\ProxyQABrowser\` or `~/.local/share/proxy-qa-browser/`).
+On success the app shows *"Updated to v…"* at the top of the window until it is
+dismissed. On failure (for example the staged file changed, or the computer
+copy could not be replaced) it shows *"Update to v… did not finish"* with a
+user-safe reason, **Retry update** (runs the final step again without a new
+download) and **Open App & updates**. The running copy stays usable either way,
+and a failed update that is only dismissed is retried on the next start.
+
+**Startup update check.** Packaged builds with a signed feed check it once
+after the window opens, at most once every 24 hours (Settings → General →
+**Check for updates on startup**, on by default). The check only verifies the
+signed feed; it never downloads. When a newer compatible release is found, the
+version in the sidebar gets an **Update** badge and App & updates shows the
+version; **Download v… and restart** stays a deliberate click. Failed checks are
+logged and not shown as errors, and the attempt still counts toward the 24 hours.
+Builds without a feed (no publisher key at build time) never check. There is no
+polling beyond that one check per start.
+
+A release must be newer than the running version. Opening a newer EXE/AppImage
+directly also works; click **Update computer copy** afterward. Keep the old app until the new one opens
 successfully. Deleting the distribution EXE/AppImage never removes local data.
 
 ## Publish the next version
@@ -93,7 +114,7 @@ npm run release:version -- patch       # 1.2.0 → 1.2.1
 # or: npm run release:version -- 2.0.0
 ```
 
-Then:
+Then, for a **CI release** (recommended): add notes for the new version to `resources/release-notes.json`, commit, push to `main`, and push the tag `v<version>` — see [SERVER-DEPLOYMENT.md → Releasing](SERVER-DEPLOYMENT.md#releasing). For a **local / USB release**:
 
 1. Add notes for the new version to `resources/release-notes.json`.
 2. Run `npm run verify` and the desktop smoke scripts.
@@ -101,7 +122,9 @@ Then:
    build each on its own OS using `build:linux` / `build:windows`.
 4. Test Windows using `node scripts/windows-smoke.cjs` on Windows.
 5. Run `npm run release:usb` **after both builds finish**. This signs the
-   current version’s two binaries and writes the manifest and checksums.
+   current version’s two binaries and writes the manifest and checksums. Any
+   macOS DMG/ZIP files of the same version in `release/` (copied from the Mac
+   that ran `npm run build:mac`) are added as optional `macAssets`.
 6. Copy the current executable, JSON and checksums to USB. Archive old releases
    separately; never rename an older binary to a newer version.
 
@@ -133,6 +156,141 @@ initialized for v1.2.0 in this workspace.
 
 The optional HTTPS update-feed tooling remains available for a future hosted
 release feed, but it is unnecessary for this USB workflow.
+
+## macOS
+
+### How the app reaches a Mac
+
+- `npm run build:mac` (on a Mac) produces
+  `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `.zip` (Apple silicon) and
+  `…-macOS-x64.dmg` / `.zip` (Intel); `npm run build:mac:dir` only the
+  unpacked `.app`. macOS 12 or later. Browsers are not bundled; they download
+  on first run into `~/Library/Application Support/proxy-qa-browser/data/browsers`.
+- Users open the DMG and drag the app into **Applications** (or
+  `~/Applications`). That *is* the computer setup on macOS, so **Set up on this
+  computer**, shortcuts, pinning and **Choose USB update** are not offered
+  (`DesktopStatus.supported` is false; the IPC calls are refused with an
+  explanation).
+- **Updates are delivered through the website.** App & updates (and the
+  once-per-day startup check) verify the signed feed exactly as on the other
+  platforms; when a release lists a macOS download for the Mac's architecture
+  (`macAssets`, DMG preferred over ZIP) the app shows **Download vX.Y.Z**, which
+  opens `https://<feed origin>/#download`. The user replaces the app in
+  Applications; profiles, history and the vault live outside the bundle and
+  are kept. The app never downloads the macOS file itself
+  (`DesktopStatus.updateDelivery === 'download-page'`; `downloadRelease()`
+  refuses with *"On macOS, download the new version from the website…"*).
+
+  Why not an in-app self-update: replacing a running, code-signed `.app`
+  bundle in place needs Squirrel.Mac or an equivalent helper, has to keep the
+  Developer ID signature, the Gatekeeper quarantine state and App Translocation
+  (an app started from Downloads runs from a read-only random path) right, and
+  can only be tested on real Macs with a signed build. Until signing and
+  notarization exist that path would ship untested; the download page is the
+  safe minimum. Electron's relauncher (`app.relaunch`) is the restart plan on
+  macOS (`src/main/desktop/restart.ts`) should an in-app path be added later.
+
+### Release manifests with macOS files
+
+macOS downloads travel in an optional `macAssets` list next to `assets` in both
+signed manifests (`Proxy-QA-Browser-Update.json` and `update.json`):
+
+```json
+{ "assets": [ { "platform": "win32", … }, { "platform": "linux", … } ],
+  "macAssets": [ { "platform": "darwin", "arch": "arm64",
+                   "fileName": "Proxy-QA-Browser-1.5.0-macOS-arm64.dmg",
+                   "size": 123, "sha256": "…", "url": "https://…/api/download/1.5.0/…" } ] }
+```
+
+`assets` keeps exactly one Windows and one Linux file, because installed
+releases up to 1.4.x parse it strictly (win32/linux only, at most two
+entries); they ignore the unknown `macAssets` key, so manifests with macOS
+files stay valid for every existing copy. Without macOS files the key is left
+out entirely. `scripts/release.mjs` adds whichever
+`Proxy-QA-Browser-<version>-macOS-<arm64|x64>.<dmg|zip>` files are in
+`release/` (USB/local releases) or passes `platform: "darwin"` entries given to
+`createServerReleaseFromMetadata` (CI). The website verifies that both
+manifests list the same macOS files, sizes, hashes and URLs, hashes them before
+publishing, serves them under `/api/download/…`, and shows a macOS download
+card only when a release has them. `node scripts/release-asset.mjs darwin
+<arm64|x64> [dmg|zip]` prints the metadata of one built file.
+
+### Code signing and notarization
+
+Nothing Apple-account-dependent is required to build. The macOS settings are
+chosen from the environment only (`scripts/mac-signing.mjs`, used by
+`electron-builder.config.mjs` for `--mac` builds; Linux and Windows builds
+never read these variables):
+
+| Mode | Environment | Result |
+| --- | --- | --- |
+| Unsigned (default) | none of the variables below | Ad-hoc signature (`identity: '-'`, so Apple silicon runs it), no hardened runtime, not notarized |
+| Developer ID signed | `CSC_LINK` (the *Developer ID Application* certificate as `.p12` path, `https://` URL or base64) **and** `CSC_KEY_PASSWORD` | Signed, hardened runtime with `build/entitlements.mac.plist`; not notarized (Gatekeeper still warns on downloaded copies) |
+| Signed + notarized | the certificate **and exactly one** complete set: `APPLE_API_KEY` (path to the `.p8`), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` (recommended) — or `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` — or `APPLE_KEYCHAIN`, `APPLE_KEYCHAIN_PROFILE` | Signed, hardened, notarized and stapled by electron-builder (`@electron/notarize`): opens without any Gatekeeper prompt |
+
+The build **fails** instead of silently downgrading when: only one of
+`CSC_LINK`/`CSC_KEY_PASSWORD` is set; a notarization set is incomplete (the
+error names the missing variables); two notarization sets are present;
+notarization credentials are present without a certificate;
+`PROXY_QA_SIGNED_RELEASE=1` is set without a certificate *and* notarization;
+or an update smoke build (throwaway publisher key) would be signed. This is the
+same all-or-nothing rule as the Azure Trusted Signing values for Windows. The
+config prints the chosen mode (`macOS signing: unsigned|signed|notarized`).
+
+Entitlements (`build/entitlements.mac.plist`, app and helpers):
+`com.apple.security.cs.allow-jit` and
+`com.apple.security.cs.allow-unsigned-executable-memory` (V8 on the hardened
+runtime) and `com.apple.security.network.client` (only enforced in the App
+Sandbox, which the app does not use). Library validation stays on. The
+Playwright browsers are separate executables in the app data folder with their
+own signatures and need nothing from these entitlements.
+
+### Gatekeeper and unsigned builds
+
+A file downloaded through a browser carries the `com.apple.quarantine`
+attribute, so Gatekeeper checks it on first opening:
+
+- **Ad-hoc signed (default) or signed but not notarized:** macOS refuses to
+  open it (*"Proxy-QA-Browser cannot be opened because Apple cannot check it
+  for malicious software"*; macOS 15: *"Apple could not verify
+  'Proxy-QA-Browser' is free of malware"*). The user opens **System Settings →
+  Privacy & Security** and clicks **Open Anyway** next to the message, then
+  confirms; on macOS 14 and earlier Control-click → **Open** also works. Only
+  needed once per copy. Advanced users can instead run
+  `xattr -dr com.apple.quarantine /Applications/Proxy-QA-Browser.app`.
+- **Builds made on the same Mac** (no quarantine attribute) open directly.
+- **Notarized:** opens after the standard "downloaded from the Internet"
+  confirmation.
+
+Do not publish ad-hoc builds to end users as the regular download: each
+update repeats the Gatekeeper prompt, and the Keychain may ask again for
+access to *Proxy-QA-Browser Safe Storage* because the ad-hoc signature changes
+with every build (a Developer ID signature keeps the same identity, so the
+Keychain grant persists).
+
+### Publishing macOS releases (not enabled yet)
+
+`.github/workflows/macos.yml` builds unsigned apps on `macos-latest` and runs
+`scripts/macos-smoke.mjs` on every push to `main` and pull request, but
+`deploy.yml` does not build or publish macOS. Once an Apple Developer account
+exists:
+
+1. Add environment secrets to *production*: `CSC_LINK` (base64 of the
+   Developer ID Application `.p12`), `CSC_KEY_PASSWORD`, and an App Store
+   Connect API key (`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, plus the `.p8`
+   contents, written to a file in the job and passed as `APPLE_API_KEY`).
+2. Add a `macos` job to `deploy.yml` after `preflight` on `macos-latest`
+   (pinned `actions/checkout`/`actions/setup-node` as in the other jobs):
+   `node scripts/ci-release-version.mjs`, `npm ci`, `npm test`, then
+   `PROXY_QA_SIGNED_RELEASE=1 npm run build:mac` with the secrets in `env`,
+   `node scripts/macos-smoke.mjs`, `node scripts/release-asset.mjs darwin arm64`
+   and `… darwin x64` as step outputs, and transfer both DMGs with `scp` to
+   `/var/lib/proxy-browser/staging/<version>/` exactly like the Windows job.
+3. Add the job to `publish.needs`, and append
+   `{platform:"darwin",arch:"arm64",fileName:…,size:…,sha256:…}` (and x64) to
+   the asset list passed to `createServerReleaseFromMetadata`. The website then
+   lists the macOS downloads and installed Macs see the update.
+4. Update the platform matrix in the README and the website hero text.
 
 ## Checks for v1.2.0
 

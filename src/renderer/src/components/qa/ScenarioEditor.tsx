@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { ScenarioInputSchema } from '@shared/qa'
 import type { QaRecording } from '@shared/qa'
 import { parseDatasetCsv } from '@shared/qa-csv'
 import { getApi, unwrap } from '@/lib/api'
@@ -10,6 +9,15 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { Field } from '@/components/ui/Field'
+import { Switch } from '@/components/ui/Switch'
+import type { QaFixture } from '@shared/qa-fixtures'
+import { scenarioDraft, scenarioFormFields } from '@/lib/scenarioForm'
+import { FixturesPanel } from './FixturesPanel'
+import { StepExtraFields } from './StepExtraFields'
+// Checks (compliance, accessibility, performance): fields live in ./CheckStepFields.
+import { QA_CHECK_ACTIONS, QA_CHECK_LABELS, isCheckAction, isCheckStep, newCheckStep } from '@shared/qa-checks'
+import type { QaNetworkProfile } from '@shared/qa-checks'
+import { CheckStepFields, NetworkProfileField } from './CheckStepFields'
 
 const ACTIONS: QaStep['action'][] = [
   'fill',
@@ -17,12 +25,15 @@ const ACTIONS: QaStep['action'][] = [
   'select',
   'check',
   'uncheck',
+  'upload',
+  'switchPage',
   'assertScreenshot',
   'assertVisible',
   'assertText',
   'assertUrl',
   'assertStatus',
   'goto',
+  ...QA_CHECK_ACTIONS,
 ]
 const LABELS: Record<QaStep['action'], string> = {
   fill: 'Fill field',
@@ -30,18 +41,24 @@ const LABELS: Record<QaStep['action'], string> = {
   select: 'Select option',
   check: 'Check checkbox',
   uncheck: 'Uncheck checkbox',
+  upload: 'Upload file',
+  switchPage: 'Switch to page',
   assertScreenshot: 'Compare screenshot',
   assertVisible: 'Expect visible',
   assertText: 'Expect text',
   assertUrl: 'Expect URL contains',
   assertStatus: 'Expect HTTP status',
   goto: 'Navigate to URL',
+  ...QA_CHECK_LABELS,
 }
 function newStep(action: QaStep['action']): QaStep {
+  if (isCheckAction(action)) return newCheckStep(action)
   if (action === 'assertScreenshot') return { action, name: 'page', maxDiffRatio: 0.01 }
   if (action === 'assertStatus') return { action, value: 200 }
   if (action === 'goto' || action === 'assertUrl') return { action, value: '' }
   if (action === 'fill' || action === 'select' || action === 'assertText') return { action, selector: '', value: '' }
+  if (action === 'upload') return { action, selector: '', fixtures: [] }
+  if (action === 'switchPage') return { action, page: 'popup:1' }
   return { action, selector: '' }
 }
 export function ScenarioEditor({
@@ -75,6 +92,9 @@ export function ScenarioEditor({
   const [trace, setTrace] = useState(scenario?.captureTrace ?? false)
   const [healing, setHealing] = useState<QaHealingMode>(scenario?.healing ?? 'warn')
   const [timeout, setTimeout] = useState(scenario?.timeoutMs ?? 15000)
+  const [followRedirects, setFollowRedirects] = useState(() => scenarioFormFields(scenario).followRedirects)
+  const [fixtures, setFixtures] = useState<QaFixture[]>(() => scenarioFormFields(scenario).fixtures)
+  const [networkProfile, setNetworkProfile] = useState<QaNetworkProfile | ''>(scenario?.networkProfile ?? '')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   useEffect(
@@ -102,30 +122,24 @@ export function ScenarioEditor({
       window.clearInterval(timer)
     }
   }, [recording?.status])
+  // Pure form logic (lib/scenarioForm.ts): fields this editor does not show keep their saved values.
   const draft = (): ScenarioInput =>
-    ScenarioInputSchema.parse({
-      workspaceId,
-      name: name || 'Recorded scenario',
+    scenarioDraft(scenario, workspaceId, {
+      name,
       profileId,
-      gatewayId: gatewayId || null,
+      gatewayId,
       startUrl,
-      allowedOrigins: origins.trim()
-        ? origins
-            .split('\n')
-            .map((origin) => origin.trim())
-            .filter(Boolean)
-        : [startUrl],
+      origins,
+      masks,
       steps,
-      variables: JSON.parse(variables),
-      datasets: JSON.parse(datasets),
-      maskSelectors: masks
-        .split('\n')
-        .map((mask) => mask.trim())
-        .filter(Boolean),
-      captureTrace: trace,
+      variables,
+      datasets,
+      trace,
       healing,
-      timeoutMs: timeout,
-      visualKey: scenario?.visualKey,
+      timeout,
+      followRedirects,
+      fixtures,
+      networkProfile,
     })
   const record = async (): Promise<void> => {
     setRecordBusy(true)
@@ -247,6 +261,14 @@ export function ScenarioEditor({
             ]}
           />
         </Field>
+        <Switch
+          id="qa-follow-redirects"
+          className="md:col-span-2"
+          checked={followRedirects}
+          onChange={setFollowRedirects}
+          label="Follow redirects within approved sites"
+          description="HTTP redirects are followed only while every hop stays on an approved origin. Turn off to block every document redirect."
+        />
         <Field
           htmlFor="qa-origins"
           label="Approved origins"
@@ -261,6 +283,7 @@ export function ScenarioEditor({
         >
           <Textarea id="qa-masks" value={masks} onChange={(event) => setMasks(event.target.value)} rows={2} />
         </Field>
+        <NetworkProfileField value={networkProfile} onChange={setNetworkProfile} />
       </div>
       <details className="rounded-md border border-border p-3">
         <summary className="cursor-pointer text-sm font-semibold">Variables and datasets</summary>
@@ -367,6 +390,14 @@ export function ScenarioEditor({
           </div>
         ) : null}
       </section>
+      <FixturesPanel
+        fixtures={fixtures}
+        steps={steps}
+        onChange={(next) => {
+          setFixtures(next.fixtures)
+          setSteps(next.steps)
+        }}
+      />
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-semibold">Test steps</legend>
         {steps.map((step, index) => (
@@ -374,7 +405,7 @@ export function ScenarioEditor({
             <span className="w-5 text-xs text-muted-foreground">{index + 1}</span>
             <Select
               aria-label={`Step ${index + 1} action`}
-              className="w-44"
+              className="w-56"
               value={step.action}
               options={ACTIONS.map((action) => ({ value: action, label: LABELS[action] }))}
               onChange={(event) => updateStep(index, newStep(event.target.value as QaStep['action']))}
@@ -388,6 +419,7 @@ export function ScenarioEditor({
                 onChange={(event) => updateStep(index, { ...step, selector: event.target.value })}
               />
             ) : null}
+            <StepExtraFields step={step} index={index} fixtures={fixtures} onChange={(updated) => updateStep(index, updated)} />
             {'fallbacks' in step && step.fallbacks?.length ? (
               <span
                 className="text-xs text-muted-foreground"
@@ -435,6 +467,7 @@ export function ScenarioEditor({
                 }
               />
             ) : null}
+            {isCheckStep(step) ? <CheckStepFields index={index} step={step} onChange={(updated) => updateStep(index, updated)} /> : null}
             <Button
               size="sm"
               variant="ghost"

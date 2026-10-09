@@ -333,14 +333,14 @@ describe('v1.3.0 QA configuration backup', () => {
   })
 
   it('never switches a backup profile to another provider: an unknown provider is refused by name', async () => {
-    const bytes = await encryptRawBackup({ ...v130Backup, profiles: [{ ...V130_PROFILE, providerId: 'brightdata' }] }, 'a-long-test-passphrase')
+    const bytes = await encryptRawBackup({ ...v130Backup, profiles: [{ ...V130_PROFILE, providerId: 'unknown-provider' }] }, 'a-long-test-passphrase')
     const configuration = await decryptBackup(bytes, 'a-long-test-passphrase')
     const db = openDatabase(':memory:', { defaultScreenshotDir: '/tmp/shots', env: {} })
     try {
       const registry = new ProviderRegistry({ ipChecker: { lookup: async () => Promise.reject(new Error('offline')) }, logger: quietLogger })
       for (const dialect of BUILT_IN_DIALECTS) registry.register(dialect)
       const profiles = createProfileManager({ repo: db.profiles, logger: quietLogger, providers: registry })
-      expect(() => restoreConfiguration(db.qa!, profiles, configuration)).toThrowError(/proxy provider "brightdata" is not supported/)
+      expect(() => restoreConfiguration(db.qa!, profiles, configuration)).toThrowError(/proxy provider "unknown-provider" is not supported/)
       expect(db.profiles.list()).toEqual([])
     } finally {
       db.close()

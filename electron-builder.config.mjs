@@ -15,6 +15,11 @@
  *   re-extracts its whole payload to %TEMP% on EVERY launch, so bundling the
  *   browsers would add 30–90 s per start. Set PROXY_QA_BUNDLE_BROWSERS=1
  *   (`npm run build:windows:bundled`) to ship build/browsers/win64 anyway.
+ * - macOS (DMG + ZIP, arm64 and x64 built separately) is slim like Windows:
+ *   the browsers download into <userData>/data/browsers on first run.
+ *   Signing and notarization are enabled only by complete Apple credential sets
+ *   in the environment (scripts/mac-signing.mjs); otherwise the build is
+ *   ad-hoc signed and Gatekeeper asks the user to allow it.
  *
  * The app picks the bundled directory up at runtime through
  * src/main/browser/browsers-path.ts (env → bundled → provisioned → dev cache).
@@ -23,6 +28,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { macSigning } from './scripts/mac-signing.mjs'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 /**
@@ -47,11 +54,43 @@ const notes = releaseNotes[version] ?? releaseNotes[packageVersion] ?? []
 
 const BUNDLE_WINDOWS_BROWSERS = process.env.PROXY_QA_BUNDLE_BROWSERS === '1'
 
+/**
+ * Windows code signing through Azure Trusted Signing, enabled only when all four values are set
+ * (CI passes them from repository secrets). Authentication uses AZURE_TENANT_ID, AZURE_CLIENT_ID and
+ * AZURE_CLIENT_SECRET, read by electron-builder itself. See docs/DISTRIBUTION.md → Code signing.
+ */
+const azureSigningValues = {
+  endpoint: process.env.PROXY_QA_AZURE_SIGN_ENDPOINT?.trim(),
+  codeSigningAccountName: process.env.PROXY_QA_AZURE_SIGN_ACCOUNT?.trim(),
+  certificateProfileName: process.env.PROXY_QA_AZURE_SIGN_PROFILE?.trim(),
+  publisherName: process.env.PROXY_QA_AZURE_SIGN_PUBLISHER?.trim(),
+}
+const azureSigningSet = Object.values(azureSigningValues).filter(Boolean).length
+if (azureSigningSet > 0 && azureSigningSet < 4)
+  throw new Error('Azure Trusted Signing needs PROXY_QA_AZURE_SIGN_ENDPOINT, _ACCOUNT, _PROFILE and _PUBLISHER together.')
+if (azureSigningSet === 4 && testKeyFile) throw new Error('Update smoke builds are never signed.')
+const azureSignOptions = azureSigningSet === 4 ? azureSigningValues : null
+
 // Whole argv (not sliced): argv[0]/argv[1] are the node/CLI paths and can never equal a flag.
 const argv = process.argv
-const buildingLinux =
-  argv.some((a) => a === '--linux' || a === '-l' || a.startsWith('--linux=')) ||
-  (!argv.some((a) => a === '--win' || a === '-w' || a === '--mac' || a === '-m') && process.platform === 'linux')
+const platformFlag = (long, short) => argv.some((a) => a === long || a === short || a.startsWith(`${long}=`))
+// electron-builder's aliases: --mac/-m/--macos/-o, --win/-w/--windows, --linux/-l.
+const macFlag = platformFlag('--mac', '-m') || platformFlag('--macos', '-o')
+const anyPlatformFlag = platformFlag('--linux', '-l') || platformFlag('--win', '-w') || platformFlag('--windows', '-w') || macFlag
+const buildingLinux = platformFlag('--linux', '-l') || (!anyPlatformFlag && process.platform === 'linux')
+const buildingMac = macFlag || (!anyPlatformFlag && process.platform === 'darwin')
+
+/**
+ * Apple credentials are validated only for macOS builds (a Linux or Windows build never reads them);
+ * a partial set is refused there. See scripts/mac-signing.mjs and docs/DISTRIBUTION.md → macOS.
+ */
+const macSigningSettings = buildingMac
+  ? macSigning(process.env, { signedRelease: process.env.PROXY_QA_SIGNED_RELEASE === '1', testBuild: Boolean(testKeyFile) })
+  : macSigning({})
+if (buildingMac)
+  process.stderr.write(
+    `macOS signing: ${macSigningSettings.mode}${macSigningSettings.notarization ? ` (notarization: ${macSigningSettings.notarization})` : ''}\n`,
+  )
 
 /**
  * An extraResources entry that is included only when its source directory
@@ -145,9 +184,30 @@ const config = {
     icon: 'build/icons/icon.ico',
     artifactName: '${productName}-${version}-Windows-${arch}.${ext}',
     extraResources: windowsExtraResources,
+    ...(azureSignOptions ? { azureSignOptions } : {}),
   },
   portable: {
     artifactName: '${productName}-${version}-Windows-x64.${ext}',
+  },
+  // macOS: a DMG (drag to Applications) and a ZIP per architecture. Separate arm64/x64 builds rather
+  // than one universal app: Playwright downloads per-architecture browsers anyway, and each download
+  // stays half the size. Browsers are provisioned on first run, as on Windows.
+  mac: {
+    target: [
+      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'zip', arch: ['arm64', 'x64'] },
+    ],
+    category: 'public.app-category.developer-tools',
+    icon: 'build/icons/icon.icns',
+    artifactName: '${productName}-${version}-macOS-${arch}.${ext}',
+    darkModeSupport: true,
+    // Electron 38+ supports macOS 12 (Monterey) and later.
+    minimumSystemVersion: '12.0',
+    extraResources: [geonamesResource],
+    ...macSigningSettings.options,
+  },
+  dmg: {
+    artifactName: '${productName}-${version}-macOS-${arch}.${ext}',
   },
   publish: null,
   ...(process.env.PROXY_QA_SIGNED_RELEASE === '1' ? { forceCodeSigning: true } : {}),

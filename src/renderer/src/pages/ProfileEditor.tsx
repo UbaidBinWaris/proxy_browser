@@ -35,7 +35,7 @@ import {
 } from '@/lib/profileForm'
 import type { ProfileFormErrors, ProfileFormState } from '@/lib/profileForm'
 import { TARGET_MODE_OPTIONS, countryTarget, describeTarget, geoTargetFromEntry, timezoneForState } from '@/lib/targeting'
-import { configuredProductKeys, findProvider, productKeys, providerProductLabel, proxyModeLabel, selectableProviders, supportedTargetModes } from '@/lib/providers'
+import { configuredProductKeys, findProvider, productKeys, providerOptionLabel, providerProductLabel, proxyModeLabel, selectableProviders, supportedTargetModes } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useLocationsStore } from '@/stores/locations'
@@ -293,7 +293,7 @@ export function ProfileEditorPage(): React.JSX.Element {
   const saveBlocked = engineConflict !== null
   const providerName = provider?.displayName ?? form.providerId
   // Only providers with saved credentials are offered (plus the profile's own, so it stays visible).
-  const providerOptions = selectableProviders(providers, form.providerId).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))
+  const providerOptions = selectableProviders(providers, form.providerId).map((candidate) => ({ value: candidate.id, label: providerOptionLabel(candidate) }))
   if (!providerOptions.some((option) => option.value === form.providerId)) providerOptions.push({ value: form.providerId, label: `${form.providerId} · not supported by this version` })
   const modeOptions = PROXY_MODES.filter((mode) => mode !== 'sticky' || provider?.capabilities.sticky.supported !== false || form.proxyMode === 'sticky').map((mode) => ({
     value: mode,

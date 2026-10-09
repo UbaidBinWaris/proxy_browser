@@ -7,6 +7,8 @@
  *   build/icons/256.png                  256×256 RGBA PNG
  *   build/icons/icon.ico                 multi-size ICO (16, 24, 32, 48, 64, 128, 256; PNG-compressed
  *                                        entries, valid on Windows Vista and later)
+ *   build/icons/icon.icns                macOS icon family (16–512 pt plus the @2x Retina variants up to
+ *                                        1024 px; PNG elements, the format `iconutil` writes since 10.7)
  *   src/renderer/src/assets/app-icon.png 64×64 RGBA PNG (sidebar / setup / keys window header)
  *
  * Each size is rendered in a page of exactly that size and captured with a transparent
@@ -28,9 +30,25 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ICONS_DIR = join(ROOT, 'build', 'icons')
 const RENDERER_ASSET = join(ROOT, 'src', 'renderer', 'src', 'assets', 'app-icon.png')
 
-/** Every size rasterized; the ICO embeds all of them up to 256. */
-export const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512]
+/** Every size rasterized; the ICO embeds all of them up to 256, the ICNS its own subset up to 1024. */
+export const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024]
 export const ICO_SIZES = ICON_SIZES.filter((size) => size <= 256)
+/**
+ * ICNS element types with PNG payloads and their pixel sizes: `icp4`/`icp5` are 16/32 pt at 1x,
+ * `ic11`–`ic14` and `ic10` the Retina (@2x) variants of 16, 32, 128, 256 and 512 pt.
+ */
+export const ICNS_ENTRIES = [
+  ['icp4', 16],
+  ['icp5', 32],
+  ['ic11', 32],
+  ['ic12', 64],
+  ['ic07', 128],
+  ['ic13', 256],
+  ['ic08', 256],
+  ['ic14', 512],
+  ['ic09', 512],
+  ['ic10', 1024],
+]
 /** Sizes drawn from the simplified source (heavier strokes, larger badge). */
 export const SMALL_ICON_MAX = 32
 
@@ -145,6 +163,42 @@ export function readIco(ico) {
 }
 
 // ---------------------------------------------------------------------------
+// ICNS (PNG elements)
+// ---------------------------------------------------------------------------
+
+/** Pack `{ type, png }` elements into an ICNS container (big-endian lengths that include each 8-byte header). */
+export function encodeIcns(elements) {
+  const parts = elements.map(({ type, png }) => {
+    if (!/^[a-z0-9]{4}$/i.test(type)) throw new Error(`Invalid ICNS element type: ${type}`)
+    const header = Buffer.alloc(8)
+    header.write(type, 0, 'ascii')
+    header.writeUInt32BE(png.length + 8, 4)
+    return Buffer.concat([header, png])
+  })
+  const header = Buffer.alloc(8)
+  header.write('icns', 0, 'ascii')
+  header.writeUInt32BE(8 + parts.reduce((total, part) => total + part.length, 0), 4)
+  return Buffer.concat([header, ...parts])
+}
+
+/** Elements of an ICNS file; throws when the container or an element length is inconsistent. */
+export function readIcns(icns) {
+  if (icns.length < 8 || icns.subarray(0, 4).toString('ascii') !== 'icns' || icns.readUInt32BE(4) !== icns.length) {
+    throw new Error('Not an ICNS file')
+  }
+  const elements = []
+  let offset = 8
+  while (offset < icns.length) {
+    const type = icns.subarray(offset, offset + 4).toString('ascii')
+    const length = offset + 8 <= icns.length ? icns.readUInt32BE(offset + 4) : 0
+    if (length < 8 || offset + length > icns.length) throw new Error(`Corrupt ICNS element ${type}`)
+    elements.push({ type, data: icns.subarray(offset + 8, offset + length) })
+    offset += length
+  }
+  return elements
+}
+
+// ---------------------------------------------------------------------------
 // Rasterization (Playwright Chromium)
 // ---------------------------------------------------------------------------
 
@@ -197,6 +251,7 @@ async function main() {
     [join(ICONS_DIR, 'icon.png'), png(512)],
     [join(ICONS_DIR, '256.png'), png(256)],
     [join(ICONS_DIR, 'icon.ico'), encodeIco(ICO_SIZES.map((size) => ({ png: png(size), size })))],
+    [join(ICONS_DIR, 'icon.icns'), encodeIcns(ICNS_ENTRIES.map(([type, size]) => ({ type, png: png(size) })))],
     [RENDERER_ASSET, png(64)],
   ]
   for (const [target, data] of files) {

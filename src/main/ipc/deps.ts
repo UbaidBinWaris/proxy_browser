@@ -1,3 +1,4 @@
+import type { UpdateAvailability } from '@shared/desktop'
 import type { DesktopIntegration } from '../desktop/integration'
 /**
  * Everything the IPC layer needs from the rest of the main process.
@@ -54,7 +55,9 @@ export interface IpcDeps {
   qa?: QaService
   gateways?: GatewayManager
   updates?: UpdateManager
-  files?: { chooseBackup(): Promise<string | null>; chooseUsb?(): Promise<string | null> }
+  /** Latest startup update-check result of this run (src/main/releases/startup-check.ts). */
+  updateAvailability?: () => UpdateAvailability | null
+  files?: { chooseBackup(): Promise<string | null>; chooseUsb?(): Promise<string | null>; chooseFixture?(): Promise<string | null> }
   app: IpcAppInfoSource
   shell: IpcShell
   paths: AppPaths

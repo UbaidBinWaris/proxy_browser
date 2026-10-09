@@ -17,7 +17,7 @@ import { CredentialsForm } from '@/components/CredentialsForm'
 import { useEvent } from '@/hooks/useEvent'
 import { KEYS_ACTIVITY_EVENTS, KEYS_INACTIVITY_TIMEOUT_MS, createInactivityTracker, inactivityNote } from '@/lib/keysWindow'
 import type { InactivityTracker } from '@/lib/keysWindow'
-import { findProvider, productKeys, productLabelFor, providerProductLabel } from '@/lib/providers'
+import { findProvider, productKeys, productLabelFor, providerOptionLabel, providerProductLabel, providerVerificationNote } from '@/lib/providers'
 import { lastPoolTest, poolStatusFor, supportsPartialUpdate } from '@/lib/proxyKeys'
 import { relativeTime } from '@/lib/security'
 import { CREDENTIAL_SOURCE_META } from '@/lib/setup'
@@ -133,12 +133,12 @@ export function KeysWindowPage(): React.JSX.Element {
 
         {configError ? <ErrorAlert error={configError} title="Could not read the proxy configuration" onRetry={() => void loadConfig()} compact /> : null}
 
-        <Field htmlFor="keys-provider" label="Provider" hint={provider ? `Parameter reference: ${provider.docsUrl}` : undefined}>
+        <Field htmlFor="keys-provider" label="Provider" hint={provider ? `${providerVerificationNote(provider) ? `${providerVerificationNote(provider)}. ` : ''}Parameter reference: ${provider.docsUrl}` : undefined}>
           <Select
             id="keys-provider"
             value={provider?.id ?? providerId}
             onChange={(e) => changeProvider(e.target.value)}
-            options={(providers ?? []).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+            options={(providers ?? []).map((candidate) => ({ value: candidate.id, label: providerOptionLabel(candidate) }))}
             disabled={providers === null || busy !== null}
             aria-describedby={provider ? 'keys-provider-hint' : undefined}
           />

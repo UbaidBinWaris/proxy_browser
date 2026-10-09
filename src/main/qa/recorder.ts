@@ -1,48 +1,102 @@
 import { randomUUID } from 'node:crypto'
-import { QaStepSchema, ScenarioInputSchema } from '@shared/qa'
-import type { QaRecording, QaStep, ScenarioInput } from '@shared/qa'
-import type { BrowserContext } from 'playwright-core'
+import { ScenarioInputSchema } from '@shared/qa'
+import type { QaRecording, ScenarioInput } from '@shared/qa'
+import { QA_MAX_FRAME_DEPTH } from '@shared/qa-targets'
+import type { BrowserContext, Frame, Page } from 'playwright-core'
 import type { Profile, ProfileInput } from '@shared/types'
 import type { ProfileManager } from '../contracts'
 import { AppException } from '../contracts'
 import { navigationGuard } from './navigation'
-import { isHealableStep, normalizeFallbacks } from './healing'
+import { RECORDING_START_WARNING, addRecordingWarning, captureAction, captureNavigation, unapprovedFrameOrigin } from './recorder-capture'
 import { resolveScenario } from './variables'
 import { redactUrl } from '../security/data-privacy'
 
-/** Only DOM recording is exposed to the site. It has no filesystem or app IPC access. */
+/** Runs in the PARENT document of a recorded frame: a stable selector for the iframe element. */
+function iframeSelector(element: Element): string {
+  const doc = element.ownerDocument
+  const unique = (candidate: string): boolean => doc.querySelectorAll(candidate).length === 1
+  const tag = element.localName
+  if (element.id && unique(`#${CSS.escape(element.id)}`)) return `#${CSS.escape(element.id)}`
+  for (const attribute of ['data-testid', 'name', 'title']) {
+    const value = element.getAttribute(attribute)
+    const candidate = `${tag}[${attribute}="${CSS.escape(value ?? '')}"]`
+    if (value && unique(candidate)) return candidate
+  }
+  const parts: string[] = []
+  let current: Element | null = element
+  while (current) {
+    const name = current.localName
+    const siblings: Element[] = current.parentElement
+      ? Array.from(current.parentElement.children).filter((item) => item.localName === name)
+      : [current]
+    parts.unshift(`${name}:nth-of-type(${siblings.indexOf(current) + 1})`)
+    if (unique(parts.join(' > '))) break
+    current = current.parentElement
+  }
+  return parts.join(' > ')
+}
+
+/** Iframe selectors from the top document down to `frame`, or null when nested too deeply. */
+async function recordFramePath(frame: Frame): Promise<string[] | null> {
+  const path: string[] = []
+  for (let current = frame; current.parentFrame(); current = current.parentFrame()!) {
+    if (path.length >= QA_MAX_FRAME_DEPTH) return null
+    const element = await current.frameElement()
+    try {
+      path.unshift(await element.evaluate(iframeSelector))
+    } finally {
+      await element.dispose().catch(() => undefined)
+    }
+  }
+  return path
+}
+
+/**
+ * Only DOM recording is exposed to the site. It has no filesystem or app IPC access. Events from the
+ * main page, its frames and its pop-ups are recorded when every document from the event's frame up
+ * to the top is on an approved origin; the frame path and page come from Playwright, never the page.
+ */
 export async function attachRecorder(
   context: BrowserContext,
   allowedOrigins: string[],
   recording: QaRecording,
 ): Promise<void> {
   const binding = `qaRecord_${randomUUID().replaceAll('-', '')}`
-  await context.exposeBinding(binding, ({ page, frame }, raw: unknown) => {
-    if (
-      recording.status !== 'recording' ||
-      frame !== page.mainFrame() ||
-      !allowedOrigins.includes(new URL(frame.url()).origin)
-    )
-      return
-    // Fallbacks are validated one by one so a malformed candidate from the page never drops the step.
-    const { fallbacks: rawFallbacks, ...rest } =
-      raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : ({} as Record<string, unknown>)
-    const parsed = QaStepSchema.safeParse(rest)
-    if (!parsed.success || !isHealableStep(parsed.data)) return
-    const fallbacks = normalizeFallbacks(parsed.data.selector, rawFallbacks)
-    const step: QaStep = fallbacks.length ? { ...parsed.data, fallbacks } : parsed.data
-    const previous = recording.steps.at(-1)
-    if (step.action === 'fill' && previous?.action === 'fill' && previous.selector === step.selector) {
-      recording.steps[recording.steps.length - 1] = step
+  // In opening order: the recorder's main page first, then pop-ups (popup:1 …), as the executor numbers them.
+  const pages: Page[] = []
+  context.on('page', (opened) => pages.push(opened))
+  const record = async (page: Page, frame: Frame, raw: unknown): Promise<void> => {
+    if (recording.status !== 'recording') return
+    const chain: Frame[] = []
+    for (let current: Frame | null = frame; current; current = current.parentFrame()) chain.push(current)
+    const top = chain.at(-1)!.url()
+    if (!top.startsWith('http') || unapprovedFrameOrigin([top], allowedOrigins)) return
+    const origin = unapprovedFrameOrigin(chain.map((item) => item.url()), allowedOrigins)
+    if (origin) {
+      addRecordingWarning(recording, `Actions inside a frame from an unapproved origin (${origin}) were not recorded.`)
       return
     }
-    if (recording.steps.length < 100) recording.steps.push(step)
-    else if (!recording.warnings.includes('Recording reached the 100-step limit.'))
-      recording.warnings.push('Recording reached the 100-step limit.')
+    const path = frame === page.mainFrame() ? undefined : await recordFramePath(frame)
+    if (path === null) {
+      addRecordingWarning(recording, `Actions in frames nested more than ${QA_MAX_FRAME_DEPTH} levels deep were not recorded.`)
+      return
+    }
+    captureAction(recording, raw, { pageIndex: pages.indexOf(page), ...(path ? { frame: path } : {}) })
+  }
+  // Events are handled one at a time so asynchronous frame lookups never reorder steps.
+  let queue: Promise<void> = Promise.resolve()
+  await context.exposeBinding(binding, ({ page, frame }, raw: unknown) => {
+    queue = queue.then(() => record(page, frame, raw)).catch(() => undefined)
+    return queue
   })
   await context.addInitScript(
     ({ binding }) => {
-      if (window.top !== window) return
+      // Listeners live on the window: a pop-up's first document reuses the window of its initial about:blank
+      // page, and some engines do not run init scripts again for it. Install once per window.
+      const installed = Symbol.for(binding)
+      const flags = window as unknown as Record<symbol, boolean>
+      if (flags[installed]) return
+      flags[installed] = true
       const send = (step: unknown): void => {
         void (window as unknown as Record<string, (step: unknown) => Promise<void>>)[binding]!(step).catch(
           () => undefined,
@@ -139,7 +193,7 @@ export async function attachRecorder(
         found.push({ kind: 'css', value: path(element) })
         return found
       }
-      document.addEventListener(
+      window.addEventListener(
         'input',
         (event) => {
           const target = event.target
@@ -154,13 +208,23 @@ export async function attachRecorder(
         },
         true,
       )
-      document.addEventListener(
+      window.addEventListener(
         'change',
         (event) => {
           const target = event.target
           if (!event.isTrusted || !(target instanceof Element) || target.closest('[data-qa-sensitive]')) return
           if (target instanceof HTMLSelectElement && !target.multiple)
             send({ action: 'select', selector: selector(target), value: target.value, fallbacks: fallbacks(target) })
+          // File chooser: only the chosen files' names (browsers never expose their paths); never the content.
+          if (target instanceof HTMLInputElement && target.type === 'file' && target.files?.length)
+            send({
+              action: 'upload',
+              selector: selector(target),
+              fixtures: Array.from(target.files)
+                .slice(0, 5)
+                .map((file) => file.name),
+              fallbacks: fallbacks(target),
+            })
           if (target instanceof HTMLInputElement && ['checkbox', 'radio'].includes(target.type))
             send({
               action: target.checked ? 'check' : 'uncheck',
@@ -170,7 +234,7 @@ export async function attachRecorder(
         },
         true,
       )
-      document.addEventListener(
+      window.addEventListener(
         'click',
         (event) => {
           if (!event.isTrusted || !(event.target instanceof Element)) return
@@ -225,9 +289,7 @@ export function createRecorderManager(options: {
           id: randomUUID(),
           status: 'recording',
           steps: [],
-          warnings: [
-            'Password fields and data-qa-sensitive fields are excluded. Add assertions after recording. Only the main page is recorded; frames and pop-ups need manual steps.',
-          ],
+          warnings: [RECORDING_START_WARNING],
         }
         const recording = state
         const cleanup = async (): Promise<void> => {
@@ -245,7 +307,7 @@ export function createRecorderManager(options: {
         await session.context.route(
           '**/*',
           navigationGuard(scenario.allowedOrigins, scenario.timeoutMs, (message) => {
-            if (recording.warnings.length < 20) recording.warnings.push(message)
+            addRecordingWarning(recording, message)
           }),
         )
         const page = await session.context.newPage()
@@ -258,12 +320,7 @@ export function createRecorderManager(options: {
             return
           const url = frame.url()
           if (!scenario.allowedOrigins.includes(new URL(url).origin)) return
-          if (
-            recording.status === 'recording' &&
-            !['click', 'goto'].includes(recording.steps.at(-1)?.action ?? '') &&
-            recording.steps.length < 100
-          )
-            recording.steps.push({ action: 'goto', value: redactUrl(url) })
+          captureNavigation(recording, redactUrl(url))
         })
         page.on('close', () => {
           if (recording.status === 'recording') void cleanup().catch(() => undefined)

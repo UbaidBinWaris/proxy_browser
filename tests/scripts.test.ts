@@ -34,7 +34,46 @@ interface BuilderConfig {
     extraResources?: ExtraResource[]
   }
   portable: { artifactName: string }
+  mac: {
+    target: Array<{ target: string; arch: string[] }>
+    category: string
+    icon: string
+    artifactName: string
+    minimumSystemVersion: string
+    extraResources: ExtraResource[]
+    identity?: string | null
+    hardenedRuntime: boolean
+    notarize: boolean
+    entitlements?: string
+    entitlementsInherit?: string
+    gatekeeperAssess?: boolean
+  }
+  dmg: { artifactName: string }
 }
+
+/** Every Apple/certificate variable blanked, so a developer's or runner's own environment cannot leak in. */
+const APPLE_VARS = [
+  'CSC_LINK',
+  'CSC_KEY_PASSWORD',
+  'APPLE_ID',
+  'APPLE_APP_SPECIFIC_PASSWORD',
+  'APPLE_TEAM_ID',
+  'APPLE_API_KEY',
+  'APPLE_API_KEY_ID',
+  'APPLE_API_ISSUER',
+  'APPLE_KEYCHAIN',
+  'APPLE_KEYCHAIN_PROFILE',
+  'PROXY_QA_SIGNED_RELEASE',
+  'PROXY_QA_TEST_PUBLIC_KEY_FILE',
+  'PROXY_QA_TEST_OUTPUT',
+  'PROXY_QA_TEST_VERSION',
+]
+function appleEnv(values: Record<string, string> = {}): NodeJS.ProcessEnv {
+  return { ...Object.fromEntries(APPLE_VARS.map((name) => [name, ''])), ...values }
+}
+const CERTIFICATE = { CSC_LINK: '/secure/developer-id.p12', CSC_KEY_PASSWORD: 'p12-password' }
+const API_KEY = { APPLE_API_KEY: '/secure/AuthKey_ABC.p8', APPLE_API_KEY_ID: 'ABC123', APPLE_API_ISSUER: '00000000-0000-0000-0000-000000000000' }
+const APPLE_ID = { APPLE_ID: 'release@example.test', APPLE_APP_SPECIFIC_PASSWORD: 'abcd-efgh-ijkl-mnop', APPLE_TEAM_ID: 'TEAM123456' }
 
 function node(args: string[], env: NodeJS.ProcessEnv = {}): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env } })
@@ -56,6 +95,9 @@ describe('scripts syntax', () => {
     'build-windows-bundled.mjs',
     'build-all.mjs',
     'make-icons.mjs',
+    'mac-signing.mjs',
+    'macos-smoke.mjs',
+    'release-asset.mjs',
   ])('%s parses with node --check', (file) => {
     const result = node(['--check', join(SCRIPTS, file)])
     expect(result.status, result.stderr).toBe(0)
@@ -110,13 +152,25 @@ describe('bundle-browsers.mjs', () => {
     expect(missing.status).toBe(2)
     expect(missing.stderr).toContain('--platform is required')
 
-    const unknown = node([script, '--platform', 'macos'])
+    const unknown = node([script, '--platform', 'beos'])
     expect(unknown.status).toBe(2)
-    expect(unknown.stderr).toContain('Unknown platform "macos"')
+    expect(unknown.stderr).toContain('Unknown platform "beos"')
 
     const stray = node([script, '--platform', 'linux', '--bogus'])
     expect(stray.status).toBe(2)
     expect(stray.stderr).toContain('Unknown argument: --bogus')
+  })
+
+  it('explicitly skips macOS (browsers download on first run) without touching build/browsers', () => {
+    for (const platform of ['mac', 'macos', 'darwin']) {
+      const result = node([script, '--platform', platform])
+      expect(result.status, platform).toBe(0)
+      expect(result.stdout).toContain('macOS builds do not bundle browsers')
+    }
+    expect(existsSync(join(ROOT, 'build', 'browsers', 'mac'))).toBe(false)
+    const withLibs = node([script, '--platform', 'darwin', '--webkit-libs'])
+    expect(withLibs.status).toBe(2)
+    expect(withLibs.stderr).toContain('--webkit-libs applies to --platform linux only')
   })
 
   it('accepts --webkit-libs for linux only', () => {
@@ -218,6 +272,90 @@ describe('electron-builder.config.mjs packaging targets', () => {
     }
   })
 
+  it('builds macOS as DMG + ZIP for arm64 and x64 with the generated ICNS, slim like Windows', () => {
+    const config = loadBuilderConfig(appleEnv(), ['--mac'])
+    expect(config.mac.target).toEqual([
+      { target: 'dmg', arch: ['arm64', 'x64'] },
+      { target: 'zip', arch: ['arm64', 'x64'] },
+    ])
+    expect(config.mac.category).toBe('public.app-category.developer-tools')
+    expect(config.mac.icon).toBe('build/icons/icon.icns')
+    expect(existsSync(join(ROOT, config.mac.icon))).toBe(true)
+    expect(config.mac.artifactName).toBe('${productName}-${version}-macOS-${arch}.${ext}')
+    expect(config.dmg.artifactName).toBe(config.mac.artifactName)
+    expect(config.mac.minimumSystemVersion).toBe('12.0')
+    // No bundled browsers on macOS: they download into <userData>/data/browsers on first run.
+    expect(config.mac.extraResources).toEqual([{ from: 'resources/geonames', to: 'geonames' }])
+  })
+
+  it('macOS without Apple credentials: ad-hoc signed, no hardened runtime, not notarized', () => {
+    const config = loadBuilderConfig(appleEnv(), ['--mac', 'dir'])
+    expect(config.mac).toMatchObject({ identity: '-', hardenedRuntime: false, notarize: false })
+    expect(config.mac.entitlements).toBeUndefined()
+  })
+
+  it('macOS with a Developer ID certificate signs with the hardened runtime; notarizes only with a complete credential set', () => {
+    const signed = loadBuilderConfig(appleEnv(CERTIFICATE), ['--mac'])
+    expect(signed.mac).toMatchObject({ hardenedRuntime: true, notarize: false, gatekeeperAssess: false, entitlements: 'build/entitlements.mac.plist', entitlementsInherit: 'build/entitlements.mac.plist' })
+    expect('identity' in signed.mac).toBe(false)
+    for (const credentials of [API_KEY, APPLE_ID, { APPLE_KEYCHAIN: '/secure/notary.keychain-db', APPLE_KEYCHAIN_PROFILE: 'proxy-qa' }]) {
+      const notarized = loadBuilderConfig(appleEnv({ ...CERTIFICATE, ...credentials }), ['--mac'])
+      expect(notarized.mac).toMatchObject({ hardenedRuntime: true, notarize: true })
+    }
+    const entitlements = readFileSync(join(ROOT, 'build', 'entitlements.mac.plist'), 'utf8')
+    for (const key of ['com.apple.security.cs.allow-jit', 'com.apple.security.cs.allow-unsigned-executable-memory', 'com.apple.security.network.client'])
+      expect(entitlements).toContain(`<key>${key}</key>`)
+    expect(entitlements).not.toContain('disable-library-validation')
+  })
+
+  it('refuses partial or contradictory Apple credentials for macOS builds (like the Azure signing values)', () => {
+    const refused = (env: Record<string, string>, message: string, argv = ['--mac']): void => {
+      const script = `import(${JSON.stringify(pathToFileURL(BUILDER_CONFIG).href)}).then(() => process.stdout.write('loaded'))`
+      const result = node(['--input-type=module', '-e', script, '--', ...argv], appleEnv(env))
+      expect(result.status, JSON.stringify(env)).not.toBe(0)
+      expect(result.stderr).toContain(message)
+    }
+    refused({ CSC_LINK: CERTIFICATE.CSC_LINK }, 'macOS signing needs CSC_LINK and CSC_KEY_PASSWORD together')
+    refused({ CSC_KEY_PASSWORD: 'x' }, 'macOS signing needs CSC_LINK and CSC_KEY_PASSWORD together', ['-m'])
+    refused({ ...CERTIFICATE, APPLE_ID: APPLE_ID.APPLE_ID }, 'missing APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID')
+    refused({ ...CERTIFICATE, APPLE_API_KEY: API_KEY.APPLE_API_KEY, APPLE_API_KEY_ID: 'ABC123' }, 'missing APPLE_API_ISSUER')
+    refused({ ...CERTIFICATE, ...API_KEY, ...APPLE_ID }, 'Choose one notarization method')
+    refused(API_KEY, 'Notarization needs a Developer ID Application certificate')
+    refused({ PROXY_QA_SIGNED_RELEASE: '1' }, 'PROXY_QA_SIGNED_RELEASE=1 for macOS needs')
+    refused({ ...CERTIFICATE, PROXY_QA_SIGNED_RELEASE: '1' }, 'PROXY_QA_SIGNED_RELEASE=1 for macOS needs')
+    refused({ ...CERTIFICATE, PROXY_QA_TEST_PUBLIC_KEY_FILE: '/tmp/test.pem', PROXY_QA_TEST_OUTPUT: '/tmp/out' }, 'Update smoke builds are never signed')
+    // A signed, notarized release is accepted.
+    const release = loadBuilderConfig(appleEnv({ ...CERTIFICATE, ...API_KEY, PROXY_QA_SIGNED_RELEASE: '1' }), ['--mac'])
+    expect(release.mac.notarize).toBe(true)
+  })
+
+  it('never reads Apple credentials for Linux or Windows builds', () => {
+    const partial = appleEnv({ CSC_LINK: CERTIFICATE.CSC_LINK, APPLE_ID: APPLE_ID.APPLE_ID })
+    expect(loadBuilderConfig(partial, ['--linux']).mac.identity).toBe('-')
+    expect(loadBuilderConfig(partial, ['--win']).mac.identity).toBe('-')
+  })
+
+  it("passes electron-builder's own configuration schema for every platform and signing mode", () => {
+    const validator = join(ROOT, 'node_modules', 'app-builder-lib', 'out', 'util', 'config', 'config.js')
+    const script = [
+      `const { createRequire } = await import('node:module')`,
+      `const { validateConfiguration } = createRequire(${JSON.stringify(validator)})(${JSON.stringify(validator)})`,
+      `const config = (await import(${JSON.stringify(pathToFileURL(BUILDER_CONFIG).href)})).default`,
+      `await validateConfiguration(config, { isEnabled: false, add() {} })`,
+      `process.stdout.write('valid')`,
+    ].join('\n')
+    for (const [argv, env] of [
+      [['--linux'], appleEnv()],
+      [['--win'], appleEnv()],
+      [['--mac'], appleEnv()],
+      [['--mac'], appleEnv({ ...CERTIFICATE, ...API_KEY })],
+    ] as const) {
+      const result = node(['--input-type=module', '-e', script, '--', ...argv], env)
+      expect(result.status, `${argv.join(' ')}: ${result.stderr}`).toBe(0)
+      expect(result.stdout).toBe('valid')
+    }
+  })
+
   it('keeps the asar/unpack/rebuild/publish settings from the YAML config', () => {
     const config = loadBuilderConfig()
     expect(config.productName).toBe('Proxy-QA-Browser')
@@ -241,12 +379,65 @@ describe('package.json build scripts', () => {
     expect(pkg.scripts['build:windows:bundled']).toBe('node scripts/build-windows-bundled.mjs')
   })
 
+  it('builds macOS DMG/ZIP for both architectures, or an unpacked .app for local testing', () => {
+    expect(pkg.scripts['build:mac']).toBe('npm run build && electron-builder --mac --config electron-builder.config.mjs')
+    expect(pkg.scripts['build:mac:dir']).toBe('npm run build && electron-builder --mac dir --config electron-builder.config.mjs')
+  })
+
   it('build-windows-bundled.mjs bundles win64 first and sets PROXY_QA_BUNDLE_BROWSERS=1 for electron-builder', () => {
     const source = readFileSync(join(SCRIPTS, 'build-windows-bundled.mjs'), 'utf8')
     expect(source).toContain("'--platform', 'win64'")
     expect(source).toContain("PROXY_QA_BUNDLE_BROWSERS: '1'")
     expect(source).toContain("'--config', 'electron-builder.config.mjs'")
     expect(source).toContain('process.exit(result.status ?? 1)')
+  })
+})
+
+describe('macOS CI', () => {
+  const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'macos.yml'), 'utf8')
+
+  it('runs on push to main, pull requests and manually, on macos-latest, with read-only permissions', () => {
+    expect(workflow).toMatch(/on:\n\s+pull_request:\n\s+workflow_dispatch:\n\s+push:\n\s+branches: \[main\]/)
+    expect(workflow).toContain('runs-on: macos-latest')
+    expect(workflow).toMatch(/permissions:\n\s+contents: read/)
+  })
+
+  it('pins every action by full commit SHA, the same versions as the Linux workflow', () => {
+    const linux = readFileSync(join(ROOT, '.github', 'workflows', 'linux.yml'), 'utf8')
+    const uses = [...workflow.matchAll(/uses: (\S+)/g)].map((m) => m[1]!)
+    expect(uses.length).toBeGreaterThanOrEqual(3)
+    for (const action of uses) expect(action).toMatch(/^[\w-]+\/[\w-]+@[0-9a-f]{40}$/)
+    for (const action of uses.filter((a) => /^actions\/(checkout|setup-node)@/.test(a))) expect(linux).toContain(action)
+  })
+
+  it('verifies, builds unsigned apps for both architectures and smoke-tests the packaged app without secrets', () => {
+    for (const step of ['npm ci', 'npm run typecheck', 'npm run lint', 'npm test', 'npm run build', 'node scripts/macos-smoke.mjs'])
+      expect(workflow).toContain(step)
+    expect(workflow).toContain('npx electron-builder --mac dmg zip --arm64 --config electron-builder.config.mjs')
+    expect(workflow).toContain('npx electron-builder --mac zip --x64 --config electron-builder.config.mjs')
+    expect(workflow).not.toMatch(/secrets\./)
+    expect(workflow).not.toMatch(/CSC_LINK|APPLE_/)
+  })
+
+  it('is not part of the publishing workflow yet', () => {
+    const deploy = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8')
+    expect(deploy).not.toMatch(/macos-|--mac\b|platform:"darwin"/)
+  })
+
+  it('finds the unpacked .app electron-builder leaves for each architecture', async () => {
+    const { mkdtempSync, mkdirSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { findAppBundle } = (await import(pathToFileURL(join(SCRIPTS, 'macos-smoke.mjs')).href)) as { findAppBundle(dir: string, arch: string): string | null }
+    const release = mkdtempSync(join(tmpdir(), 'mac-release-'))
+    try {
+      expect(findAppBundle(release, 'arm64')).toBeNull()
+      mkdirSync(join(release, 'mac-arm64', 'Proxy-QA-Browser.app'), { recursive: true })
+      mkdirSync(join(release, 'mac', 'Proxy-QA-Browser.app'), { recursive: true })
+      expect(findAppBundle(release, 'arm64')).toBe(join(release, 'mac-arm64', 'Proxy-QA-Browser.app'))
+      expect(findAppBundle(release, 'x64')).toBe(join(release, 'mac', 'Proxy-QA-Browser.app'))
+    } finally {
+      rmSync(release, { recursive: true, force: true })
+    }
   })
 })
 

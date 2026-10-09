@@ -21,6 +21,8 @@
  *   `webkit-libs` extra resource), verifies every soname Playwright's WebKit
  *   needs on non-Ubuntu hosts is present and writes THIRD-PARTY-NOTICES.txt.
  *   Needs `ar` and `tar` (with zstd support) on PATH.
+ * - macOS (`--platform mac`, also `darwin`/`macos`) is explicitly skipped
+ *   with exit code 0: the .app downloads its browsers on first run.
  *
  * Exit codes: 0 ok · 1 download/extraction/verification failure · 2 usage error.
  * The dev cache (~/.cache/ms-playwright) is untouched; use
@@ -60,6 +62,14 @@ const WEBKIT_LIBS_DEB_CACHE = join(ROOT, 'build', 'webkit-libs', 'downloads')
 
 const ENGINES = ['chromium', 'firefox', 'webkit']
 const PLATFORMS = ['linux', 'win64']
+/**
+ * macOS builds are never bundled: like the Windows EXE they download the browsers into
+ * <userData>/data/browsers on first run. Bundling would also put ~1 GB of separately signed
+ * executables inside the .app, which Developer ID signing and notarization would then have to cover.
+ */
+const MAC_PLATFORMS = ['mac', 'macos', 'darwin', 'mac-arm64', 'mac-x64']
+const MAC_SKIP_MESSAGE =
+  'macOS builds do not bundle browsers: the app downloads them into its data folder on first run (as the Windows EXE does). Nothing to do.'
 const INSTALL_MARKER = 'INSTALLATION_COMPLETE'
 const HEADLESS_SHELL_PREFIX = 'chromium_headless_shell-'
 const DEB_LIB_DIR = './usr/lib/x86_64-linux-gnu'
@@ -156,6 +166,11 @@ function parseArgs(argv) {
     }
   }
   if (!options.platform) usage('--platform is required.')
+  if (MAC_PLATFORMS.includes(options.platform)) {
+    if (options.webkitLibs) usage('--webkit-libs applies to --platform linux only.')
+    log(MAC_SKIP_MESSAGE)
+    process.exit(0)
+  }
   if (!PLATFORMS.includes(options.platform)) usage(`Unknown platform "${options.platform}". Valid values: ${PLATFORMS.join(', ')}`)
   if (options.webkitLibs && options.platform !== 'linux') usage('--webkit-libs applies to --platform linux only.')
   return options

@@ -292,6 +292,73 @@ describe('signed USB updates', () => {
   })
 })
 
+describe('update outcome notice', () => {
+  async function prepared() {
+    const f = await fixture()
+    const update = await f.manifest()
+    await f.manager.inspectUsb(update.path)
+    await f.manager.applyUsb()
+    const distribution = f.restart.mock.calls[0]![0] as string
+    const next = createDesktopIntegration({ ...f.options, version: '1.3.0', appImage: distribution, now: () => new Date('2026-10-09T08:00:00.000Z') })
+    return { f, distribution, next }
+  }
+  it('records a success when the new version finishes the pending update, until dismissed', async () => {
+    const { f, next } = await prepared()
+    expect((await next.status()).lastUpdate).toBeNull()
+    expect(await next.finishPendingUpdate()).toBe('finished')
+    expect((await next.status()).lastUpdate).toEqual({
+      version: '1.3.0',
+      status: 'succeeded',
+      message: 'Your shortcuts and local data were kept.',
+      at: '2026-10-09T08:00:00.000Z',
+    })
+    // An older copy opened later does not claim the update.
+    expect((await f.manager.status()).lastUpdate).toBeNull()
+    await next.dismissUpdateNotice()
+    expect((await next.status()).lastUpdate).toBeNull()
+    expect(await next.finishPendingUpdate()).toBe('none')
+  })
+  it('records a user-safe failure, keeps the pending update and finishes it on retry', async () => {
+    const { distribution, next } = await prepared()
+    const original = await readFile(distribution)
+    await writeFile(distribution, 'tampered after restart')
+    await expect(next.finishPendingUpdate()).rejects.toThrow('The prepared USB update has changed.')
+    expect((await next.status()).lastUpdate).toMatchObject({ version: '1.3.0', status: 'failed', message: 'The prepared USB update has changed.' })
+    await expect(next.retryPendingUpdate()).rejects.toThrow('has changed')
+    await writeFile(distribution, original)
+    const after = await next.retryPendingUpdate()
+    expect(after).toMatchObject({ installedVersion: '1.3.0', lastUpdate: { status: 'succeeded', version: '1.3.0' } })
+  })
+  it('retry without a pending update clears a stale failure and says so', async () => {
+    const { f, distribution, next } = await prepared()
+    await writeFile(distribution, 'tampered')
+    await expect(next.finishPendingUpdate()).rejects.toThrow()
+    // The user updated another way (or removed the record): nothing is left to finish.
+    await rm(join(f.options.root, 'pending-usb-update.json'), { force: true })
+    await expect(next.retryPendingUpdate()).rejects.toThrow('No update is waiting to finish')
+    expect((await next.status()).lastUpdate).toBeNull()
+  })
+  it('drops an unreadable pending record and reports it once', async () => {
+    const f = await fixture()
+    await mkdir(f.options.root, { recursive: true })
+    await writeFile(join(f.options.root, 'pending-usb-update.json'), '{broken')
+    await expect(f.manager.finishPendingUpdate()).rejects.toThrow('unreadable')
+    expect((await f.manager.status()).lastUpdate).toMatchObject({ version: '1.2.0', status: 'failed' })
+    await expect(stat(join(f.options.root, 'pending-usb-update.json'))).rejects.toThrow()
+    expect(await f.manager.finishPendingUpdate()).toBe('none')
+  })
+  it('records nothing for a pending update of another file', async () => {
+    const f = await fixture()
+    const update = await f.manifest()
+    await f.manager.inspectUsb(update.path)
+    await f.manager.applyUsb()
+    const other = createDesktopIntegration({ ...f.options, version: '1.3.0' })
+    expect(await other.finishPendingUpdate()).toBe('skipped')
+    expect((await other.status()).lastUpdate).toBeNull()
+    await expect(other.retryPendingUpdate()).rejects.toThrow('another copy')
+  })
+})
+
 it('escapes desktop-entry field codes and reserved characters without invoking a shell', () => {
   const entry = desktopEntry('/home/a b/$quoted"%name.AppImage', '/home/a b/icon.png')
   expect(entry).toContain('Exec="/home/a b/\\\\$quoted\\\\"%%name.AppImage"')

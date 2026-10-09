@@ -1,4 +1,5 @@
 import { ScenarioInputSchema } from '@shared/qa'
+import { resolveCheckStepTemplates } from '@shared/qa-checks'
 import type { QaDatasetSchema, QaEnvironment, ScenarioInput } from '@shared/qa'
 import type { z } from 'zod'
 import { FormUrlSchema } from '@shared/types'
@@ -50,6 +51,8 @@ export function resolveScenario(
         ? { value: step.action === 'goto' ? mapUrl(step.value) : replace(step.value) }
         : {}),
       ...('selector' in step ? { selector: replace(step.selector) } : {}),
+      // Check steps name their selectors and approved wording differently (@shared/qa-checks).
+      ...resolveCheckStepTemplates(step, replace),
       // CSS fallbacks may be a former primary selector that used variables. Other fallback kinds are
       // literal page text captured by the recorder and are never substituted.
       ...('fallbacks' in step && step.fallbacks

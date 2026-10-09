@@ -21,6 +21,7 @@ const settings = {
   defaultTargetCountry: 'us',
   locationMatchPolicy: 'exact' as const,
   locationMatchAttempts: 4,
+  checkUpdatesOnStartup: true,
 }
 
 describe('Chromium flag parsing', () => {

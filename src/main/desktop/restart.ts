@@ -6,6 +6,11 @@
  * check your FUSE setup"). The main process does not have that flag, so on Linux it starts the new
  * release itself and passes its own process id; the new release waits for that process to exit before
  * it takes the single-instance lock. Windows keeps Electron's relauncher.
+ *
+ * macOS also uses Electron's relauncher (`app.relaunch`, which reopens the .app bundle through
+ * LaunchServices). macOS never restarts into a different release today: updates are delivered through
+ * the download page (updateDeliveryFor in src/shared/desktop.ts), so a restart there only reopens the
+ * same bundle.
  */
 
 /** `--proxy-qa-after-exit=<pid>`: wait for that process to exit before starting. */

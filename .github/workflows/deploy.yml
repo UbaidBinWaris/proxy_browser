@@ -1,7 +1,10 @@
 name: Build and deploy browser releases
+# Release by pushing a version tag: `npm run release:version -- minor`, commit, then
+# `git tag v1.5.0 && git push origin v1.5.0`. Pushes to main only run the verification workflows.
+# A manual run (workflow_dispatch) publishes package version + run number, as before.
 on:
   push:
-    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: read
@@ -53,11 +56,30 @@ jobs:
           cache: npm
       - id: version
         run: node scripts/ci-release-version.mjs
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: npm ci
       - run: npm audit --omit=dev
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build:windows
+      - name: Build the Windows EXE (Azure Trusted Signing when its secrets are configured)
+        shell: bash
+        env:
+          PROXY_QA_AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          PROXY_QA_AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          PROXY_QA_AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+          PROXY_QA_AZURE_SIGN_PUBLISHER: ${{ secrets.AZURE_SIGN_PUBLISHER }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          if [ -n "$PROXY_QA_AZURE_SIGN_ENDPOINT" ]; then export PROXY_QA_SIGNED_RELEASE=1; echo "Signing with Azure Trusted Signing"; else echo "No signing secrets configured: building an unsigned EXE"; fi
+          npm run build:windows
       - run: node scripts/windows-smoke.cjs
       - id: asset
         run: node scripts/release-asset.mjs win32
@@ -88,6 +110,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: npm ci
       - run: npm run build
       - run: node scripts/update-smoke.mjs
@@ -119,6 +148,15 @@ jobs:
       - run: npm test
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            build/browsers/linux
+            build/webkit-libs/linux
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          # Exact key only: a partial restore could add old browser revisions to the AppImage.
+          key: linux-bundle-${{ hashFiles('package-lock.json', 'scripts/bundle-browsers.mjs') }}
       - run: npm run build:linux
       - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/computer-setup-smoke.mjs

@@ -41,7 +41,7 @@ import { EngineTaskStatus } from '@/components/tasks/EngineTaskStatus'
 import { CredentialsForm } from '@/components/CredentialsForm'
 import { Field } from '@/components/ui/Field'
 import { Select } from '@/components/ui/Select'
-import { findProvider, productLabelFor, providerProductLabel } from '@/lib/providers'
+import { findProvider, productLabelFor, providerOptionLabel, providerProductLabel } from '@/lib/providers'
 import { useProxyStore } from '@/stores/proxy'
 import { PathRow } from '@/components/SecurityHealthCard'
 import { toAppError } from '@/lib/api'
@@ -492,7 +492,7 @@ function CredentialsStep({
                 setProviderId(e.target.value)
                 setOpenOptional({})
               }}
-              options={providers.map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+              options={providers.map((candidate) => ({ value: candidate.id, label: providerOptionLabel(candidate) }))}
             />
           </Field>
         ) : null}

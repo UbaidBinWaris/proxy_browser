@@ -78,6 +78,7 @@ export type SettingsField =
   | 'defaultTargetCountry'
   | 'locationMatchPolicy'
   | 'locationMatchAttempts'
+  | 'checkUpdatesOnStartup'
 
 export interface SettingsFieldLocation {
   tab: SettingsTab
@@ -88,6 +89,7 @@ export interface SettingsFieldLocation {
 export const SETTINGS_FIELD_LOCATIONS: Record<SettingsField, SettingsFieldLocation> = {
   defaultFormUrl: { tab: 'general', section: null },
   singleSessionMode: { tab: 'general', section: null },
+  checkUpdatesOnStartup: { tab: 'general', section: null },
   defaultProviderId: { tab: 'advanced', section: 'targeting' },
   defaultProxyPool: { tab: 'advanced', section: 'targeting' },
   providerEncodings: { tab: 'advanced', section: 'targeting' },

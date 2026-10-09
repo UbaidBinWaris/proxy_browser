@@ -5,6 +5,9 @@
 # Run (the image has no credentials; pass proxy settings as environment variables only):
 #   docker run --rm --init --ipc=host -v "$PWD:/work" proxy-qa-runner \
 #     --config /work/suite.json --output /work/qa-results
+# MCP server over stdio (docs/MCP-SERVER.md; -i keeps stdin open, never -t):
+#   docker run -i --rm --init --ipc=host -e QA_MCP_ALLOWED_ORIGINS=https://staging.example.com \
+#     --entrypoint node proxy-qa-runner /opt/proxy-qa-runner/out/main/qa-mcp.js
 #
 # The base image MUST match the playwright-core version in package-lock.json so the
 # browsers in /ms-playwright are the revisions playwright-core expects. When
@@ -16,7 +19,7 @@
 ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
 
 # ---------------------------------------------------------------------------
-# build: full dependency tree, compile out/main/qa-cli.js
+# build: full dependency tree, compile out/main/qa-cli.js and out/main/qa-mcp.js
 # ---------------------------------------------------------------------------
 FROM ${PLAYWRIGHT_IMAGE} AS build
 WORKDIR /src
@@ -29,10 +32,10 @@ COPY package.json package-lock.json ./
 # Install scripts are skipped: the CLI build needs no Electron binary and no native addon.
 RUN npm ci --ignore-scripts
 COPY . .
-RUN npm run build && test -f out/main/qa-cli.js
+RUN npm run build && test -f out/main/qa-cli.js && test -f out/main/qa-mcp.js
 
 # ---------------------------------------------------------------------------
-# prod-deps: runtime dependencies only (dotenv, pixelmatch, playwright-core, pngjs, zod)
+# prod-deps: runtime dependencies only (@modelcontextprotocol/sdk, axe-core, dotenv, pixelmatch, playwright-core, pngjs, zod)
 # ---------------------------------------------------------------------------
 FROM ${PLAYWRIGHT_IMAGE} AS prod-deps
 WORKDIR /src
@@ -61,6 +64,8 @@ WORKDIR /opt/proxy-qa-runner
 COPY --from=build /src/package.json ./package.json
 COPY --from=prod-deps /src/node_modules ./node_modules
 COPY --from=build /src/out/main ./out/main
+# US location dataset for the MCP server's search_locations tool (resolved as out/main/../../resources/geonames).
+COPY --from=build /src/resources/geonames ./resources/geonames
 RUN mkdir -p /work && chown pwuser:pwuser /work
 WORKDIR /work
 USER pwuser

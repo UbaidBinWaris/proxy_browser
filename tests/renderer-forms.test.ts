@@ -253,6 +253,8 @@ describe('settings form validation', () => {
     defaultTargetCountry: 'us',
     locationMatchPolicy: 'state' as const,
     locationMatchAttempts: 3,
+    // Off on purpose: saving the form must keep an opt-out instead of restoring the schema default.
+    checkUpdatesOnStartup: false,
   }
 
   it('round-trips valid settings and passes executable overrides through untouched', () => {

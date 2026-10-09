@@ -1,4 +1,4 @@
-import type { DesktopSetupOptions, DesktopStatus, UsbUpdatePreview } from './desktop'
+import type { DesktopSetupOptions, DesktopStatus, UpdateAvailability, UsbUpdatePreview } from './desktop'
 import type { SiteAccessStatus, SiteAccessTokenInput, SiteAccessTokenSummary } from './site-access'
 /**
  * IPC contract between renderer and main.
@@ -66,6 +66,7 @@ import type {
   ScheduleInput,
   UpdateStatus,
 } from './qa'
+import type { QaFixture } from './qa-fixtures'
 
 export const IPC = {
   desktop: {
@@ -76,6 +77,10 @@ export const IPC = {
     chooseUsb: 'desktop:choose-usb',
     applyUsb: 'desktop:apply-usb',
     applyOnline: 'desktop:apply-online',
+    retryPendingUpdate: 'desktop:retry-pending-update',
+    dismissUpdateNotice: 'desktop:dismiss-update-notice',
+    updateAvailability: 'desktop:update-availability',
+    openDownloadPage: 'desktop:open-download-page',
   },
   qa: {
     visualImages: 'qa:visual-images',
@@ -90,6 +95,7 @@ export const IPC = {
     startRecording: 'qa:start-recording',
     recording: 'qa:recording',
     stopRecording: 'qa:stop-recording',
+    chooseFixture: 'qa:choose-fixture',
     saveGateway: 'qa:save-gateway',
     testGateway: 'qa:test-gateway',
     deleteGateway: 'qa:delete-gateway',
@@ -219,6 +225,7 @@ export const EVENTS = {
   tasksUpdate: 'event:tasks-update',
   browserWatch: 'event:browser-watch',
   securityUpdate: 'event:security-update',
+  updateAvailable: 'event:update-available',
 } as const
 
 export type EventChannel = (typeof EVENTS)[keyof typeof EVENTS]
@@ -233,6 +240,8 @@ export interface EventPayloads {
   [EVENTS.tasksUpdate]: Task[]
   [EVENTS.browserWatch]: BrowserWatchUpdate
   [EVENTS.securityUpdate]: SecurityStatus
+  /** Result of the single startup update check (or a remembered one that is still newer). */
+  [EVENTS.updateAvailable]: UpdateAvailability
 }
 
 export type Unsubscribe = () => void
@@ -247,6 +256,14 @@ export interface ProxyQaApi {
     chooseUsb(): Promise<IpcResult<UsbUpdatePreview | null>>
     applyUsb(): Promise<IpcResult<void>>
     applyOnline(): Promise<IpcResult<void>>
+    /** Finish a pending update again after it failed on start (the update notice's Retry). */
+    retryPendingUpdate(): Promise<IpcResult<DesktopStatus>>
+    /** Hide the last update result (status.lastUpdate becomes null). */
+    dismissUpdateNotice(): Promise<IpcResult<void>>
+    /** The startup check's result in this run (null before it finished, when disabled or unconfigured). */
+    updateAvailability(): Promise<IpcResult<UpdateAvailability | null>>
+    /** Open the publisher's download page (macOS updates: status.updateDelivery === 'download-page'). Takes no URL. */
+    openDownloadPage(): Promise<IpcResult<void>>
   }
   qa: {
     visualImages(
@@ -266,6 +283,8 @@ export interface ProxyQaApi {
     startRecording(input: ScenarioInput): Promise<IpcResult<QaRecording>>
     recording(): Promise<IpcResult<QaRecording | null>>
     stopRecording(): Promise<IpcResult<QaRecording | null>>
+    /** Pick a file in a main-process dialog; main reads it once and returns it as an upload fixture (null = cancelled). */
+    chooseFixture(): Promise<IpcResult<QaFixture | null>>
     saveGateway(input: GatewayInput, id?: string): Promise<IpcResult<QaGateway>>
     testGateway(id: string): Promise<IpcResult<QaGateway>>
     deleteGateway(id: string): Promise<IpcResult<void>>

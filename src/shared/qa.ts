@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { BrowserEngineSchema, FormUrlSchema, GeoTargetSchema } from './types'
+import { QaFixtureNameSchema, QaFixturesSchema, missingFixtureNames } from './qa-fixtures'
+import { QaFramePathSchema, QaPageRefSchema } from './qa-targets'
+// Checks (compliance, accessibility, performance) live in ./qa-checks.
+import { QA_CHECK_STEP_SCHEMAS, QaNetworkProfileSchema } from './qa-checks'
+import type { QaCheckResult, QaCheckSummary } from './qa-checks'
 
 const selector = z.string().trim().min(1).max(1000)
 const value = z.string().max(10000)
@@ -45,16 +50,21 @@ export const QaFallbackSchema = z
   })
 export type QaFallback = z.infer<typeof QaFallbackSchema>
 const fallbacks = z.array(QaFallbackSchema).max(4).optional()
+/** Iframe selectors (outermost first) of the frame an action step runs in; absent = the page itself. */
+const frame = QaFramePathSchema.optional()
 export const QA_HEALING_MODES = ['off', 'warn', 'fail'] as const
 export const QaHealingModeSchema = z.enum(QA_HEALING_MODES)
 export type QaHealingMode = z.infer<typeof QaHealingModeSchema>
 export const QaStepSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('goto'), value: templateUrl }),
-  z.object({ action: z.literal('fill'), selector, value, fallbacks }),
-  z.object({ action: z.literal('click'), selector, fallbacks }),
-  z.object({ action: z.literal('select'), selector, value, fallbacks }),
-  z.object({ action: z.literal('check'), selector, fallbacks }),
-  z.object({ action: z.literal('uncheck'), selector, fallbacks }),
+  z.object({ action: z.literal('fill'), selector, value, fallbacks, frame }),
+  z.object({ action: z.literal('click'), selector, fallbacks, frame }),
+  z.object({ action: z.literal('select'), selector, value, fallbacks, frame }),
+  z.object({ action: z.literal('check'), selector, fallbacks, frame }),
+  z.object({ action: z.literal('uncheck'), selector, fallbacks, frame }),
+  // Real-world forms: file uploads (fixtures stored in the scenario) and pop-up windows.
+  z.object({ action: z.literal('upload'), selector, fixtures: z.array(QaFixtureNameSchema).min(1).max(5), fallbacks, frame }),
+  z.object({ action: z.literal('switchPage'), page: QaPageRefSchema }),
   z.object({ action: z.literal('assertVisible'), selector }),
   z.object({ action: z.literal('assertText'), selector, value }),
   z.object({ action: z.literal('assertUrl'), value }),
@@ -64,6 +74,8 @@ export const QaStepSchema = z.discriminatedUnion('action', [
     name: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
     maxDiffRatio: z.number().min(0).max(1).default(0.01),
   }),
+  // Checks: optional additions, so scenarios saved before them stay valid.
+  ...QA_CHECK_STEP_SCHEMAS,
 ])
 export type QaStep = z.infer<typeof QaStepSchema>
 export const ScenarioInputSchema = z
@@ -88,6 +100,16 @@ export const ScenarioInputSchema = z
     maskSelectors: z.array(selector).max(30).default([]),
     captureTrace: z.boolean().default(false),
     healing: QaHealingModeSchema.default('warn'),
+    /**
+     * Follow HTTP document redirects whose every hop stays within `allowedOrigins` (absent = true, so
+     * scenarios saved before this option keep parsing unchanged). false restores strict blocking of
+     * every document redirect. A hop to an unapproved origin is blocked either way.
+     */
+    followRedirects: z.boolean().optional(),
+    /** Files that upload steps attach, stored in the scenario as test data (src/shared/qa-fixtures.ts). */
+    fixtures: QaFixturesSchema.optional(),
+    /** Chromium-only network throttling for every case (checks); other engines record a note and continue. */
+    networkProfile: QaNetworkProfileSchema.optional(),
   })
   .superRefine((input, ctx) => {
     for (const url of [
@@ -106,6 +128,8 @@ export const ScenarioInputSchema = z
       ctx.addIssue({ code: 'custom', message: 'Use a unique name for each screenshot assertion.', path: ['steps'] })
     if (new Set(input.datasets?.map((row) => row.id)).size !== (input.datasets?.length ?? 0))
       ctx.addIssue({ code: 'custom', message: 'Dataset IDs must be unique.', path: ['datasets'] })
+    for (const name of missingFixtureNames(input.steps, input.fixtures))
+      ctx.addIssue({ code: 'custom', message: `Attach the upload fixture ${name}.`, path: ['fixtures'] })
   })
 export type ScenarioInput = z.infer<typeof ScenarioInputSchema>
 export interface QaScenario extends ScenarioInput {
@@ -135,6 +159,21 @@ export interface QaStepResult {
   visual?: QaVisualResult
   /** Present when the primary selector matched nothing and a fallback matched exactly one element. */
   healed?: QaHealedSelector
+  /** Document redirects seen while this step ran, in order. */
+  redirects?: QaRedirectHop[]
+  /** Outcome and evidence of a check step (src/shared/qa-checks.ts). */
+  check?: QaCheckResult
+}
+/** One HTTP document redirect hop recorded as evidence (URLs are redacted). */
+export interface QaRedirectHop {
+  /** Status of the redirect response: 301, 302, 303, 307 or 308. */
+  status: number
+  /** URL that answered with the redirect. */
+  from: string
+  /** Resolved Location, or "(invalid location)". */
+  to: string
+  /** True when the hop was refused (unapproved origin, hop limit, unsafe method, or follow redirects off). */
+  blocked?: boolean
 }
 export interface QaHealedSelector {
   originalSelector: string
@@ -200,6 +239,10 @@ export interface QaExecution {
   durationMs: number
   /** Informational evidence, e.g. 'site access token "Staging" applied to https://staging.example.com' (never a secret). */
   notes?: string[]
+  /** Every document redirect hop of the run (start navigation and steps, all frames), in order; at most 50. */
+  redirects?: QaRedirectHop[]
+  /** One summary per check step that ran, for matrix views (absent when the scenario has no checks). */
+  checks?: QaCheckSummary[]
 }
 export interface QaCase extends QaExecution {
   id: string

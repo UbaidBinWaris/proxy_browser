@@ -102,8 +102,10 @@ export type BrowserEngineSource = (typeof BROWSER_ENGINE_SOURCES)[number]
  * - 'winget': silent install through the Windows Package Manager;
  * - 'vendor-package': the vendor's official Linux package extracted into the app's data folder (no root);
  * - 'portable-archive': the vendor's official portable archive extracted into the app's data folder;
- * - 'playwright': Playwright's CLI runs the vendor installer (Chrome / Edge on macOS);
- * - 'download-page': the vendor site is opened and the app watches for the install to appear;
+ * - 'playwright': Playwright's CLI runs the vendor installer (supported, but no host selects it:
+ *   on macOS it needs `sudo` from a terminal, so macOS uses 'download-page');
+ * - 'download-page': the vendor site is opened and the app watches for the install to appear
+ *   (every vendor browser on macOS);
  * - 'none': not available for this operating system.
  */
 export const ENGINE_INSTALL_METHODS = ['bundled', 'winget', 'vendor-package', 'portable-archive', 'playwright', 'download-page', 'none'] as const
@@ -314,7 +316,7 @@ export interface DevicePresetInfo {
  * Built-in proxy providers, one dialect each under src/main/proxy/providers/.
  * Adding a provider adds its id here (and registers its dialect in providers/registry.ts).
  */
-export const PROVIDER_IDS = ['dataimpulse'] as const
+export const PROVIDER_IDS = ['dataimpulse', 'brightdata', 'oxylabs', 'decodo', 'iproyal'] as const
 /** The provider every profile, Quick Launch and stored credential set used before providers were selectable. */
 export const DEFAULT_PROVIDER_ID = 'dataimpulse'
 /** Lower-case slug shared by provider ids and product keys. */
@@ -388,6 +390,11 @@ export interface ProviderCapabilities {
   stateAllowlistFile?: string
   /** Accepted `ProviderOptions.encoding` values, default first. */
   encodingOptions?: string[]
+  /**
+   * 'community': the dialect was written from the provider's public documentation and has not
+   * been tested with a live account; the UI labels it "Community-verified". Absent: live-tested.
+   */
+  verification?: 'community'
 }
 
 /** Label of a provider's product ("Residential"); the key itself when the provider does not offer it. */
@@ -1025,6 +1032,11 @@ export const AppSettingsSchema = z.object({
   locationMatchPolicy: LocationMatchPolicySchema.default('state'),
   /** Total attempts (first check + re-rolls) for the location policy. Each costs one small IP-check request. */
   locationMatchAttempts: z.int().min(LOCATION_MATCH_ATTEMPTS_MIN).max(LOCATION_MATCH_ATTEMPTS_MAX).default(3),
+  /**
+   * Check the publisher's signed feed once after start (at most once per 24 hours). Never downloads;
+   * builds without a feed skip it. Databases created before this key existed load as `true`.
+   */
+  checkUpdatesOnStartup: z.boolean().default(true),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 export type BrowserExecutableOverrides = AppSettings['browserExecutables']
@@ -1062,6 +1074,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'screenshotDir'> = {
   defaultTargetCountry: 'us',
   locationMatchPolicy: 'state',
   locationMatchAttempts: 3,
+  checkUpdatesOnStartup: true,
 }
 
 // ---------------------------------------------------------------------------

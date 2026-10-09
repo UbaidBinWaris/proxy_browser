@@ -19,6 +19,7 @@ import { writeFileAtomicSync } from '../util/atomic-file'
 import { redactEvidence } from '../security/data-privacy'
 import { approveBatchBaseline, batchVisualEvidence } from '../qa/visual'
 import { applyHealedSelector } from '../qa/healing'
+import { readFixtureFile } from '../qa/fixtures'
 import type { IpcDeps } from './deps'
 import { IdArg, IdSchema, NoArgs, spec } from './handle'
 import type { HandlerSpec } from './handle'
@@ -71,6 +72,11 @@ export function qaHandlers(deps: IpcDeps): HandlerSpec[] {
     }),
     spec(IPC.qa.recording, NoArgs, () => deps.recorder?.snapshot() ?? null),
     spec(IPC.qa.stopRecording, NoArgs, () => deps.recorder?.stop() ?? null),
+    // The renderer never sends a path: main shows the dialog, reads the chosen file once and returns its bytes.
+    spec(IPC.qa.chooseFixture, NoArgs, async () => {
+      const file = await deps.files?.chooseFixture?.()
+      return file ? readFixtureFile(file) : null
+    }),
     spec(
       IPC.qa.approveBaseline,
       z.tuple([IdSchema, z.string().regex(/^\d+$/), z.int().min(0).max(99)]),

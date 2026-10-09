@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { GeoTarget, ProfileInput, TestRun } from '@shared/types'
-import { DEFAULT_SETTINGS } from '@shared/types'
+import { AppSettingsPatchSchema, DEFAULT_SETTINGS } from '@shared/types'
 
 import { AppException } from '../src/main/contracts'
 import type { Database } from '../src/main/contracts'
@@ -520,6 +520,32 @@ describe('database', () => {
   })
 
   describe('settings', () => {
+    it('checks for updates on startup by default; turning it off survives restarts and unrelated patches', () => {
+      expect(DEFAULT_SETTINGS.checkUpdatesOnStartup).toBe(true)
+      expect(db.settings.get().checkUpdatesOnStartup).toBe(true)
+      // Zod 4 `.partial()` would fill in `.default(true)`; the patch schema must leave absent keys absent.
+      expect(AppSettingsPatchSchema.parse({ ipCheckRetries: 1 })).toEqual({ ipCheckRetries: 1 })
+      expect(db.settings.update({ checkUpdatesOnStartup: false }).checkUpdatesOnStartup).toBe(false)
+      const afterOther = db.settings.update({ ipCheckRetries: 1, singleSessionMode: false })
+      expect(afterOther).toMatchObject({ checkUpdatesOnStartup: false, ipCheckRetries: 1, singleSessionMode: false })
+      expect(db.settings.update({ checkUpdatesOnStartup: true })).toMatchObject({ checkUpdatesOnStartup: true, ipCheckRetries: 1, singleSessionMode: false })
+      expect(() => db.settings.update({ checkUpdatesOnStartup: 'yes' as never })).toThrowError(AppException)
+      db.settings.update({ checkUpdatesOnStartup: false })
+      db.close()
+      db = openDatabase(dbPath, { defaultScreenshotDir: join(dir, 'shots'), env: {} })
+      expect(db.settings.get().checkUpdatesOnStartup).toBe(false)
+    })
+
+    it('loads databases saved before checkUpdatesOnStartup existed (and corrupt values) with the default', () => {
+      db.settings.update({ ipCheckRetries: 3 })
+      db.close()
+      const raw = new DatabaseSync(dbPath)
+      raw.prepare("INSERT INTO app_settings (key, value, updated_at) VALUES ('checkUpdatesOnStartup', '\"maybe\"', '2026-01-01T00:00:00.000Z')").run()
+      raw.close()
+      db = openDatabase(dbPath, { defaultScreenshotDir: join(dir, 'shots'), env: {} })
+      expect(db.settings.get()).toMatchObject({ checkUpdatesOnStartup: true, ipCheckRetries: 3 })
+    })
+
     it('returns defaults merged with stored values and validates patches', () => {
       const initial = db.settings.get()
       expect(initial).toEqual({ ...DEFAULT_SETTINGS, screenshotDir: join(dir, 'shots') })

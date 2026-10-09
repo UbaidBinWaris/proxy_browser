@@ -9,6 +9,8 @@ import { useProxyStore } from '@/stores/proxy'
 import { useSessionsStore, selectActiveSessions } from '@/stores/sessions'
 import { PROXY_KEYS_PATH } from '@/lib/navigation'
 import { providersStatusPill } from '@/lib/proxyKeys'
+import { updateBadge } from '@/lib/updates'
+import { useUpdatesStore } from '@/stores/updates'
 import { cn } from '@/lib/utils'
 
 interface NavItem {
@@ -32,6 +34,7 @@ export function Sidebar(): React.JSX.Element {
   const liveCount = useSessionsStore((s) => selectActiveSessions(s.sessions).length)
   // Ready when any registered provider has keys.
   const pill = providersStatusPill(providers)
+  const update = updateBadge(useUpdatesStore((s) => s.availability), info?.version)
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-card">
@@ -80,8 +83,20 @@ export function Sidebar(): React.JSX.Element {
         <TasksIndicator />
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
-        <Link to="/settings/about" title="App version and updates" className="focus-ring rounded font-mono text-[11px] text-muted-foreground hover:text-foreground">{info ? `v${info.version}` : 'v—'}</Link>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
+        <Link
+          to="/settings/about"
+          title={update ? `${update.label}. Open App & updates` : 'App version and updates'}
+          className="focus-ring flex shrink-0 items-center gap-1.5 rounded font-mono text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <span className="whitespace-nowrap">{info ? `v${info.version}` : 'v—'}</span>
+          {update ? (
+            <Badge variant="info" className="px-1.5 font-sans text-[11px] leading-4">
+              <span aria-hidden="true">{update.text}</span>
+              <span className="sr-only">{update.label}</span>
+            </Badge>
+          ) : null}
+        </Link>
         <Link to={PROXY_KEYS_PATH} className="focus-ring rounded-full" aria-label={`${pill.label}. Open proxy keys settings`} title="Proxy keys (Settings → Advanced)">
           <Badge variant={pill.tone} dot className="hover:brightness-125">
             {pill.label}

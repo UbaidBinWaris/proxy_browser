@@ -1,20 +1,23 @@
 # Proxy QA Browser
 
 **New: desktop QA automation.** Record and save scenarios, import test datasets, group suites, select environments,
-compare approved screenshots, and run browser/device/location matrices,
+compare approved screenshots, check consent disclosures, lead-certificate scripts,
+accessibility (axe-core) and performance budgets, and run browser/device/location matrices,
 schedule local regression checks, export CI reports, configure custom proxy gateways,
 and manage encrypted configuration backups under **QA automation**.
 See [Desktop automation and distribution](docs/ENTERPRISE-DESKTOP.md) for usage,
 verification commands, privacy limits, and publisher setup. This edition stays
 desktop-only and requires no sign-in.
 
-Proxy QA Browser is a desktop app (Windows and Linux) for **authorized QA
+Proxy QA Browser is a desktop app (Windows, Linux and — built from source, not yet
+published — macOS) for **authorized QA
 testing of your own web forms**. It opens a real browser window — bundled
 Chromium, Firefox or WebKit, or a real Chrome, Edge, Brave, Opera, Opera GX,
 Vivaldi or Chromium installed on the machine — inside an isolated browser
 profile that emulates a chosen device (226 phone, tablet and desktop presets),
-and routes it through a proxy exit IP of a built-in provider (currently
-**DataImpulse**) in the US state, city or ZIP code you pick (or connects
+and routes it through a proxy exit IP of a built-in provider (**DataImpulse**,
+plus community-verified **Bright Data**, **Oxylabs**, **Decodo** and
+**IPRoyal**) in the US state, city or ZIP code you pick (or connects
 directly). Before the window opens, the exit IP
 is checked and compared with the location you asked for. Every launch is
 recorded locally with its exit IP, location verdict, HTTP status, screenshot,
@@ -24,7 +27,7 @@ captured network requests and any lead / certificate IDs the form returned.
 > own or are explicitly contracted to test, and only with a proxy plan you are
 > entitled to use. It is not a tool for evading rate limits or fraud controls,
 > scraping third parties, generating fake leads or impersonating real users.
-> Respect DataImpulse's terms of service and the laws that apply to you.
+> Respect your proxy provider's terms of service and the laws that apply to you.
 
 ## Contents
 
@@ -65,13 +68,15 @@ captured network requests and any lead / certificate IDs the form returned.
 
 ## Download and run
 
-Choose the single portable Windows EXE or the Linux AppImage.
-These builds contain no proxy credentials.
+Choose the single portable Windows EXE or the Linux AppImage. macOS builds
+(DMG/ZIP for Apple silicon and Intel) can be built from source; they are not
+published on the download site yet. These builds contain no proxy credentials.
 
-| Platform | File | Size (v1.2.0 build) | Browsers |
-| --- | --- | --- | --- |
-| Windows 10/11 x64 | `Proxy-QA-Browser-1.2.0-Windows-x64.exe` (portable) | 102,438,716 bytes (≈ 98 MiB) | Downloaded on first run |
-| Linux x86-64 | `Proxy-QA-Browser-1.2.0-x86_64.AppImage` | 569,483,398 bytes (≈ 543 MiB) | Chromium, Firefox and WebKit built in |
+| Platform | File | Size (v1.2.0 build) | Browsers | Signed | Updates |
+| --- | --- | --- | --- | --- | --- |
+| Windows 10/11 x64 | `Proxy-QA-Browser-1.2.0-Windows-x64.exe` (portable) | 102,438,716 bytes (≈ 98 MiB) | Downloaded on first run | When Azure Trusted Signing is configured | In the app (online or USB) |
+| Linux x86-64 | `Proxy-QA-Browser-1.2.0-x86_64.AppImage` | 569,483,398 bytes (≈ 543 MiB) | Chromium, Firefox and WebKit built in | n/a | In the app (online or USB) |
+| macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (+ `.zip`) | built from source | Downloaded on first run | Ad-hoc unless Apple credentials are configured | The app checks; you download from the website |
 
 ### Windows (portable EXE)
 
@@ -130,6 +135,47 @@ open window to the front.
 Your data lives in `~/.config/proxy-qa-browser` and the vault key in
 `~/.local/share/proxy-qa-browser/keys`.
 
+### macOS (DMG)
+
+macOS 12 (Monterey) or later. Pick the DMG for your Mac: `-macOS-arm64` for
+Apple silicon (M1 and later), `-macOS-x64` for Intel. Build it with
+`npm run build:mac` (see [Building](#building)) until macOS downloads are
+published.
+
+1. Open the DMG and drag **Proxy-QA-Browser** into **Applications** (or
+   `~/Applications`). There is no installer; the app never asks for an
+   administrator password.
+2. **Gatekeeper.** A build without Apple credentials is only *ad-hoc signed*
+   and not notarized. A copy you downloaded is then refused with *"cannot be
+   opened because Apple cannot check it for malicious software"* (macOS 15:
+   *"Apple could not verify…"*). Open **System Settings → Privacy & Security**,
+   scroll to the message about Proxy-QA-Browser and click **Open Anyway** (on
+   macOS 14 and earlier, Control-click the app → **Open** also works). A build
+   you made yourself on the same Mac opens directly. Signed and notarized
+   builds open without any prompt — see
+   [macOS signing and notarization](docs/DISTRIBUTION.md#macos).
+3. On first opening the browser engines download into
+   `~/Library/Application Support/proxy-qa-browser/data/browsers`, exactly as
+   on Windows (an internet connection is required once).
+4. Real browsers in `/Applications` or `~/Applications` (Chrome, Edge, Brave,
+   Opera, Opera GX, Vivaldi, Chromium) are detected automatically; their
+   version is read from the app bundle's `Info.plist`, never by starting the
+   browser. To add one, the app opens the vendor's download page; drag the
+   browser into Applications and it is detected as soon as it appears.
+5. **Updates.** *Settings → App & updates* checks the publisher's signed
+   feed. When a newer release exists it offers **Download vX.Y.Z**, which
+   opens the download page; replace the app in Applications with the new one.
+   Your profiles, history and vault are kept (they live outside the app
+   bundle). The app does not replace itself on macOS and there is no computer
+   setup or USB update there — the DMG already puts it in Applications.
+
+Your data lives in `~/Library/Application Support/proxy-qa-browser` and the
+vault key, protected by the **macOS Keychain**, in
+`~/Library/Application Support/ProxyQABrowser-keys`. The first time the key is
+created or read, macOS may ask whether *Proxy-QA-Browser* may use the
+"Proxy-QA-Browser Safe Storage" Keychain item: choose **Always Allow**.
+Closing the window quits the app (as on Windows and Linux).
+
 ### Starting from an editor's terminal
 
 Terminals hosted by an Electron app (VS Code, Cursor, …) often export
@@ -179,7 +225,17 @@ and **Settings**. Below them is the **Tasks** button (a spinner and a count
 while installs run, a check when all finished, a red dot and *Failed* after a
 failure), and at the bottom the app version and one pill: **Proxy ready** when
 at least one pool has keys, **Proxy not set** otherwise. Clicking the pill
-opens Settings → Advanced → Proxy keys.
+opens Settings → Advanced → Proxy keys. Clicking the version opens Settings →
+App & updates; when the [startup update check](#app--updates) found a newer
+signed release, a small **Update** badge sits next to the version (screen
+readers hear *"Update available: v…"*).
+
+After a restart into a USB or online update, a notice at the top of the page
+says how it ended: *"Updated to v…"* (dismiss with **×**), or *"Update to v…
+did not finish"* with the reason, **Retry update** (runs the final step
+again; the current copy stays usable meanwhile) and **Open App & updates**.
+Dismissing a failure only hides it; the next start retries the pending
+update.
 
 Toasts confirm what happened in the background, for example *"Browser open ·
 <profile>"* with the exit IP, *"Launch failed · <profile>"* with the error
@@ -430,14 +486,15 @@ here unless saved.
 ### Settings
 
 Settings has four tabs on the left: **General**, **Browsers**, **Advanced** and
-**About**. Each setting lives in exactly one place. Changes on General and
+**App & updates**. Each setting lives in exactly one place. Changes on General and
 Advanced are saved together from the **Save Changes** bar that appears while
 something is unsaved (**Reset** discards); an invalid value opens its tab and
 section and gets the focus. Every key is listed in the
 [Settings reference](#settings-reference).
 
-**General** — **Default start URL**, **One session at a time**, and the
-**Screenshot folder** (read-only, with **Reveal**).
+**General** — **Default start URL**, **One session at a time**, **Check for
+updates on startup** (on by default), and the **Screenshot folder**
+(read-only, with **Reveal**).
 
 **Browsers**
 
@@ -471,9 +528,21 @@ and a link such as `#logs` (or `#site-access`) opens its section:
 | **Proxy session history** | Every proxy session row (each profile's sticky session and the raw gateway row): Profile, Session ID, Status, IP, Location, ISP, Latency, Last checked, Error, with **Test** and **Rotate** (new sticky id, then a test) actions |
 | **Logs** | The live log: level filter (**All levels**, INFO, WARN, ERROR), scope filter, search (*"Search messages and metadata…"*), **Auto-scroll**, **Clear Logs** |
 
-**About** — version, **Packaged build** / **Development build**, platform,
-Playwright version; **Locations** (User data, Data, Key, Vault, each with a
-reveal button); **Attribution** (GeoNames, trademarks).
+**App & updates** — computer setup and shortcuts, **Online updates**
+(**Check for updates**, then **Download v… and restart**), **Update from USB**,
+release notes; then version, **Packaged build** / **Development build**,
+platform, Playwright version; **Locations** (User data, Data, Key, Vault, each
+with a reveal button); **Attribution** (GeoNames, trademarks).
+
+<a id="app--updates"></a>**Startup update check.** With **Check for updates on
+startup** on, the app asks the publisher's signed feed once after the window
+opens, at most once every 24 hours (the time of the last attempt is kept in
+`<userData>/data/update-check.json`). It only verifies the signed feed: nothing
+is downloaded until you click **Download v… and restart**. A newer release
+shows the sidebar **Update** badge and the version on this tab; failures (for
+example offline) are written to the log only. Builds without a feed (development
+builds, builds without a publisher key) skip the check. Switch it off to check
+only from this tab.
 
 ### Tasks panel
 
@@ -524,8 +593,10 @@ products (plans), target modes, sticky sessions, default gateway and any extra
 credential fields — and the Launch page, profile editor, keys window and
 Settings are built from that. Profiles, quick launches, CLI runs, proxy
 sessions and run history record which provider they used; everything created
-before providers were selectable is a **DataImpulse** record. Today DataImpulse
-is the only provider; the rest of this section describes it.
+before providers were selectable is a **DataImpulse** record. DataImpulse is
+the live-tested provider and most of this section describes it; the other
+built-in providers are listed under
+[Community-verified providers](#community-verified-providers).
 
 ### Pools and logins
 
@@ -651,6 +722,28 @@ expires (≈ 30 minutes or the TTL). ZIPs such as `90012` (Los Angeles) and
 `60601` (Chicago) matched on the first draw. **Same state** is the pragmatic
 default; for thin ZIPs use City or State targeting, rotating mode, or wait.
 
+### Community-verified providers
+
+These dialects were written from each provider's official parameter
+documentation (cited in the dialect file header and its golden-table test,
+`tests/provider-community-dialects.test.ts`) and **have not been tested with a
+live account**. The provider pickers label them *(community-verified)* and the
+keys window says *"Community-verified (not tested with a live account)"*. Each
+offers one product, **Residential**. Sticky session ids are mapped to what the
+provider accepts (letters and digits only; IPRoyal: exactly 8), so a profile's
+id such as `profile-qa-1` is sent as a deterministic alphanumeric token.
+
+| Provider | Default gateway | Where parameters go | Targeting (US) | Sticky session / TTL |
+| --- | --- | --- | --- | --- |
+| **Bright Data** (`brightdata`) | `brd.superproxy.io:44445` | Username: the zone username (`brd-customer-…-zone-…`) + `-country-us`, `-state-nj`, `-city-newark`, `-city-newark-zip-07102` | Country, State (USPS code), City, ZIP | `-session-<id>`; no TTL parameter (a session ends after 5 idle minutes) |
+| **Oxylabs** (`oxylabs`) | `pr.oxylabs.io:7777` | Username: `customer-<user>` + `-cc-US`, `-st-us_new_jersey`, `-cc-US-city-newark`, `-cc-US-postalcode-07102` | Country, State (Oxylabs' 50-state list; no DC), City, ZIP | `-sessid-<id>` + `-sesstime-<1–1440>` |
+| **Decodo** (`decodo`, formerly Smartproxy) | `gate.decodo.com:7000` | Username: `user-<user>` + `-country-us`, `-state-us_new_jersey`, `-state-…-city-newark`, `-zip-07102` | Country, State, City, ZIP | `-session-<id>` + `-sessionduration-<1–1440>` |
+| **IPRoyal** (`iproyal`) | `geo.iproyal.com:12321` | **Password**: `<password>_country-us_state-newjersey`, `_city-newark` | Country, State, City (no ZIP: not documented) | `_session-<8 characters>` + `_lifetime-<N>m` (up to 7 days) |
+
+No targeting surcharge is documented by these providers, so the launcher shows
+no billing note for them. If a gateway refuses a parameter, check the provider
+docs linked from the keys window and open an issue with the redacted error.
+
 ### IP-check services
 
 The exit IP is looked up with one of three public services (Settings →
@@ -703,9 +796,14 @@ continues without an IP.
   `<userData>/data/installed-browsers/<engine>`) and forgets its saved path.
   Browsers installed any other way (including winget installs on Windows) are
   never touched — remove those with your system's tools.
-- The app also contains code paths for macOS (Playwright's vendor installer for
-  Chrome/Edge, vendor pages otherwise), but no macOS build is produced or
-  tested.
+- **macOS:** the bundled engines download into the app data folder on first
+  run (as on Windows). Every vendor browser uses **Get <Browser>**: the
+  vendor's download page opens, you drag the browser from its disk image into
+  `/Applications` or `~/Applications`, and the watcher above picks it up. The
+  app never runs a vendor `.pkg` installer: Playwright's Chrome/Edge installer
+  calls `sudo installer`, which needs a terminal for the password prompt and
+  would replace an existing system-wide copy. macOS builds are verified by the
+  `macOS build + smoke test` workflow on `macos-latest`.
 
 ### Linux one-click installs (no root)
 
@@ -755,16 +853,19 @@ checks, in order:
 2. the app's own install folder (`<userData>/data/installed-browsers/<engine>`);
 3. well-known locations — e.g. `%PROGRAMFILES%\Google\Chrome\Application\chrome.exe`,
    `%LOCALAPPDATA%\Programs\Opera\opera.exe`, `/usr/bin/google-chrome-stable`,
-   `/opt/brave.com/brave/brave`, `/usr/lib/x86_64-linux-gnu/opera-stable/opera`
-   (full lists in `src/main/browser/engine-detect.ts`);
+   `/opt/brave.com/brave/brave`, `/usr/lib/x86_64-linux-gnu/opera-stable/opera`,
+   `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` then
+   `~/Applications/…` on macOS (full lists in `src/main/browser/engine-detect.ts`);
 4. the `PATH` (with `PATHEXT` on Windows).
 
 The **version** is read without running the browser on Windows: from the
 `.exe`'s VERSIONINFO resource (`src/main/browser/pe-version.ts` parses the PE
 headers), falling back to the version-named folder next to it
 (`…\Application\154.0.8037.97\`). On Linux the app runs `<exe> --version`
-(3-second limit), which prints and exits. (On macOS it would read
-`Info.plist`.) Versions are cached per executable (path + size + modification
+(3-second limit), which prints and exits. On macOS it reads
+`CFBundleShortVersionString` from the bundle's `Contents/Info.plist` (XML
+plists; a binary plist leaves the version blank) and never runs the browser,
+which would open a window. Versions are cached per executable (path + size + modification
 time) in `<userData>/data/engine-versions.json`, so an unchanged browser is
 never probed twice. Detection results are cached for 60 seconds; **Re-detect**
 scans again at once. A browser whose install task is running is only located
@@ -937,19 +1038,24 @@ number changes when Playwright adds devices):
 
   | Backend | Used when | Label |
   | --- | --- | --- |
-  | OS keychain (Electron `safeStorage`) | Windows; Linux with a real keyring (GNOME Keyring / libsecret or KWallet) | *Windows DPAPI (current user)*, *GNOME Keyring / libsecret*, *KWallet* |
-  | Machine-derived | No usable keychain (Linux `basic_text` or `unknown` backends are rejected because they offer no protection) | *machine-derived key (no OS keychain found — reduced protection)* |
+  | OS keychain (Electron `safeStorage`) | Windows; macOS; Linux with a real keyring (GNOME Keyring / libsecret or KWallet) | *Windows DPAPI (current user)*, *macOS Keychain*, *GNOME Keyring / libsecret*, *KWallet* |
+  | Machine-derived | No usable keychain (Linux `basic_text` or `unknown` backends are rejected because they offer no protection; a locked or denied macOS Keychain) | *machine-derived key (no OS keychain found — reduced protection)* |
+
+  On macOS `safeStorage` keeps its secret in the login Keychain as
+  *Proxy-QA-Browser Safe Storage*; the vault key file itself still lives in
+  the key folder below.
 
   The machine-derived key is scrypt (N = 2¹⁵, r = 8, p = 1) over the machine
-  id (`/etc/machine-id`, Windows `MachineGuid`, the host name as a fallback)
+  id (`/etc/machine-id`, Windows `MachineGuid`, macOS `IOPlatformUUID`, the host name as a fallback)
   and the OS user name, salted
   with the install id: anyone who can read the key file **and** knows those
   values can recover it. Install a keyring and use **Rotate key** to upgrade.
 - The key directory is **outside** `<userData>` on purpose (copying the profile
   folder does not copy the key): `%LOCALAPPDATA%\ProxyQABrowser\keys` on
-  Windows, `${XDG_DATA_HOME:-~/.local/share}/proxy-qa-browser/keys` on Linux.
-  Key and vault files are owner-only (`0600`, directories `0700`) on Linux;
-  Windows relies on the per-user profile permissions.
+  Windows, `${XDG_DATA_HOME:-~/.local/share}/proxy-qa-browser/keys` on Linux,
+  `~/Library/Application Support/ProxyQABrowser-keys` on macOS.
+  Key and vault files are owner-only (`0600`, directories `0700`) on Linux and
+  macOS; Windows relies on the per-user profile permissions.
 - Writes are atomic (temporary file + rename); a save reads the vault back and
   verifies it before reporting success. **Rotate key** writes the new key next
   to the old one, re-encrypts and verifies, then swaps; an interrupted rotation
@@ -1053,6 +1159,14 @@ save). Changes apply to sessions and QA runs **started afterwards**.
   form POST is blocked (the body cannot be re-sent safely). A **sub-resource**
   redirect is followed by Chromium and Firefox without the header; WebKit
   cannot do that, so there the sub-resource fails instead.
+- **File uploads** to a token-listed origin work on every engine. Chromium and
+  WebKit do not expose the bytes of files chosen from disk in intercepted form
+  posts, so on token-listed pages only, the app keeps the files you pick in
+  `<input type=file>` (up to 25 MB each, 50 MB in total, in memory for that
+  browser session) and sends them with the upload. If the bytes are not
+  available (a larger file, or a form on another site posting a file to the
+  token-listed origin), the upload is **blocked with a message** rather than
+  sent as an empty file. Files are never read on other sites.
 - Not covered (the header is simply absent): requests answered by a service
   worker, WebSockets, and the very first request of a pop-up in a QA run.
 - Side effects of interception while a token is enabled: the HTTP cache of that
@@ -1105,33 +1219,38 @@ The app only talks to:
 | Playwright's browser download CDN | Downloading the bundled engines (Windows, development) |
 | Vendor sites: `dl.google.com`, `packages.microsoft.com`, `repo.vivaldi.com`, `deb.opera.com`, `api.github.com` / `github.com` (Brave), winget sources | One-click browser installs |
 | The vendor download page in your default browser | **Get <Browser>** |
+| The publisher's signed update feed (packaged builds with a feed only) | The startup update check (at most once per 24 hours, Settings → General), **Check for updates** and **Download v… and restart** |
 
 Location search uses the bundled GeoNames data and never leaves the machine.
 There is no telemetry and nothing is uploaded.
 
 ### Data locations
 
-`<userData>` is `%APPDATA%\proxy-qa-browser` on Windows and
-`${XDG_CONFIG_HOME:-~/.config}/proxy-qa-browser` on Linux. The exact paths are
-listed under Settings → App & updates.
+`<userData>` is `%APPDATA%\proxy-qa-browser` on Windows,
+`${XDG_CONFIG_HOME:-~/.config}/proxy-qa-browser` on Linux and
+`~/Library/Application Support/proxy-qa-browser` on macOS. The exact paths are
+listed under Settings → App & updates. Below, the macOS paths are the Linux
+`<userData>/…` ones unless noted.
 
 | What | Windows | Linux |
 | --- | --- | --- |
-| User data (`<userData>`) | `%APPDATA%\proxy-qa-browser\` | `~/.config/proxy-qa-browser/` |
-| Vault key `<installId>.key` | `%LOCALAPPDATA%\ProxyQABrowser\keys\` | `~/.local/share/proxy-qa-browser/keys/` |
+| User data (`<userData>`) | `%APPDATA%\proxy-qa-browser\` | `~/.config/proxy-qa-browser/` (macOS: `~/Library/Application Support/proxy-qa-browser/`) |
+| Vault key `<installId>.key` | `%LOCALAPPDATA%\ProxyQABrowser\keys\` | `~/.local/share/proxy-qa-browser/keys/` (macOS: `~/Library/Application Support/ProxyQABrowser-keys/`) |
 | Encrypted vault | `<userData>\vault\proxy-credentials.vault` | `<userData>/vault/proxy-credentials.vault` |
 | Install id, setup state, last gateway test (no secrets) | `<userData>\install.json` | `<userData>/install.json` |
 | Database (profiles, runs, proxy sessions, network capture, settings, logs) | `<userData>\data\proxy-qa.sqlite` | `<userData>/data/proxy-qa.sqlite` |
 | Screenshots | `<userData>\data\screenshots\` | `<userData>/data/screenshots/` |
 | Log files (`app-YYYY-MM-DD.log`, JSON lines, redacted) | `<userData>\data\logs\` | `<userData>/data/logs/` |
-| Bundled engines (Chromium, Firefox, WebKit) | `<userData>\data\browsers\` (downloaded) | inside the AppImage (read-only) |
+| Bundled engines (Chromium, Firefox, WebKit) | `<userData>\data\browsers\` (downloaded) | inside the AppImage (read-only); macOS: `<userData>/data/browsers/` (downloaded) |
 | Vendor browsers installed by the app | — (winget installs to the normal vendor location) | `<userData>/data/installed-browsers/<engine>/` |
 | Open-sessions record | `<userData>\data\live-sessions.json` | `<userData>/data/live-sessions.json` |
 | Browser version cache | `<userData>\data\engine-versions.json` | `<userData>/data/engine-versions.json` |
 | Finished-task history | `<userData>\data\task-history.json` | `<userData>/data/task-history.json` |
+| Last startup update check (time, newer version if any) | `<userData>\data\update-check.json` | `<userData>/data/update-check.json` |
+| Last update result shown by the update notice | `%LOCALAPPDATA%\ProxyQABrowser\last-update.json` | `~/.local/share/proxy-qa-browser/last-update.json` (macOS: unused — updates come from the download page) |
 | Site access tokens (values encrypted with the OS keychain) | `<userData>\data\site-access-tokens.json` | `<userData>/data/site-access-tokens.json` |
 | App's own UI storage (last Launch form, recent/favorite devices, recent locations) | Electron storage inside `<userData>` | same |
-| Temporary unpacked program | `%TEMP%` (portable EXE, every launch) | AppImage mount (`/tmp/.mount_…`) |
+| Temporary unpacked program | `%TEMP%` (portable EXE, every launch) | AppImage mount (`/tmp/.mount_…`); macOS: none (the .app in Applications runs in place) |
 
 The database keeps the latest 5,000 log rows. Deleting a profile deletes its
 proxy session row; its runs are kept (shown without a profile link). Delete
@@ -1162,6 +1281,7 @@ All settings are stored in the database (`app_settings`) and validated with Zod
 | `ipCheckRetries` | Advanced → IP verification → **Retries** | `2` | 0–5 retries on the selected provider |
 | `networkInspectorEnabled` | Advanced → Network inspector → **Capture requests and extract lead / certificate ids** | on | Record requests and extract IDs |
 | `navigationTimeoutMs` | Advanced → Network inspector → **Navigation timeout (ms)** | `60000` | 5,000–300,000; how long opening the start URL may take |
+| `checkUpdatesOnStartup` | General → **Check for updates on startup** | on | One background check of the signed update feed after start, at most once per 24 hours; never downloads. Databases from earlier versions load as on |
 
 Proxy credentials are **not** settings: they live in the encrypted vault.
 
@@ -1304,6 +1424,7 @@ re-enter them); deleting `<userData>` starts the first-run setup again.
 | Docker (optional) | any recent | Cross-building the Windows EXE from Linux (`electronuserland/builder:wine`); alternatively a local `wine` |
 | `ar`, `tar` with zstd | — | Only for `--webkit-libs` (`npm run build:linux`) |
 | A Windows machine (optional) | Windows 10/11 | Native Windows builds and the Windows smoke test |
+| A Mac (optional) | macOS 12+, Xcode Command Line Tools (`xcode-select --install`) | macOS DMG/ZIP builds (they cannot be built on Linux or Windows) and the macOS smoke test; CI covers both on `macos-latest` |
 
 Main versions: Electron 44.5.1, playwright-core 1.63.0, React 19.3, Vite 7.3,
 electron-vite 5, Tailwind CSS 3.4, Zustand 5, Zod 4.6, TypeScript 6.0,
@@ -1412,7 +1533,7 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | Script | What it does |
 | --- | --- |
 | `npm run dev` | `electron-vite dev`: main, preload and renderer with hot reload (DevTools open detached) |
-| `npm run build` | `electron-vite build` → `out/main`, `out/preload`, `out/renderer` |
+| `npm run build` | `electron-vite build` → `out/main` (app, `qa-cli.js`, `qa-mcp.js`), `out/preload`, `out/renderer`; then `scripts/check-headless-entries.mjs` verifies that the two headless entries load no Electron |
 | `npm run preview` | `electron-vite preview`: run the built `out/` without packaging |
 | `npm test` | `vitest run` (891 tests) |
 | `npm run test:watch` | `vitest` in watch mode |
@@ -1422,6 +1543,8 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | `npm run build:linux` | `scripts/bundle-browsers.mjs --platform linux --webkit-libs` → `npm run build` → `electron-builder --linux --x64` → self-contained AppImage |
 | `npm run build:windows` | `npm run build` → `electron-builder --win --x64` → slim portable EXE (on Windows, or on Linux with wine) |
 | `npm run build:windows:bundled` | `scripts/build-windows-bundled.mjs`: bundle the win64 engines, build, package with `PROXY_QA_BUNDLE_BROWSERS=1` |
+| `npm run build:mac` | `npm run build` → `electron-builder --mac` → DMG + ZIP for arm64 and x64 (on a Mac; signed/notarized only with Apple credentials) |
+| `npm run build:mac:dir` | `npm run build` → `electron-builder --mac dir` → unpacked `.app` for this Mac's architecture (fast local test) |
 | `npm run release:version -- patch` | Increase the version in the package and lockfile together |
 | `npm run release:init` | Initialize or validate the stable publisher key pair |
 | `npm run release:usb` | Sign current Windows and Linux files and create the USB manifest/checksums |
@@ -1429,10 +1552,14 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 
 Other scripts: `scripts/build-all.sh` (Bash version of `build:all`, always uses
 Docker for Windows), `node scripts/bundle-browsers.mjs --platform linux|win64
-[--webkit-libs] [--force]`, `node scripts/make-icons.mjs` (icons) and
-`node scripts/windows-smoke.cjs` (Windows smoke test).
+[--webkit-libs] [--force]` (`--platform mac` is accepted and skipped: macOS
+downloads its engines on first run), `node scripts/make-icons.mjs` (icons),
+`node scripts/windows-smoke.cjs` (Windows smoke test) and
+`node scripts/macos-smoke.mjs` (macOS smoke test).
 
 Headless CI: the `npm run qa` runner, its Docker image (`docker/runner/`) and the reusable GitHub Action (`action/`) are documented in [CI runner](docs/CI-RUNNER.md).
+
+AI assistants: `out/main/qa-mcp.js` is a stdio [MCP server](docs/MCP-SERVER.md) on the same headless runtime. Claude Code, Cursor and other MCP clients can list engines, devices and locations, verify a proxy exit IP, and run ad-hoc checks or exported manifests, limited to the origins the operator allowlists (`QA_MCP_ALLOWED_ORIGINS`), with case, concurrency and daily budgets.
 
 ### Project structure
 
@@ -1469,6 +1596,8 @@ Headless CI: the `npm run qa` runner, its Docker image (`docker/runner/`) and th
 │   │   ├── system/            process discovery/termination (CIM, /proc, ps)
 │   │   ├── windows/           Manage keys window, app icon
 │   │   ├── ipc/               handlers per domain, validation wrapper, events, screenshot protocol
+│   │   ├── qa/                QA automation: service, executor, recorder, healing, CLI runner (cli.ts)
+│   │   ├── mcp/               MCP server (server.ts → qa-mcp.js): policy, runtime adapter, one file per tool
 │   │   └── util/              atomic file writes, timeouts
 │   └── renderer/
 │       ├── index.html         CSP source tags
@@ -1590,6 +1719,34 @@ npm run typecheck && npm run lint
   artifact. It runs on every push to `main` and manually via **Actions →
   Windows build + smoke test → Run workflow** (or `gh workflow run
   windows-smoke.yml`). The workflow file must be committed and pushed first.
+- **macOS smoke test** — `scripts/macos-smoke.mjs` drives the packaged
+  `release/mac-arm64/Proxy-QA-Browser.app` (or `release/mac/…` on Intel) and
+  checks the bundle (identity, `LSMinimumSystemVersion` 12.0, `.icns`,
+  `geonames`, no bundled browsers, unpacked `playwright-core`, a valid — ad-hoc
+  or Developer ID — signature), then `app.getInfo()` (darwin, packaged),
+  `desktop.status()` (setup unsupported, `updateDelivery: 'download-page'`),
+  that setup is refused with the Applications explanation, the key folder
+  `~/Library/Application Support/ProxyQABrowser-keys` and a usable Keychain,
+  that three re-detects start no Chrome/Edge process while installed browsers
+  are found in `/Applications` with their `Info.plist` version, every vendor
+  browser's `download-page` method, the verified first-run Chromium download
+  into `<userData>/data/browsers`, a direct Chromium session against a local
+  page, and that no `--proxy-qa-session` process survives quitting. It removes
+  the key file it created. Results go to `smoke-output/macos/`.
+
+  ```bash
+  npm ci
+  npm run build:mac:dir
+  node scripts/macos-smoke.mjs
+  ```
+
+  **GitHub Actions** — `.github/workflows/macos.yml` ("macOS build + smoke
+  test") runs on `macos-latest` (Apple silicon) on pushes to `main`, pull
+  requests and manually: `npm ci`, typecheck, lint, unit and website tests,
+  `npm run build`, an unsigned arm64 DMG + ZIP and an x64 ZIP, an inspection
+  of the artifacts (architectures with `lipo`, `codesign --verify`,
+  `hdiutil imageinfo`), and the smoke test on the arm64 app. It uses no
+  secrets and publishes nothing.
 
 ### Building
 
@@ -1599,6 +1756,8 @@ Artifact names come from `electron-builder.config.mjs` and the `version` in
 ```
 release/Proxy-QA-Browser-<version>-x86_64.AppImage        Linux, self-contained
 release/Proxy-QA-Browser-<version>-Windows-x64.exe        Windows portable (the only Windows artifact)
+release/Proxy-QA-Browser-<version>-macOS-arm64.dmg        macOS, Apple silicon (also .zip)
+release/Proxy-QA-Browser-<version>-macOS-x64.dmg          macOS, Intel (also .zip)
 ```
 
 Current 1.2.0 builds: AppImage 569,483,398 bytes (≈ 543 MiB), EXE
@@ -1645,6 +1804,28 @@ so the default build stays slim and downloads the engines once into
 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=win64`) and packages with
 `PROXY_QA_BUNDLE_BROWSERS=1`; expect a 30–90 s start-up per launch.
 
+**macOS DMG + ZIP (on a Mac)**
+
+```bash
+npm ci
+npm run build:mac        # DMG + ZIP for arm64 and x64 → release/
+npm run build:mac:dir    # quicker: unpacked .app for this Mac → release/mac-arm64 or release/mac
+```
+
+macOS builds are slim like the Windows EXE: the engines download into
+`~/Library/Application Support/proxy-qa-browser/data/browsers` on first run
+(`bundle-browsers --platform mac` deliberately does nothing — bundling would
+also put ~1 GB of separately signed executables inside the `.app` that
+signing and notarization would have to cover). Separate arm64 and x64 builds
+are produced instead of one universal app, since Playwright's browsers are
+per-architecture downloads anyway; each DMG is half the size. Without Apple
+credentials the app is **ad-hoc signed** (Apple silicon refuses to run
+unsigned code) without the hardened runtime and is not notarized, so
+Gatekeeper asks users to allow it once. With a Developer ID certificate and
+notarization credentials in the environment the same command produces a
+signed, hardened, notarized build; a partial set of credentials fails the
+build. See [macOS signing and notarization](docs/DISTRIBUTION.md#macos).
+
 **Both from Linux**
 
 ```bash
@@ -1664,15 +1845,20 @@ otherwise list what is missing and exit 1. Without wine and Docker,
 **Packaging details**: `asar` with `playwright-core` unpacked (it spawns
 browsers and its installer runs as a child process through Electron with
 `ELECTRON_RUN_AS_NODE=1`); `npmRebuild: false`; `resources/geonames` ships on
-both platforms; `build/icons/icon.png` is the Linux icon (and the window icon),
-`build/icons/icon.ico` the Windows icon; `publish: null` (nothing is uploaded).
+every platform; `build/icons/icon.png` is the Linux icon (and the window icon),
+`build/icons/icon.ico` the Windows icon, `build/icons/icon.icns` the macOS
+icon; `build/entitlements.mac.plist` holds the hardened-runtime entitlements
+(JIT, unsigned executable memory, network client) used by Developer ID
+builds; `publish: null` (nothing is uploaded).
 
 **Icons** — edit `build/icons/icon.svg` (and `icon-small.svg`, used up to
 32 px), then run `node scripts/make-icons.mjs` (needs the dev Chromium from
 `npm run browsers:install`). It renders each size from the vectors with a
 transparent background and writes `build/icons/icon.png` (512),
-`build/icons/256.png`, `build/icons/icon.ico` (16, 24, 32, 48, 64, 128, 256)
-and `src/renderer/src/assets/app-icon.png` (64).
+`build/icons/256.png`, `build/icons/icon.ico` (16, 24, 32, 48, 64, 128, 256),
+`build/icons/icon.icns` (16–512 pt with the @2x variants up to 1024 px, PNG
+elements — no `iconutil` needed, so it also runs on Linux) and
+`src/renderer/src/assets/app-icon.png` (64).
 
 ### Releasing checklist
 
@@ -1777,6 +1963,12 @@ GitHub Actions smoke test; as of this README that run is **still pending**.
 - **Playwright / playwright-core** (Apache-2.0) and the browser builds it
   downloads — Chromium, Firefox (MPL 2.0) and WebKit (LGPL/BSD) — under their
   own licences.
+- **axe-core** 4.13.0 (© Deque Systems, Inc.,
+  [Mozilla Public License 2.0](https://www.mozilla.org/MPL/2.0/)) — the
+  accessibility rules engine the `checkAccessibility` step injects into the page
+  under test. It ships unmodified as the npm package `axe-core` (its `LICENSE`
+  and readable `axe.js` source are included next to `axe.min.js`); source:
+  <https://github.com/dequelabs/axe-core>.
 - **WebKit host libraries in the AppImage** — unmodified binaries from the
   Ubuntu packages `libicu74` (Unicode/ICU licence), `libflite1` (BSD-style,
   Carnegie Mellon University) and `libxml2` (MIT). The AppImage includes
@@ -1796,7 +1988,7 @@ GitHub Actions smoke test; as of this README that run is **still pending**.
 
 ## Download website and server updates
 
-The Next.js download site is in `app/webapp`, served behind HTTPS on port 4500. Public downloads use publisher-signed Windows/Linux release metadata. Protected uploads and publishing, direct SSH transfers, and GitHub Actions deployment are documented in [Server deployment](docs/SERVER-DEPLOYMENT.md). Review [Security scope and remaining limitations](docs/SECURITY-REVIEW.md) before rolling out.
+The Next.js download site is in `app/webapp`, served behind HTTPS on port 4500. Public downloads use publisher-signed Windows/Linux release metadata (plus optional macOS DMG/ZIP files under `macAssets`). Protected uploads and publishing, direct SSH transfers, and GitHub Actions deployment are documented in [Server deployment](docs/SERVER-DEPLOYMENT.md). Review [Security scope and remaining limitations](docs/SECURITY-REVIEW.md) before rolling out.
 
 ```bash
 npm ci --prefix app/webapp

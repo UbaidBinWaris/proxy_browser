@@ -8,6 +8,9 @@ anything but Docker:
 - the **runner image** `ghcr.io/ubaidbinwaris/proxy-qa-runner` (`docker/runner/Dockerfile`), and
 - the reusable **GitHub Action** `UbaidBinWaris/proxy_browser/action`.
 
+The same image also runs the stdio **MCP server** for AI assistants
+(`out/main/qa-mcp.js`); see [MCP server](MCP-SERVER.md#docker).
+
 The manifest format, `--environment` and `--baselines` are described in
 [Desktop automation → CI command-line runner](ENTERPRISE-DESKTOP.md#ci-command-line-runner).
 Use the runner only on sites you own or are contracted to test.
@@ -17,7 +20,7 @@ Use the runner only on sites you own or are contracted to test.
 | | |
 | --- | --- |
 | Base | `mcr.microsoft.com/playwright:v1.63.0-noble`, pinned by digest. The tag always matches `playwright-core` in `package-lock.json` |
-| Contents | Node 24, Chromium, Firefox and WebKit (`/ms-playwright`), `out/main` and the five production dependencies. No credentials, no `.env`, no desktop vault |
+| Contents | Node 24, Chromium, Firefox and WebKit (`/ms-playwright`), `out/main` (the CLI and the [MCP server](MCP-SERVER.md)), `resources/geonames` and the six production dependencies. No credentials, no `.env`, no desktop vault |
 | User | `pwuser` (uid 1001, non-root); working directory `/work` |
 | Entrypoint | `node /opt/proxy-qa-runner/out/main/qa-cli.js` (no arguments prints `--help`) |
 | Size | ≈ 3.57 GB unpacked, ≈ 0.96 GB compressed (the runner adds ≈ 29 MB to the Playwright base) |
@@ -62,8 +65,8 @@ docker build -f docker/runner/Dockerfile --build-arg VERSION=dev -t proxy-qa-run
 ```
 
 The build stage runs `npm ci --ignore-scripts` and `npm run build`; the
-runtime stage copies only `out/main`, `package.json` and production
-`node_modules`. `.dockerignore` keeps `.env*`, `.release-keys/`, `.deploy/`,
+runtime stage copies only `out/main`, `package.json`, `resources/geonames` (for
+the MCP server's location search) and production `node_modules`. `.dockerignore` keeps `.env*`, `.release-keys/`, `.deploy/`,
 `*.pem`, `data/`, `release/`, `build/browsers/` and other generated folders out
 of the build context. With no Buildx plugin, prefix `DOCKER_BUILDKIT=0`.
 

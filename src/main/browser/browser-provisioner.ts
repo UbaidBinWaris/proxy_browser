@@ -11,8 +11,9 @@
  *   `installMethod` for this machine (install-support.ts): 'vendor-package' /
  *   'portable-archive' (Linux: official package unpacked into
  *   `<userData>/data/installed-browsers/<engine>`, no root), 'winget' (Windows),
- *   'playwright' (Chrome/Edge on macOS: Playwright runs the vendor installer),
- *   'download-page' (vendor site + an install watcher) or 'none'.
+ *   'download-page' (vendor site + an install watcher; every vendor browser on
+ *   macOS) or 'none'. 'playwright' (Playwright's CLI runs the vendor installer) is
+ *   still handled by install(), but no host selects it today (install-support.ts).
  *
  * Paths: after every detection pass and every install the resolved executable is
  * saved into settings as an 'auto' path; paths the user typed are never

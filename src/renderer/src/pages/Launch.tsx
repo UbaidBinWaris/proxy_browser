@@ -38,7 +38,7 @@ import type { LauncherFormErrors, LauncherFormState } from '@/lib/launcherForm'
 import { historyRunPath } from '@/lib/navigation'
 import { engineAvailabilityMessage, isEngineUnavailable } from '@/lib/profileForm'
 import { TARGET_MODE_OPTIONS, geoTargetFromEntry, locationPolicySummary, poolLabel } from '@/lib/targeting'
-import { configuredProductKeys, findProvider, productKeys, selectableProviders } from '@/lib/providers'
+import { configuredProductKeys, findProvider, productKeys, providerOptionLabel, selectableProviders } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import { useLauncherStore } from '@/stores/launcher'
@@ -358,7 +358,7 @@ export function LaunchPage(): React.JSX.Element {
                   id="launch-provider"
                   value={provider?.id ?? form.providerId}
                   onChange={(e) => selectProvider(e.target.value)}
-                  options={(providerChoices.length > 0 ? providerChoices : providers ?? []).map((candidate) => ({ value: candidate.id, label: candidate.displayName }))}
+                  options={(providerChoices.length > 0 ? providerChoices : providers ?? []).map((candidate) => ({ value: candidate.id, label: providerOptionLabel(candidate) }))}
                   disabled={providers === null}
                   aria-describedby={errors.providerId ? 'launch-provider-error' : undefined}
                 />

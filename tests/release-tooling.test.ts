@@ -6,7 +6,7 @@ import { afterEach, expect, it } from 'vitest'
 import { DESKTOP_APP_ID, UsbReleaseSchema } from '../src/shared/desktop'
 // The publisher command is plain Node ESM and is also tested directly here.
 // @ts-expect-error Node scripts intentionally do not ship TypeScript declarations.
-import { bumpVersion, nextVersion, initializeKeys, createUsbRelease, createServerRelease, createServerReleaseFromMetadata, manifestAppId, syncRunnerPins } from '../scripts/release.mjs'
+import { bumpVersion, nextVersion, initializeKeys, createUsbRelease, createServerRelease, createServerReleaseFromMetadata, macAssetFileName, manifestAppId, resolveCiVersion, syncRunnerPins } from '../scripts/release.mjs'
 
 const folders: string[] = []
 afterEach(async () => { await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true, force: true }))) })
@@ -126,4 +126,77 @@ it('writes the current app identity unless a valid legacy identity is configured
   expect(manifestAppId('  ')).toBe(DESKTOP_APP_ID)
   expect(manifestAppId('com.example.legacy-app')).toBe('com.example.legacy-app')
   expect(() => manifestAppId('not an id')).toThrow('reverse-DNS')
+})
+
+it('publishes exactly the tagged version, and run-numbered versions for manual runs', () => {
+  expect(resolveCiVersion({ packageVersion: '1.4.0', refType: 'tag', refName: 'v1.4.0' })).toBe('1.4.0')
+  expect(resolveCiVersion({ packageVersion: '1.4.0', refType: 'tag', refName: 'v1.5.0' })).toBe('1.5.0')
+  expect(() => resolveCiVersion({ packageVersion: '1.4.0', refType: 'tag', refName: 'v1.3.9' })).toThrow('increase')
+  expect(() => resolveCiVersion({ packageVersion: '1.4.0', refType: 'tag', refName: 'release-1' })).toThrow('v1.2.3')
+  expect(() => resolveCiVersion({ packageVersion: '1.4.0', refType: 'tag', refName: 'v1.5' })).toThrow('v1.2.3')
+  expect(resolveCiVersion({ packageVersion: '1.4.0', refType: 'branch', refName: 'main', runNumber: '12' })).toBe('1.4.12')
+  expect(() => resolveCiVersion({ packageVersion: '1.4.0', refType: 'branch', refName: 'main', runNumber: '' })).toThrow('RUN_NUMBER')
+})
+
+it('adds whichever macOS DMG/ZIP files were built as optional macAssets, outside the strict two-asset list', async () => {
+  const root = await fixture()
+  await mkdir(join(root, 'release'))
+  const required = ['Proxy-QA-Browser-1.2.0-Windows-x64.exe', 'Proxy-QA-Browser-1.2.0-x86_64.AppImage']
+  const mac = ['Proxy-QA-Browser-1.2.0-macOS-arm64.dmg', 'Proxy-QA-Browser-1.2.0-macOS-arm64.zip', 'Proxy-QA-Browser-1.2.0-macOS-x64.dmg']
+  for (const file of [...required, ...mac]) await writeFile(join(root, 'release', file), `application ${file}`)
+  expect(macAssetFileName('1.2.0', 'x64', 'zip')).toBe('Proxy-QA-Browser-1.2.0-macOS-x64.zip')
+  expect(await createUsbRelease(root)).toEqual([...required, ...mac])
+  const envelope = JSON.parse(await readFile(join(root, 'release', 'Proxy-QA-Browser-Update.json'), 'utf8'))
+  const release = UsbReleaseSchema.parse(JSON.parse(envelope.payload))
+  expect(release.assets.map((asset) => asset.fileName)).toEqual(required)
+  expect(release.macAssets?.map((asset) => [asset.arch, asset.fileName])).toEqual([
+    ['arm64', mac[0]],
+    ['arm64', mac[1]],
+    ['x64', mac[2]],
+  ])
+  const sums = await readFile(join(root, 'release', 'SHA256SUMS-1.2.0.txt'), 'utf8')
+  expect(sums.trim().split('\n')).toHaveLength(6)
+
+  // The server pair carries the same macOS files with download URLs the desktop updater accepts.
+  expect(await createServerRelease(root, 'https://releases.test')).toBe('1.2.0')
+  const raw = JSON.parse(await readFile(join(root, 'release', 'update.json'), 'utf8'))
+  const { verifyUpdateEnvelope } = await import('../src/main/releases/updates')
+  const payload = verifyUpdateEnvelope(raw, await readFile(join(root, 'resources', 'updates', 'public-key.pem'), 'utf8'))
+  expect(payload.assets).toHaveLength(2)
+  expect(payload.macAssets?.map((asset) => asset.url)).toEqual(mac.map((file) => `https://releases.test/api/download/1.2.0/${file}`))
+})
+
+it('leaves macAssets out entirely when no macOS build exists (same shape as earlier manifests)', async () => {
+  const root = await fixture()
+  await mkdir(join(root, 'release'))
+  for (const file of ['Proxy-QA-Browser-1.2.0-Windows-x64.exe', 'Proxy-QA-Browser-1.2.0-x86_64.AppImage']) await writeFile(join(root, 'release', file), file)
+  await createServerRelease(root, 'https://releases.test')
+  for (const file of ['Proxy-QA-Browser-Update.json', 'update.json']) {
+    const payload = JSON.parse(JSON.parse(await readFile(join(root, 'release', file), 'utf8')).payload)
+    expect(Object.keys(payload)).not.toContain('macAssets')
+  }
+})
+
+it('accepts optional darwin entries in CI metadata and refuses malformed or duplicate ones', async () => {
+  const root = await fixture()
+  const required = [{ platform: 'win32', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-Windows-x64.exe', size: 100, sha256: 'a'.repeat(64) }, { platform: 'linux', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-x86_64.AppImage', size: 200, sha256: 'b'.repeat(64) }]
+  const dmg = { platform: 'darwin', arch: 'arm64', fileName: 'Proxy-QA-Browser-1.2.0-macOS-arm64.dmg', size: 300, sha256: 'c'.repeat(64) }
+  // macOS files never stand in for a required platform.
+  await expect(createServerReleaseFromMetadata(root, [required[0], dmg])).rejects.toThrow('Both')
+  for (const bad of [
+    { ...dmg, arch: 'universal' },
+    { ...dmg, fileName: 'Proxy-QA-Browser-1.2.0-macOS-x64.dmg' },
+    { ...dmg, fileName: 'Proxy-QA-Browser-1.1.0-macOS-arm64.dmg' },
+    { ...dmg, fileName: '../Proxy-QA-Browser-1.2.0-macOS-arm64.dmg' },
+    { ...dmg, sha256: 'bad' },
+    { ...dmg, size: 0 },
+  ])
+    await expect(createServerReleaseFromMetadata(root, [...required, bad]), JSON.stringify(bad)).rejects.toThrow('Invalid macOS asset metadata')
+  await expect(createServerReleaseFromMetadata(root, [...required, dmg, dmg])).rejects.toThrow('Invalid macOS asset metadata')
+  expect(await createServerReleaseFromMetadata(root, [dmg, ...required])).toBe('1.2.0')
+  const usb = UsbReleaseSchema.parse(JSON.parse(JSON.parse(await readFile(join(root, 'release', 'Proxy-QA-Browser-Update.json'), 'utf8')).payload))
+  expect(usb.assets.map((asset) => asset.platform)).toEqual(['win32', 'linux'])
+  expect(usb.macAssets).toEqual([dmg])
+  const online = JSON.parse(JSON.parse(await readFile(join(root, 'release', 'update.json'), 'utf8')).payload)
+  expect(online.macAssets).toEqual([{ ...dmg, url: 'https://proxybrowser.ubaidbinwaris.com/api/download/1.2.0/Proxy-QA-Browser-1.2.0-macOS-arm64.dmg' }])
 })

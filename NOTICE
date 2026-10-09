@@ -7,6 +7,11 @@ This product includes postal code data from GeoNames (https://www.geonames.org),
 licensed under the Creative Commons Attribution 4.0 License (CC BY 4.0).
 See resources/geonames/ATTRIBUTION.md.
 
+This product includes axe-core (https://github.com/dequelabs/axe-core),
+Copyright (c) Deque Systems, Inc., licensed under the Mozilla Public License,
+v. 2.0 (https://www.mozilla.org/MPL/2.0/). It is distributed unmodified as the
+npm package "axe-core", which includes its licence and source code.
+
 Third-party components bundled in release builds (Electron, Chromium,
 Playwright browser builds and WebKit host libraries) are distributed under
 their own licences; see the "Credits and licences" section of README.md and

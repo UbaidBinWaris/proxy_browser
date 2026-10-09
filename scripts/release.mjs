@@ -59,8 +59,27 @@ export function bumpVersion(root, requested) {
   return version
 }
 
+/**
+ * The version a CI deploy publishes. A `vX.Y.Z` tag publishes exactly X.Y.Z (it must not be lower than
+ * package.json); a manual run (no tag) keeps the old scheme: package patch + run number.
+ */
+export function resolveCiVersion({ packageVersion, refType, refName, runNumber }) {
+  if (!VERSION.test(packageVersion)) throw new Error('package.json version must be major.minor.patch.')
+  if (refType === 'tag') {
+    const match = /^v(\d+\.\d+\.\d+)$/.exec(refName ?? '')
+    if (!match || !VERSION.test(match[1])) throw new Error(`Release tags must look like v1.2.3 (got "${refName}").`)
+    const tagged = match[1]
+    if (tagged !== packageVersion) nextVersion(packageVersion, tagged) // throws when the tag is lower
+    return tagged
+  }
+  const run = Number(runNumber)
+  if (!Number.isSafeInteger(run) || run < 1) throw new Error('A positive GITHUB_RUN_NUMBER is required.')
+  const [major, minor, patch] = packageVersion.split('.').map(Number)
+  return `${major}.${minor}.${patch + run}`
+}
+
 /** Files that pin the CI runner image or action to a release; the runner-image workflow refuses a mismatch. */
-export const RUNNER_PIN_FILES = ['action/action.yml', 'docs/CI-RUNNER.md', 'examples/ci/github-workflow.yml']
+export const RUNNER_PIN_FILES = ['action/action.yml', 'docs/CI-RUNNER.md', 'docs/MCP-SERVER.md', 'examples/ci/github-workflow.yml']
 
 export function syncRunnerPins(root, version) {
   const changed = []
@@ -105,6 +124,30 @@ export function initializeKeys(root) {
   return publicPath
 }
 
+/**
+ * macOS downloads are optional and travel in `macAssets`, never in `assets`: releases up to 1.4.x
+ * parse `assets` strictly (win32/linux only, at most two) and ignore unknown keys, so a manifest with
+ * macOS files stays valid for every installed copy. File names follow electron-builder's mac
+ * artifactName (`${productName}-${version}-macOS-${arch}.${ext}`).
+ */
+export const MAC_ARCHES = ['arm64', 'x64']
+export const MAC_EXTENSIONS = ['dmg', 'zip']
+export function macAssetFileName(version, arch, ext) {
+  return `Proxy-QA-Browser-${version}-macOS-${arch}.${ext}`
+}
+
+function validMacAsset(asset, version) {
+  return (
+    asset?.platform === 'darwin' &&
+    MAC_ARCHES.includes(asset.arch) &&
+    MAC_EXTENSIONS.some((ext) => asset.fileName === macAssetFileName(version, asset.arch, ext)) &&
+    Number.isSafeInteger(asset.size) &&
+    asset.size >= 1 &&
+    asset.size <= 2 * 1024 ** 3 &&
+    /^[a-f0-9]{64}$/.test(asset.sha256)
+  )
+}
+
 async function hash(path) {
   const digest = createHash('sha256')
   for await (const chunk of createReadStream(path)) digest.update(chunk)
@@ -136,6 +179,17 @@ export async function createUsbRelease(root) {
     if (!size || size > 2 * 1024 ** 3) throw new Error(`Invalid release size: ${fileName}`)
     assets.push({ platform, arch: 'x64', fileName, size, sha256: await hash(path) })
   }
+  // Optional: whichever macOS DMG/ZIP files were built (`npm run build:mac` on a Mac).
+  const macAssets = []
+  for (const arch of MAC_ARCHES)
+    for (const ext of MAC_EXTENSIONS) {
+      const fileName = macAssetFileName(version, arch, ext)
+      const path = join(directory, fileName)
+      if (!existsSync(path)) continue
+      const size = (await stat(path)).size
+      if (!size || size > 2 * 1024 ** 3) throw new Error(`Invalid release size: ${fileName}`)
+      macAssets.push({ platform: 'darwin', arch, fileName, size, sha256: await hash(path) })
+    }
   const payload = JSON.stringify({
     format: 1,
     appId: APP_ID,
@@ -143,6 +197,7 @@ export async function createUsbRelease(root) {
     releasedAt: new Date().toISOString(),
     notes,
     assets,
+    ...(macAssets.length ? { macAssets } : {}),
   })
   const signature = sign(
     null,
@@ -152,11 +207,11 @@ export async function createUsbRelease(root) {
   const manifest = join(directory, 'Proxy-QA-Browser-Update.json')
   writeJson(manifest, { payload, signature })
   const sums = [
-    ...assets.map((asset) => `${asset.sha256}  ${asset.fileName}`),
+    ...[...assets, ...macAssets].map((asset) => `${asset.sha256}  ${asset.fileName}`),
     `${await hash(manifest)}  Proxy-QA-Browser-Update.json`,
   ]
   writeFileSync(join(directory, `SHA256SUMS-${version}.txt`), `${sums.join('\n')}\n`)
-  return assets.map((asset) => asset.fileName)
+  return [...assets, ...macAssets].map((asset) => asset.fileName)
 }
 
 export async function createServerReleaseFromMetadata(root, assets, origin = 'https://proxybrowser.ubaidbinwaris.com') {
@@ -166,7 +221,13 @@ export async function createServerReleaseFromMetadata(root, assets, origin = 'ht
   const { version } = json(join(root, 'package.json'))
   const notes = json(join(root, 'resources', 'release-notes.json'))[version]
   if (!VERSION.test(version) || !Array.isArray(notes) || !notes.length || notes.length > 30 || notes.some(n => typeof n !== 'string' || !n.trim() || n.length > 500)) throw new Error('Stable version and release notes are required.')
-  if (!Array.isArray(assets) || assets.length !== 2 || new Set(assets.map(a => a.platform)).size !== 2) throw new Error('Both platform assets are required.')
+  if (!Array.isArray(assets)) throw new Error('Both platform assets are required.')
+  // darwin entries are optional extras (see MAC_ARCHES); exactly one Windows and one Linux asset stay required.
+  const macInput = assets.filter(asset => asset?.platform === 'darwin')
+  assets = assets.filter(asset => asset?.platform !== 'darwin')
+  if (assets.length !== 2 || new Set(assets.map(a => a.platform)).size !== 2) throw new Error('Both platform assets are required.')
+  if (macInput.length > MAC_ARCHES.length * MAC_EXTENSIONS.length || new Set(macInput.map(a => a?.fileName)).size !== macInput.length || !macInput.every(asset => validMacAsset(asset, version))) throw new Error('Invalid macOS asset metadata.')
+  const macAssets = macInput.map(asset => ({ platform: 'darwin', arch: asset.arch, fileName: asset.fileName, size: asset.size, sha256: asset.sha256 }))
   assets = assets.map(asset => {
     const suffix = asset.platform === 'win32' ? 'Windows-x64.exe' : asset.platform === 'linux' ? 'x86_64.AppImage' : null
     if (!suffix || asset.arch !== 'x64' || asset.fileName !== `Proxy-QA-Browser-${version}-${suffix}` || !Number.isSafeInteger(asset.size) || asset.size < 1 || asset.size > 2 * 1024 ** 3 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('Invalid release asset metadata.')
@@ -174,16 +235,17 @@ export async function createServerReleaseFromMetadata(root, assets, origin = 'ht
   })
   initializeKeys(root)
   const directory = join(root, 'release'); mkdirSync(directory, { recursive: true })
-  const data = { format: 1, appId: APP_ID, version, releasedAt: new Date().toISOString(), notes, assets }
+  const withUrl = asset => ({ ...asset, url: `${url.origin}/api/download/${version}/${asset.fileName}` })
+  const data = { format: 1, appId: APP_ID, version, releasedAt: new Date().toISOString(), notes, assets, ...(macAssets.length ? { macAssets } : {}) }
   for (const [file, value] of [
     ['Proxy-QA-Browser-Update.json', data],
-    ['update.json', { version, releasedAt: data.releasedAt, notes, assets: assets.map(asset => ({ ...asset, url: `${url.origin}/api/download/${version}/${asset.fileName}` })) }],
+    ['update.json', { version, releasedAt: data.releasedAt, notes, assets: assets.map(withUrl), ...(macAssets.length ? { macAssets: macAssets.map(withUrl) } : {}) }],
   ]) {
     const payload = JSON.stringify(value)
     const signature = sign(null, Buffer.from(payload), readFileSync(join(root, '.release-keys', 'private-key.pem'))).toString('base64')
     writeJson(join(directory, file), { payload, signature })
   }
-  const sums = assets.map(asset => `${asset.sha256}  ${asset.fileName}`)
+  const sums = [...assets, ...macAssets].map(asset => `${asset.sha256}  ${asset.fileName}`)
   for (const file of ['Proxy-QA-Browser-Update.json', 'update.json']) sums.push(`${await hash(join(directory, file))}  ${file}`)
   writeFileSync(join(directory, `SHA256SUMS-${version}.txt`), `${sums.join('\n')}\n`)
   return version
@@ -195,7 +257,8 @@ export async function createServerRelease(root, origin = 'https://proxybrowser.u
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Release origin must be a plain HTTPS origin.')
   await createUsbRelease(root)
   const usb = json(join(root, 'release', 'Proxy-QA-Browser-Update.json'))
-  return createServerReleaseFromMetadata(root, JSON.parse(usb.payload).assets, origin)
+  const signed = JSON.parse(usb.payload)
+  return createServerReleaseFromMetadata(root, [...signed.assets, ...(signed.macAssets ?? [])], origin)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -11,7 +11,7 @@ import type { QaFallback, QaHealedSelector, QaHealingMode, QaScenario, QaStep } 
 import { AppException } from '../contracts'
 import type { QaStore } from './store'
 
-export const HEALABLE_ACTIONS = ['click', 'fill', 'select', 'check', 'uncheck'] as const
+export const HEALABLE_ACTIONS = ['click', 'fill', 'select', 'check', 'uncheck', 'upload'] as const
 export type HealableStep = Extract<QaStep, { action: (typeof HEALABLE_ACTIONS)[number] }>
 /** Share of the step timeout the primary selector gets before fallbacks are considered. */
 export const PRIMARY_SHARE = 0.6
@@ -223,7 +223,7 @@ export function applyHealedSelector(store: QaStore, batchId: string, caseId: str
   const scenario = store.scenario(item.scenarioId ?? batch.scenarioId)
   const step = scenario.steps[stepIndex]
   if (!step || !isHealableStep(step))
-    throw new AppException('INVALID_INPUT', 'Only click, fill, select, check and uncheck steps can be updated.')
+    throw new AppException('INVALID_INPUT', 'Only click, fill, select, check, uncheck and upload steps can be updated.')
   const fallback = step.fallbacks?.[healed.fallbackIndex]
   const changed =
     !fallback ||

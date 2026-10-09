@@ -1,14 +1,25 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { BrowserContext, ConsoleMessage, Locator, Request, Response } from 'playwright-core'
-import type { QaExecution, QaStepResult, ScenarioInput } from '@shared/qa'
+import type { BrowserContext, ConsoleMessage, Frame, Locator, Page, Request, Response } from 'playwright-core'
+import type { QaExecution, QaRedirectHop, QaStepResult, ScenarioInput } from '@shared/qa'
 import type { VisualStore } from './visual'
 import { visualKey } from './visual'
-import { healingFailureMessage, healingVerdict, locateWithHealing } from './healing'
+import { healingFailureMessage, healingVerdict, isHealableStep, locateWithHealing } from './healing'
 import type { HealableStep } from './healing'
 import { navigationGuard } from './navigation'
+import type { NavigationRedirectEvent } from './navigation'
+import { pageRefIndex } from '@shared/qa-targets'
+import { createFixtureFiles } from './fixtures'
+import { restoreMultipartFiles } from './upload-body'
+import { resolveFrame } from './frames'
+import { createPopupRegistry } from './pages'
+import { NAVIGATION_GRACE_MS, trackPage } from './page-tracker'
+import type { PageTracker } from './page-tracker'
 import { DEFAULT_MASK_SELECTORS, redactEvidence, redactUrl } from '../security/data-privacy'
 import { compileSecrets, redactString } from '../logging/redact'
+// Checks: compliance, accessibility and performance assertions (./checks, @shared/qa-checks).
+import { prepareChecks, runCheckStep } from './checks'
+import { continuesAfterFailure } from '@shared/qa-checks'
 
 export async function executeScenario(
   context: BrowserContext,
@@ -32,14 +43,47 @@ export async function executeScenario(
     durationMs: 0,
   }
   await mkdir(artifactDir, { recursive: true, mode: 0o700 })
-  const page = await context.newPage()
-  page.setDefaultTimeout(scenario.timeoutMs)
-  page.setDefaultNavigationTimeout(scenario.timeoutMs)
-  let lastStatus: number | null = null
+  const main = await context.newPage()
+  // The page steps run on: the main page, or a pop-up a switchPage step selected.
+  let page = main
   let tracing = false
+  // Redirect evidence: every hop of the case, and the hops seen while the current step ran.
+  const redirects: QaRedirectHop[] = []
+  let stepRedirects: QaRedirectHop[] | null = null
+  // Per page: document status and waiting for main-frame navigations/redirect chains (page-tracker.ts).
+  const trackers = new Map<Page, PageTracker>()
+  const popups = createPopupRegistry<Page>()
+  const fixtures = createFixtureFiles(join(artifactDir, 'fixtures'), scenario.fixtures ?? [])
+  // Classic multipart form posts: refill file parts the engine left empty with the fixture's bytes (upload-body.ts).
+  const uploadBytes = new Map((scenario.fixtures ?? []).map((item) => [item.name, Buffer.from(item.data, 'base64')]))
+  const restoreUploads = (request: Request): Buffer | null => {
+    try {
+      return restoreMultipartFiles(request.headers()['content-type'], request.postDataBuffer(), uploadBytes)
+    } catch {
+      return null
+    }
+  }
+  const tracker = (target: Page): PageTracker => trackers.get(target) ?? watch(target)
+  const settleRedirects = (options?: { graceMs?: number }): Promise<void> =>
+    tracker(page).settle(scenario.timeoutMs, signal, options)
+  const onRedirect = (event: NavigationRedirectEvent): void => {
+    const hop: QaRedirectHop = {
+      status: event.status,
+      from: sanitize(redactUrl(event.from)),
+      to: event.to ? sanitize(redactUrl(event.to)) : '(invalid location)',
+      ...(event.followed ? {} : { blocked: true }),
+    }
+    if (redirects.length < 50) redirects.push(hop)
+    if (stepRedirects && stepRedirects.length < 50) stepRedirects.push(hop)
+    let owner: Page | null
+    try {
+      owner = event.request.frame().page()
+    } catch {
+      owner = null
+    }
+    if (owner) trackers.get(owner)?.redirect(event)
+  }
   const onResponse = (response: Response): void => {
-    if (response.request().isNavigationRequest() && response.frame() === page.mainFrame())
-      lastStatus = response.status()
     if (response.status() >= 400 && result.failedRequests.length < 100)
       result.failedRequests.push(`HTTP ${response.status()} ${redactUrl(response.url())}`)
   }
@@ -54,7 +98,49 @@ export async function executeScenario(
     if (result.failedRequests.length < 100)
       result.failedRequests.push(`${request.method()} ${redactUrl(request.url())}`)
   }
-  const guard = navigationGuard(scenario.allowedOrigins, scenario.timeoutMs, (message) => { result.status = 'failed'; result.errors.push(message) })
+  /** Evidence listeners and navigation tracking for the main page and every pop-up of the context. */
+  function watch(target: Page): PageTracker {
+    const created = trackPage(target)
+    trackers.set(target, created)
+    target.setDefaultTimeout(scenario.timeoutMs)
+    target.setDefaultNavigationTimeout(scenario.timeoutMs)
+    target.on('response', onResponse)
+    target.on('console', onConsole)
+    target.on('pageerror', onPageError)
+    target.on('requestfailed', onFailed)
+    return created
+  }
+  const unwatch = (target: Page): void => {
+    trackers.get(target)?.dispose()
+    target.off('response', onResponse)
+    target.off('console', onConsole)
+    target.off('pageerror', onPageError)
+    target.off('requestfailed', onFailed)
+  }
+  // Pop-ups are routed by the same context-level navigation guard as the main page.
+  const onNewPage = (opened: Page): void => {
+    watch(opened)
+    popups.add(opened)
+  }
+  /** The page a switchPage step selects, once it has loaded its first document. */
+  const switchTo = async (ref: string): Promise<Page> => {
+    const index = pageRefIndex(ref)
+    if (index === 0) return main
+    const began = Date.now()
+    const popup = await popups.get(index, scenario.timeoutMs, signal)
+    if (popup.isClosed()) throw new Error(`Pop-up ${index} is already closed.`)
+    await popup.waitForLoadState('domcontentloaded', { timeout: Math.max(1, scenario.timeoutMs - (Date.now() - began)) })
+    return popup
+  }
+  const guard = navigationGuard(
+    scenario.allowedOrigins,
+    scenario.timeoutMs,
+    (message) => {
+      result.status = 'failed'
+      result.errors.push(message)
+    },
+    { followRedirects: scenario.followRedirects ?? true, onRedirect, ...(uploadBytes.size ? { requestBody: restoreUploads } : {}) },
+  )
   const abort = (): void => {
     void context.close().catch(() => undefined)
   }
@@ -78,8 +164,16 @@ export async function executeScenario(
     }
   }
   // Action steps may heal; assertions and navigation always use their selector/value as written.
+  // Inside a frame, the frame path is resolved (and its origins checked) first, within the same budget.
   const target = async (step: HealableStep, entry: QaStepResult): Promise<{ locator: Locator; timeout: number }> => {
-    const found = await locateWithHealing(page, step, healing, scenario.timeoutMs)
+    let root: Page | Frame = page
+    let budget = scenario.timeoutMs
+    if (step.frame?.length) {
+      const resolved = await resolveFrame(page, step.frame, scenario.allowedOrigins, budget)
+      root = resolved.frame
+      budget = resolved.remainingMs
+    }
+    const found = await locateWithHealing<Locator>(root, step, healing, budget)
     if (found.healed) {
       const { usedFallback } = found.healed
       entry.healed = {
@@ -99,10 +193,8 @@ export async function executeScenario(
     }
     return { locator: found.locator, timeout: found.remainingMs }
   }
-  page.on('response', onResponse)
-  page.on('console', onConsole)
-  page.on('pageerror', onPageError)
-  page.on('requestfailed', onFailed)
+  watch(main)
+  context.on('page', onNewPage)
   signal.addEventListener('abort', abort, { once: true })
   try {
     signal.throwIfAborted()
@@ -111,12 +203,18 @@ export async function executeScenario(
       await context.tracing.start({ screenshots: true, snapshots: true, sources: false })
       tracing = true
     }
+    // Checks: performance observers and network throttling must be in place before the first navigation.
+    const checkSetup = await prepareChecks(context, page, scenario)
+    if (checkSetup.notes.length) result.notes = [...(result.notes ?? []), ...checkSetup.notes]
     await page.goto(scenario.startUrl, { waitUntil: 'domcontentloaded' })
+    await settleRedirects()
     assertOrigin()
     for (const [index, step] of scenario.steps.entries()) {
       signal.throwIfAborted()
       const began = Date.now()
       const entry: QaStepResult = { index, action: step.action, status: 'passed', durationMs: 0 }
+      const hops: QaRedirectHop[] = []
+      stepRedirects = hops
       try {
         assertOrigin()
         switch (step.action) {
@@ -148,6 +246,14 @@ export async function executeScenario(
             await locator.uncheck({ timeout })
             break
           }
+          case 'upload': {
+            const { locator, timeout } = await target(step, entry)
+            await locator.setInputFiles(await fixtures.paths(step.fixtures), { timeout })
+            break
+          }
+          case 'switchPage':
+            page = await switchTo(step.page)
+            break
           case 'assertScreenshot': {
             if (!visual) throw new Error('Visual comparisons are unavailable for this runner.')
             await page.waitForFunction(() => document.fonts.status === 'loaded', undefined, { timeout: scenario.timeoutMs })
@@ -173,11 +279,23 @@ export async function executeScenario(
           case 'assertUrl':
             await page.waitForURL((url) => url.href.includes(step.value), { timeout: scenario.timeoutMs })
             break
-          case 'assertStatus':
+          case 'assertStatus': {
+            // The status of the final document: a navigation the previous action started or scheduled, and
+            // any redirect chain still in progress, are awaited first.
+            await settleRedirects({ graceMs: NAVIGATION_GRACE_MS })
+            const lastStatus = tracker(page).lastStatus()
             if (lastStatus !== step.value)
               throw new Error(`Expected HTTP ${step.value}; received ${lastStatus ?? 'no navigation response'}.`)
             break
+          }
+          default:
+            // Checks (./checks): assertions with evidence; never healed.
+            entry.check = await runCheckStep(page, step, { timeoutMs: scenario.timeoutMs, signal, sanitize, setup: checkSetup })
+            if (entry.check.status === 'failed') throw new Error(entry.check.message)
+            break
         }
+        await settleRedirects()
+        if (isHealableStep(step)) tracker(page).markAction()
         assertOrigin()
       } catch (err) {
         entry.status = 'failed'
@@ -191,19 +309,20 @@ export async function executeScenario(
       }
       entry.durationMs = Date.now() - began
       entry.screenshot ??= await screenshot(index)
+      // Hops that start while the step's screenshot is taken (e.g. a click that navigates from a timer) are its own.
+      stepRedirects = null
+      if (hops.length > 0) entry.redirects = hops
       result.steps.push(entry)
-      if (entry.status === 'failed') break
+      if (entry.status === 'failed' && (signal.aborted || !continuesAfterFailure(step))) break
     }
   } catch (err) {
     result.status = signal.aborted ? 'cancelled' : 'failed'
-    result.errors.push(
-      sanitize(err instanceof Error ? (err.message.split('\n')[0] ?? 'Execution failed.') : 'Execution failed.').slice(
-        0,
-        500,
-      ),
-    )
+    const message = sanitize(err instanceof Error ? (err.message.split('\n')[0] ?? 'Execution failed.') : 'Execution failed.').slice(0, 500)
+    // A blocked redirect of the start navigation has already been reported by the guard.
+    if (!result.errors.includes(message)) result.errors.push(message)
   } finally {
     result.finalUrl = redactUrl(page.url())
+    if (redirects.length > 0) result.redirects = redirects
     if (tracing) {
       try {
         const trace = join(artifactDir, 'trace.zip')
@@ -214,10 +333,9 @@ export async function executeScenario(
       }
     }
     signal.removeEventListener('abort', abort)
-    page.off('response', onResponse)
-    page.off('console', onConsole)
-    page.off('pageerror', onPageError)
-    page.off('requestfailed', onFailed)
+    context.off('page', onNewPage)
+    for (const watched of trackers.keys()) unwatch(watched)
+    await fixtures.remove().catch(() => undefined)
     await context.unroute('**/*', guard).catch(() => undefined)
     result.durationMs = Date.now() - started
   }

@@ -154,7 +154,7 @@ export function createQaExecutor(
           : undefined,
       )
       // Token notes are recorded while the scenario navigates, so collect them only after it ran.
-      const notes = [...(traceSkipped ? [TRACE_SKIPPED_NOTE] : []), ...session.siteAccessNotes]
+      const notes = [...(traceSkipped ? [TRACE_SKIPPED_NOTE] : []), ...session.siteAccessNotes, ...(execution.notes ?? [])]
       return {
         ...execution,
         exitIp: session.exitIp,

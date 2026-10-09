@@ -226,7 +226,7 @@ describe.each(ENGINES)('site access tokens in a real browser (%s)', (name, type)
     }
   })
 
-  it('composes with the QA navigation guard: documents get the header, redirects stay blocked', async ({ skip }) => {
+  it('composes with the QA navigation guard: documents get the header, redirects to unapproved origins stay blocked', async ({ skip }) => {
     if (!browser) return skip(`${name} is not installed or cannot launch here`)
     const context = await browser.newContext()
     const blocked: string[] = []

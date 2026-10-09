@@ -24,6 +24,21 @@ export function providerName(providers: readonly ProviderLike[] | null | undefin
   return findProvider(providers, id)?.displayName ?? id
 }
 
+/** Shown for providers whose dialect was written from public docs and never tested with a live account. */
+export const COMMUNITY_VERIFIED_NOTE = 'Community-verified (not tested with a live account)'
+
+type VerificationLike = { displayName: string; capabilities?: Pick<ProviderCapabilities, 'verification'> }
+
+/** The community-verified note for such providers; null for live-tested ones. */
+export function providerVerificationNote(provider: Pick<VerificationLike, 'capabilities'> | null | undefined): string | null {
+  return provider?.capabilities?.verification === 'community' ? COMMUNITY_VERIFIED_NOTE : null
+}
+
+/** Provider picker option: "Bright Data (community-verified)" for community dialects, the plain name otherwise. */
+export function providerOptionLabel(provider: VerificationLike): string {
+  return providerVerificationNote(provider) ? `${provider.displayName} (community-verified)` : provider.displayName
+}
+
 /** "Residential" → "Residential", "isp-static" → "Isp static" (fallback when the provider does not declare the product). */
 function titleCase(key: string): string {
   const spaced = key.replace(/-/g, ' ')

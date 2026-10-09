@@ -15,6 +15,7 @@ import { ScenarioEditor } from '@/components/qa/ScenarioEditor'
 import { SuitesEnvironments } from '@/components/qa/SuitesEnvironments'
 import { MatrixEditor } from '@/components/qa/MatrixEditor'
 import { DataControls } from '@/components/qa/DataControls'
+import { CaseCheckBadges, CheckMatrixSummary, CheckStepEvidence } from '@/components/qa/CheckEvidence'
 import { getApi, unwrap } from '@/lib/api'
 import { useEvent } from '@/hooks/useEvent'
 import { useProfilesStore } from '@/stores/profiles'
@@ -126,6 +127,7 @@ function Results({
       {active ? (
         <progress aria-label="Matrix progress" value={batch.completed} max={batch.total} className="mt-3 w-full" />
       ) : null}
+      <CheckMatrixSummary batch={batch} />
       {!active && batch.cases.some((item) => item.steps.some((step) => step.visual)) ? (
         <div className="mt-3 flex items-center gap-3">
           <Button
@@ -188,6 +190,7 @@ function Results({
                   <p className="text-xs text-muted-foreground">
                     {item.durationMs} ms · attempt {item.attempt}
                   </p>
+                  <CaseCheckBadges item={item} />
                   {(item.steps.find((step) => step.error)?.error ?? item.errors[0]) ? (
                     <p className="mt-1 max-w-sm text-xs text-destructive">
                       {item.steps.find((step) => step.error)?.error ?? item.errors[0]}
@@ -217,6 +220,7 @@ function Results({
                               Screenshot
                             </Button>
                           ) : null}
+                          {step.check ? <CheckStepEvidence check={step.check} /> : null}
                           {step.healed ? (
                             <HealedStep
                               healed={step.healed}

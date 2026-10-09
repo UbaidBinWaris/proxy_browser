@@ -6,6 +6,10 @@ import { AppException } from '../contracts'
 import { downloadToFile } from '../browser/installers/download'
 import type { FetchFn } from '../browser/installers/download'
 import type { UpdateStatus } from '@shared/qa'
+import { MacReleaseAssetSchema, macAssetFor, newerVersion } from '@shared/desktop'
+
+/** Kept here for existing importers; the comparison itself is shared with the renderer. */
+export { newerVersion }
 
 const https = z.url({ protocol: /^https$/ }).refine((raw) => {
   const url = new URL(raw)
@@ -29,19 +33,25 @@ export const UpdatePayloadSchema = z.object({
     )
     .min(1)
     .max(4),
+  /**
+   * macOS downloads, outside `assets` so that releases up to 1.4.x (which parse `assets` strictly and
+   * drop unknown keys) keep accepting the feed. They are offered through the download page only.
+   */
+  macAssets: z
+    .array(MacReleaseAssetSchema.extend({ url: https }))
+    .max(4)
+    .optional(),
 })
 export type UpdateConfig = { feedUrl: string; publicKey: string }
-export function newerVersion(candidate: string, current: string): boolean {
-  const left = candidate.split('.').map(Number),
-    right = current.split('.').map(Number)
-  if (
-    left.length !== 3 ||
-    right.length !== 3 ||
-    [...left, ...right].some((part) => !Number.isSafeInteger(part) || part < 0)
-  )
-    return false
-  for (let index = 0; index < 3; index++) if (left[index] !== right[index]) return left[index]! > right[index]!
-  return false
+
+/** Message shown when an in-app download is requested where updates go through the website (macOS). */
+export const DOWNLOAD_PAGE_UPDATE_MESSAGE = 'On macOS, download the new version from the website and replace the app in Applications.'
+
+/** The publisher's download page: the signed feed's origin plus the website's download section. */
+export function downloadPageUrl(config: UpdateConfig | null): string | null {
+  if (!config) return null
+  const parsed = https.safeParse(config.feedUrl)
+  return parsed.success ? `${new URL(parsed.data).origin}/#download` : null
 }
 export function verifyUpdateEnvelope(raw: unknown, publicKey: string) {
   const envelope = z.object({ payload: z.string().max(65536), signature: z.string().max(256) }).parse(raw)
@@ -69,12 +79,15 @@ export function createUpdateManager({
   fetchImpl?: FetchFn
 }) {
   let selected: z.infer<typeof UpdatePayloadSchema>['assets'][number] | null = null
+  /** macOS: the matching download, reported as available but never downloaded by the app. */
+  let selectedMac: NonNullable<z.infer<typeof UpdatePayloadSchema>['macAssets']>[number] | null = null
   let downloading = false
   let selectedVersion: string | null = null
   const manager = {
     async check(): Promise<UpdateStatus> {
       if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')
       selected = null
+      selectedMac = null
       selectedVersion = null
       if (!config) return { configured: false, available: false, currentVersion }
       https.parse(config.feedUrl)
@@ -98,19 +111,22 @@ export function createUpdateManager({
       const payload = verifyUpdateEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')), config.publicKey)
       if (!newerVersion(payload.version, currentVersion)) return { configured: true, available: false, currentVersion }
       selectedVersion = payload.version
-      selected = payload.assets.find((asset) => asset.platform === platform && asset.arch === arch) ?? null
+      if (platform === 'darwin') selectedMac = macAssetFor(payload.macAssets, arch)
+      else selected = payload.assets.find((asset) => asset.platform === platform && asset.arch === arch) ?? null
+      const offered = selected ?? selectedMac
       return {
         configured: true,
-        available: !!selected,
+        available: !!offered,
         currentVersion,
         version: payload.version,
-        ...(selected ? { fileName: selected.fileName } : {}),
+        ...(offered ? { fileName: offered.fileName } : {}),
       }
     },
     async download(): Promise<string> {
       return (await manager.downloadRelease()).path
     },
     async downloadRelease() {
+      if (!selected && selectedMac) throw new AppException('INVALID_INPUT', DOWNLOAD_PAGE_UPDATE_MESSAGE)
       if (!selected) throw new AppException('INVALID_INPUT', 'Check for a verified update first.')
       if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')
       const asset = selected

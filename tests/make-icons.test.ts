@@ -33,6 +33,9 @@ interface IconsModule {
   readPngInfo(png: Buffer): PngInfo
   encodeIco(images: Array<{ png: Buffer; size: number }>): Buffer
   readIco(ico: Buffer): IcoEntry[]
+  ICNS_ENTRIES: Array<[string, number]>
+  encodeIcns(elements: Array<{ type: string; png: Buffer }>): Buffer
+  readIcns(icns: Buffer): Array<{ type: string; data: Buffer }>
 }
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
@@ -141,8 +144,35 @@ describe('make-icons', () => {
     }
   })
 
+  it('packs PNG elements into an ICNS container with big-endian lengths that include each header', () => {
+    const a = mod.encodePng(Buffer.alloc(16 * 16 * 4, 0x40), 16, 16)
+    const b = mod.encodePng(Buffer.alloc(32 * 32 * 4, 0x80), 32, 32)
+    const icns = mod.encodeIcns([
+      { type: 'icp4', png: a },
+      { type: 'ic11', png: b },
+    ])
+    expect(icns.subarray(0, 4).toString('ascii')).toBe('icns')
+    expect(icns.readUInt32BE(4)).toBe(icns.length)
+    expect(icns.subarray(8, 12).toString('ascii')).toBe('icp4')
+    expect(icns.readUInt32BE(12)).toBe(a.length + 8)
+    const elements = mod.readIcns(icns)
+    expect(elements.map((e) => e.type)).toEqual(['icp4', 'ic11'])
+    expect(elements[0]!.data.equals(a)).toBe(true)
+    expect(elements[1]!.data.equals(b)).toBe(true)
+    expect(() => mod.encodeIcns([{ type: 'toolong', png: a }])).toThrow('Invalid ICNS element type')
+    expect(() => mod.readIcns(Buffer.from('not an icns file'))).toThrow('Not an ICNS')
+    const truncated = Buffer.from(icns.subarray(0, icns.length - 4))
+    truncated.writeUInt32BE(truncated.length, 4)
+    expect(() => mod.readIcns(truncated)).toThrow('Corrupt ICNS element')
+  })
+
+  it('maps every ICNS element type to its pixel size, including the 1024 px Retina 512 pt icon', () => {
+    expect(Object.fromEntries(mod.ICNS_ENTRIES)).toEqual({ icp4: 16, icp5: 32, ic11: 32, ic12: 64, ic07: 128, ic13: 256, ic08: 256, ic14: 512, ic09: 512, ic10: 1024 })
+    for (const [, size] of mod.ICNS_ENTRIES) expect(mod.ICON_SIZES).toContain(size)
+  })
+
   it('draws 16–32 px from the simplified source and larger sizes from the full mark', () => {
-    expect(mod.ICON_SIZES).toEqual([16, 24, 32, 48, 64, 128, 256, 512])
+    expect(mod.ICON_SIZES).toEqual([16, 24, 32, 48, 64, 128, 256, 512, 1024])
     expect(mod.ICO_SIZES).toEqual([16, 24, 32, 48, 64, 128, 256])
     expect(mod.ICON_SIZES.filter((size) => mod.sourceFor(size) === 'icon-small.svg')).toEqual([16, 24, 32])
     expect(mod.sourceFor(48)).toBe('icon.svg')
@@ -186,6 +216,16 @@ describe('make-icons', () => {
       }
       // The 256 entry is the same rendering as 256.png.
       expect(entries.at(-1)!.data.equals(readFileSync(join(ICONS_DIR, '256.png')))).toBe(true)
+    })
+
+    it('has a macOS ICNS whose PNG elements match their declared sizes (the 512 px one equals icon.png)', () => {
+      const elements = mod.readIcns(readFileSync(join(ICONS_DIR, 'icon.icns')))
+      expect(elements.map((e) => e.type)).toEqual(mod.ICNS_ENTRIES.map(([type]) => type))
+      for (const element of elements) {
+        const size = mod.ICNS_ENTRIES.find(([type]) => type === element.type)![1]
+        expect(mod.readPngInfo(element.data), element.type).toEqual({ width: size, height: size, bitDepth: 8, colorType: 6 })
+      }
+      expect(elements.find((e) => e.type === 'ic09')!.data.equals(readFileSync(join(ICONS_DIR, 'icon.png')))).toBe(true)
     })
 
     it('renders a transparent outside, opaque indigo tile and a legible browser route mark', () => {

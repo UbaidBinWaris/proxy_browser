@@ -30,7 +30,9 @@ import originalFs from 'original-fs'
 
 import { EVENTS } from '@shared/ipc'
 import { DESKTOP_APP_ID, DESKTOP_APP_NAME, USB_MANIFEST_NAME } from '@shared/desktop'
+import type { UpdateAvailability } from '@shared/desktop'
 import { createDesktopIntegration, newerInstalledCopy } from './desktop/integration'
+import { desktopLocations } from './desktop/locations'
 import type { DesktopIntegration } from './desktop/integration'
 import { restoreRelaunchEnvironment } from './desktop/relaunch-env'
 import { pidToAwait, restartPlan, waitForExit } from './desktop/restart'
@@ -87,10 +89,12 @@ import { createVisualStore } from './qa/visual'
 import type { QaService } from './qa/service'
 import { createGatewayManager } from './qa/gateways'
 import { SITE_ACCESS_FILE_NAME, createSiteAccess } from './site-access'
-import { createUpdateManager } from './releases/updates'
+import { createUpdateManager, downloadPageUrl } from './releases/updates'
 import type { UpdateConfig } from './releases/updates'
+import { UPDATE_CHECK_FILE, createUpdateCheckStore, runStartupUpdateCheck } from './releases/startup-check'
 import { resolveAppIconPath } from './windows/app-icon'
 import { KEYS_WINDOW_ROUTE, createKeysWindowController, keysWindowOptions } from './windows/keys-window'
+import { QA_FIXTURE_TYPES } from '@shared/qa-fixtures'
 
 const WINDOW_BACKGROUND = '#0b0f19'
 const SCOPE = 'app'
@@ -671,6 +675,12 @@ async function bootstrap(): Promise<Runtime> {
     arch: process.arch,
     directory: updateDirs.downloads,
   })
+  const desktopDirs = desktopLocations({
+    platform: process.platform,
+    env: process.env,
+    home: app.getPath('home'),
+    appData: app.getPath('appData'),
+  })
   const desktop = createDesktopIntegration({
     fileSystem: originalFs.promises,
     platform: process.platform,
@@ -681,19 +691,15 @@ async function bootstrap(): Promise<Runtime> {
     portableExecutable: process.env.PORTABLE_EXECUTABLE_FILE ?? null,
     appImage: process.env.APPIMAGE ?? null,
     resourcesPath: process.resourcesPath,
-    root:
-      process.platform === 'win32'
-        ? join(process.env.LOCALAPPDATA ?? app.getPath('appData'), 'ProxyQABrowser')
-        : join(process.env.XDG_DATA_HOME ?? join(app.getPath('home'), '.local', 'share'), 'proxy-qa-browser'),
+    root: desktopDirs.root,
     desktopDirectory: app.getPath('desktop'),
-    menuDirectory:
-      process.platform === 'win32'
-        ? join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs')
-        : join(process.env.XDG_DATA_HOME ?? join(app.getPath('home'), '.local', 'share'), 'applications'),
+    menuDirectory: desktopDirs.menuDirectory,
     updatesDirectory: updateDirs.staged,
     onlineDownloadsDirectory: updateDirs.downloads,
     publicKey: metadata.qaOfflineUpdates?.publicKey ?? null,
     releaseNotes: metadata.qaReleaseNotes ?? [],
+    downloadPageUrl: downloadPageUrl(metadata.qaUpdates ?? null),
+    openExternal: (url) => shell.openExternal(url),
     writeWindowsShortcut: (path, options) => shell.writeShortcutLink(path, 'create', options),
     reveal: (path) => shell.showItemInFolder(path),
     onInstalled: (executable) => {
@@ -715,12 +721,18 @@ async function bootstrap(): Promise<Runtime> {
     },
   })
   // A restart into a verified portable release replaces the stable application folder
-  // after the old process has released its files. Failure leaves that copy usable.
+  // after the old process has released its files. Failure leaves that copy usable; either way the
+  // outcome is stored and shown as the update notice (with Retry after a failure).
   await desktop
     .finishPendingUpdate()
+    .then((result) => {
+      if (result === 'finished') logger.info('desktop', `Update to ${app.getVersion()} finished`)
+    })
     .catch((error: unknown) =>
       logger.warn('desktop', 'Local update setup failed; open App & updates to retry', { error }),
     )
+  /** Latest startup update-check result of this run, for renderers that subscribe after the broadcast. */
+  let latestUpdate: UpdateAvailability | null = null
   // Local schedules intentionally do not replay missed intervals after downtime.
   const qaTimer = setInterval(() => {
     void qa.tick().catch((err: unknown) => logger.warn('qa', 'Schedule check failed', { error: err }))
@@ -768,6 +780,7 @@ async function bootstrap(): Promise<Runtime> {
       gateways,
       siteAccess: siteAccess.store,
       updates,
+      updateAvailability: () => latestUpdate,
       desktop,
       files: {
         chooseUsb: async () => {
@@ -786,6 +799,14 @@ async function bootstrap(): Promise<Runtime> {
           })
           return result.canceled ? null : (result.filePaths[0] ?? null)
         },
+        chooseFixture: async () => {
+          const result = await dialog.showOpenDialog({
+            title: 'Attach an upload fixture (synthetic test file, up to 2 MB)',
+            properties: ['openFile'],
+            filters: [{ name: 'Upload fixture', extensions: Object.keys(QA_FIXTURE_TYPES).map((ext) => ext.slice(1)) }],
+          })
+          return result.canceled ? null : (result.filePaths[0] ?? null)
+        },
       },
     },
     ipcMain,
@@ -796,6 +817,21 @@ async function bootstrap(): Promise<Runtime> {
   // An old downloaded EXE/AppImage was opened while a newer computer copy exists (e.g. after an update).
   const newerCopy = newerInstalledCopy(localApp)
   if (newerCopy) void offerNewerCopy(mainWindow, desktop, localApp.currentVersion, newerCopy, logger)
+  // One background look at the signed feed, at most once per 24 h (Settings → General). It never
+  // downloads, is skipped by builds without a feed, and failures stay in the log.
+  void runStartupUpdateCheck({
+    enabled: db.settings.get().checkUpdatesOnStartup,
+    configured: !!metadata.qaUpdates,
+    currentVersion: app.getVersion(),
+    store: createUpdateCheckStore({ path: join(paths.data, UPDATE_CHECK_FILE) }),
+    check: () => updates.check(),
+    now: () => new Date(),
+    logger,
+    publish: (availability) => {
+      latestUpdate = availability
+      broadcast(EVENTS.updateAvailable, availability)
+    },
+  })
   const relaunchExecutable = localApp.installedPath ?? process.env.PORTABLE_EXECUTABLE_FILE
   if (process.platform === 'win32' && relaunchExecutable)
     mainWindow.setAppDetails({

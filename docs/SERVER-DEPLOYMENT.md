@@ -6,6 +6,7 @@ The Next.js app lives in `app/webapp`. Its production origin is **https://proxyb
 
 - Windows: `Proxy-QA-Browser-<version>-Windows-x64.exe`. One file; no Node.js or development dependencies. First-run setup needs Internet to download missing browser engines. In **App & updates**, create the computer copy and shortcuts for faster later launches. Windows controls the final Start/taskbar pin action.
 - Linux: `Proxy-QA-Browser-<version>-x86_64.AppImage`, with browser engines bundled. Make it executable and open it. AppImage/FUSE support depends on the Linux distribution; `--appimage-extract-and-run` is an alternative on machines without FUSE.
+- macOS (optional, not published by CI yet): `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (or `.zip`). The website shows a macOS card only when the published release lists them; Macs check the feed and open the website to download — see [DISTRIBUTION.md → macOS](DISTRIBUTION.md#macos).
 - Existing users install 1.3.0 once to get the default online feed. Future releases are discovered when opening **App & updates**. The user chooses **Download v… and restart**. Signature, size, and checksum must pass before the executable is launched. Local data and computer-copy shortcuts are preserved.
 - The website offers public downloads, SHA-256 checksums, release notes, and a **Check for updates** button. No account or proxy subscription is included.
 
@@ -26,7 +27,7 @@ The website runs as **proxybrowser**, not root. Only the release storage and Nex
 
 Public API routes: `/api/health`, `/api/releases`, `/api/updates/stable`, and `/api/download/<version>/<filename>`. Administration API routes require `Authorization: Bearer <ADMIN_TOKEN>` plus HTTPS in production. Browser mutations must come from the configured origin. Authentication is enforced in each handler, independent of middleware. No shared admin token is embedded in the desktop app or client bundle.
 
-Publishing requires Windows and Linux assets plus two matching Ed25519-signed manifests. The server checks platform, version, origin, file type, exact size, and streaming SHA-256 before switching the current pointer. Published versions cannot be overwritten or downgraded. Failed uploads or verification leave the current release available. Downloads stream from disk and support single byte ranges.
+Publishing requires Windows and Linux assets plus two matching Ed25519-signed manifests; macOS DMG/ZIP files are optional extras listed under `macAssets` in both manifests (older desktop releases ignore that key, so the required pair stays exactly two files). The server checks platform, version, origin, file type, exact size, and streaming SHA-256 of every listed file before switching the current pointer. Published versions cannot be overwritten or downgraded. Failed uploads or verification leave the current release available. Downloads stream from disk and support single byte ranges.
 
 The publisher private key stays on your publishing computer and in the protected GitHub Actions signing secret. The server needs only the **public** verification key. `app/webapp/public-key.pem` is safe to commit and deploy. Preserve the existing key pair; silently replacing it would break trust for installed apps.
 
@@ -48,7 +49,7 @@ Do not put the administrator token in chat, Git, `NEXT_PUBLIC_*`, or the desktop
 
 ## GitHub Actions setup — required once
 
-Create a GitHub **production** environment for `UbaidBinWaris/proxy_browser` and restrict deployment branches to `main`. Add these three environment secrets in **Settings → Environments → production → Environment secrets**:
+Create a GitHub **production** environment for `UbaidBinWaris/proxy_browser`. Releases deploy from **version tags**, so under **Deployment branches and tags** choose *Selected branches and tags* and add the tag rule `v*` (plus `main` if you also start manual runs from it); without the tag rule GitHub refuses tag deployments. Add these three environment secrets in **Settings → Environments → production → Environment secrets**:
 
 | Secret | File to use privately |
 | --- | --- |
@@ -66,15 +67,42 @@ The workflow then:
 
 Before building, the **preflight** job verifies the signing secret against both public keys with an in-memory signing round trip, then checks the deployment SSH key and pinned server host key. It prints only success/failure messages. If it fails, fix the named secret; the build jobs will remain skipped. The website transfer alone proves SSH access but does not exercise the signing secret.
 
-1. Chooses one shared stable version: base `major.minor.(patch + GITHUB_RUN_NUMBER)`. For base 1.3.0, workflow run 1 is 1.3.1. All jobs use the same value and copy the base release notes. Keep the same workflow identity/counter; when replacing or resetting it, bump the base minor/major version beyond already published releases.
-2. Builds and tests the Windows EXE, bundled Linux AppImage, and production website. Native Windows smoke tests run on a Windows runner.
+1. Chooses one shared stable version. A tag `vX.Y.Z` publishes exactly X.Y.Z (it must not be lower than `package.json`; release notes for that version, or the base version, must exist). A manual **Run workflow** without a tag keeps the old scheme: base `major.minor.(patch + GITHUB_RUN_NUMBER)`. All jobs use the same value.
+2. Builds and tests the Windows EXE, bundled Linux AppImage, and production website. Native Windows smoke tests run on a Windows runner, and the **update-smoke** job performs a real update on Windows (old build → signed update → restart → new build finishes); publishing waits for it. Electron downloads and the Linux browser bundle are cached between runs.
 3. Hashes each desktop artifact in its build job and passes only the size and checksum through trusted GitHub job outputs.
 4. Transfers large binaries directly over SSH to the server's staging folder. The website archive is also transferred directly. No desktop binaries enter Git or GitHub Actions artifact storage.
 5. Signs the trusted build-job metadata in the publishing job. The server cannot substitute its own asset hash and obtain a valid publisher signature.
 6. Installs the website using an atomic current symlink, restarts the unprivileged service, and restores the previous website if its local health check fails.
 7. Verifies the staged files against the signed manifests and publishes both platforms atomically. The public feed is checked over HTTPS and verified against the pinned key.
 
-A failed build stops publication. Already published versions cannot be rerun with different binaries; use a new push for a new workflow version. A failure after successful publication may leave that valid release active; inspect the feed before retrying. Old public releases remain available for existing versioned links. Remove obsolete staging files only when no corresponding build/upload is running.
+A failed build stops publication. Already published versions cannot be rerun with different binaries; tag a new version instead. A failure after successful publication may leave that valid release active; inspect the feed before retrying. Old public releases remain available for existing versioned links. Remove obsolete staging files only when no corresponding build/upload is running.
+
+### Releasing
+
+```bash
+npm run release:version -- minor      # bumps package.json, lockfile and the CI runner pins
+# add notes for the new version to resources/release-notes.json
+git commit -am "Release 1.5.0" && git push origin main      # runs the checks only
+git tag v1.5.0 && git push origin v1.5.0                     # builds, tests and publishes
+```
+
+Pushes to `main` run the verification workflows but never publish. The same tag also builds the Docker runner image (`runner-image.yml`).
+
+### Windows code signing (optional, recommended before public releases)
+
+Unsigned EXEs show SmartScreen's "Windows protected your PC" warning. With **Azure Trusted Signing**, add these secrets to the production environment; the Windows job then signs automatically (and refuses to build unsigned):
+
+| Secret | Value |
+| --- | --- |
+| `AZURE_SIGN_ENDPOINT` | Trusted Signing account endpoint, e.g. `https://eus.codesigning.azure.net` |
+| `AZURE_SIGN_ACCOUNT` | Trusted Signing account name |
+| `AZURE_SIGN_PROFILE` | Certificate profile name |
+| `AZURE_SIGN_PUBLISHER` | Publisher subject exactly as in the certificate profile (e.g. `CN=Your Name`) |
+| `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | App registration with the *Trusted Signing Certificate Profile Signer* role |
+
+Without these secrets the build stays unsigned, as before.
+
+macOS is verified by `.github/workflows/macos.yml` (unsigned build + smoke test) but is not part of this deploy workflow; signing/notarization variables and the steps to add a macOS publishing job are in [DISTRIBUTION.md → macOS](DISTRIBUTION.md#publishing-macos-releases-not-enabled-yet).
 
 Actions and build dependencies are pinned; build scripts do not receive the publisher key. Production dependency audits run in CI. Desktop build tools are not installed on the website server.
 
@@ -103,7 +131,7 @@ rsync -av --partial \
 ssh root@78.46.58.254 'bash /opt/proxy-browser/deploy/publish-release.sh 1.3.0'
 ```
 
-The `--partial` transfer retains incomplete data for retry. Publication rehashes all completed files. `/admin` also accepts the two binaries and two signed manifests; large browser uploads need the provided Nginx limits. The SSH path is preferable for resumable large transfers.
+To include macOS, copy the `-macOS-*.dmg`/`.zip` files built on a Mac into `release/` before `npm run release:server` (they are signed into both manifests) and add them to the `rsync` list. The `--partial` transfer retains incomplete data for retry. Publication rehashes all completed files. `/admin` also accepts the two binaries (plus optional macOS files) and two signed manifests; large browser uploads need the provided Nginx limits. The SSH path is preferable for resumable large transfers.
 
 GitHub's 100 MiB Git-file restriction does not apply to direct transfers. GitHub Release assets are another distribution option and support files below 2 GiB each: [GitHub release asset documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases). This implementation uses your server for production downloads.
 

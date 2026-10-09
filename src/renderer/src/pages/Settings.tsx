@@ -48,7 +48,7 @@ import {
 } from '@/lib/settingsForm'
 import type { SettingsFormErrors, SettingsFormState } from '@/lib/settingsForm'
 import { encodePlaceName } from '@/lib/targeting'
-import { encodingOptionsFor, findProvider, productKeys, productLabelFor, providerProductLabel, providersWithEncodings } from '@/lib/providers'
+import { encodingOptionsFor, findProvider, productKeys, productLabelFor, providerOptionLabel, providerProductLabel, providersWithEncodings } from '@/lib/providers'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/app'
 import type { InstallTarget } from '@/stores/app'
@@ -141,6 +141,17 @@ function GeneralTab({ form, errors, set, onSubmit, screenshotDir, onReveal }: Fo
             onChange={(checked) => set('singleSessionMode', checked)}
             label="One session at a time"
             description={form.singleSessionMode ? 'Launching while a browser is open offers to close it first.' : 'Several browsers can run side by side.'}
+          />
+          <Switch
+            id="settings-checkUpdatesOnStartup"
+            checked={form.checkUpdatesOnStartup}
+            onChange={(checked) => set('checkUpdatesOnStartup', checked)}
+            label="Check for updates on startup"
+            description={
+              form.checkUpdatesOnStartup
+                ? 'At most once a day, the app asks the publisher’s server for a signed release. Nothing is downloaded until you choose to.'
+                : 'Updates are checked only when you click Check for updates in App & updates.'
+            }
           />
           <div className="flex flex-col gap-1.5">
             <label htmlFor="settings-screenshotDir" className="text-sm font-medium leading-none">
@@ -348,7 +359,7 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
               id="settings-defaultProviderId"
               value={form.defaultProviderId}
               onChange={(e) => selectDefaultProvider(e.target.value)}
-              options={(providers ?? [{ id: form.defaultProviderId, displayName: form.defaultProviderId }]).map((provider) => ({ value: provider.id, label: provider.displayName }))}
+              options={(providers ?? [{ id: form.defaultProviderId, displayName: form.defaultProviderId }]).map((provider) => ({ value: provider.id, label: providerOptionLabel(provider) }))}
               aria-describedby={fieldDescribedBy('settings-defaultProviderId', true, !!errors.defaultProviderId)}
             />
           </Field>

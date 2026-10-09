@@ -37,6 +37,18 @@ npm run browsers:install   # Playwright Chromium/Firefox/WebKit for local runs
 npm run dev
 ```
 
+**On a Mac** the same commands work (macOS 12+, Node ≥ 22.13, Xcode Command
+Line Tools via `xcode-select --install`). `npm run build:mac:dir` packages an
+ad-hoc signed `.app` for your Mac without any Apple account, and
+`node scripts/macos-smoke.mjs` checks it; leave `CSC_LINK`, `CSC_KEY_PASSWORD`
+and `APPLE_*` unset unless you mean to sign — a partial set fails the build
+(see [docs/DISTRIBUTION.md → macOS](docs/DISTRIBUTION.md#macos)). The first
+start may ask for access to the *Proxy-QA-Browser Safe Storage* Keychain item.
+macOS code paths must stay testable on Linux: take `platform` as a parameter
+(as `src/main/config/paths.ts` and `src/main/browser/engine-detect.ts` do) and
+cover them in unit tests with `'darwin'` injected; CI runs the suite and the
+packaged-app smoke test on `macos-latest` too.
+
 No proxy account is needed for most work: direct (unproxied) launches and the
 whole unit suite run without credentials. Never put real credentials in tests,
 fixtures, screenshots or issue reports.

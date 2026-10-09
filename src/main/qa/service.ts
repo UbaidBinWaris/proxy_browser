@@ -3,6 +3,7 @@ import { mkdir, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative } from 'node:path'
 import type { MatrixInput, QaBatch, QaCase, QaExecution, QaScenario, ScenarioInput } from '@shared/qa'
 import { MatrixInputSchema, ScenarioInputSchema, countHealedSteps } from '@shared/qa'
+import { summarizeChecks } from '@shared/qa-checks'
 import type { Profile } from '@shared/types'
 import type { ProfileManager } from '../contracts'
 import { AppException } from '../contracts'
@@ -197,6 +198,7 @@ export function createQaService(options: QaServiceOptions) {
                   join(artifactRoot, batch.id, `${id}-${attempt}`),
                   controller.signal,
                 )
+                const checks = summarizeChecks(outcome.steps)
                 final = {
                   ...outcome,
                   id,
@@ -204,6 +206,7 @@ export function createQaService(options: QaServiceOptions) {
                   scenarioName: caseScenario.name,
                   environmentName: environment?.name,
                   attempt,
+                  ...(checks.length ? { checks } : {}),
                 }
               } catch (err) {
                 final = {

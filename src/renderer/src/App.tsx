@@ -17,6 +17,7 @@ import { useSessionsStore } from '@/stores/sessions'
 import { useSettingsStore } from '@/stores/settings'
 import { selectFirstRun, selectSetupPending, useSetupStore } from '@/stores/setup'
 import { taskTransitions, useTasksStore } from '@/stores/tasks'
+import { useUpdatesStore } from '@/stores/updates'
 import { toast } from '@/stores/toasts'
 import { LaunchPage } from '@/pages/Launch'
 import { SessionsPage } from '@/pages/Sessions'
@@ -87,6 +88,8 @@ function EventBridge(): null {
     if (setup.status?.firstRun) void setup.load()
   })
 
+  useEvent(EVENTS.updateAvailable, (availability) => useUpdatesStore.getState().applyAvailability(availability))
+
   useEffect(() => {
     const { loadInfo, loadBrowsers } = useAppStore.getState()
     void loadInfo()
@@ -100,6 +103,7 @@ function EventBridge(): null {
     void useRunsStore.getState().load(50)
     void useSettingsStore.getState().load()
     void useSecurityStore.getState().load()
+    void useUpdatesStore.getState().load()
     void useSetupStore
       .getState()
       .load()

@@ -93,6 +93,11 @@ describe('preload bridge', () => {
       [() => api.desktop.launchInstalled(), IPC.desktop.launchInstalled, []],
       [() => api.desktop.chooseUsb(), IPC.desktop.chooseUsb, []],
       [() => api.desktop.applyUsb(), IPC.desktop.applyUsb, []],
+      [() => api.desktop.applyOnline(), IPC.desktop.applyOnline, []],
+      [() => api.desktop.retryPendingUpdate(), IPC.desktop.retryPendingUpdate, []],
+      [() => api.desktop.dismissUpdateNotice(), IPC.desktop.dismissUpdateNotice, []],
+      [() => api.desktop.updateAvailability(), IPC.desktop.updateAvailability, []],
+      [() => api.desktop.openDownloadPage(), IPC.desktop.openDownloadPage, []],
       [() => api.app.getInfo(), IPC.app.getInfo, []],
       [() => api.app.openPath('/tmp/x.png'), IPC.app.openPath, ['/tmp/x.png']],
       [() => api.profiles.list(), IPC.profiles.list, []],
@@ -164,6 +169,7 @@ describe('preload bridge', () => {
       [() => api.siteAccess.save({ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: false }, 't1'), IPC.siteAccess.save, [{ name: 'n', origins: ['https://a.example'], headerName: 'X-QA', enabled: false }, 't1']],
       [() => api.siteAccess.setEnabled('t1', false), IPC.siteAccess.setEnabled, ['t1', false]],
       [() => api.siteAccess.delete('t1'), IPC.siteAccess.delete, ['t1']],
+      [() => api.qa.chooseFixture(), IPC.qa.chooseFixture, []],
     ]
     for (const [call, channel, args] of cases) {
       invoke.mockClear()
@@ -182,6 +188,15 @@ describe('preload bridge', () => {
     expect(received).toEqual([{ id: 1, message: 'hi' }])
     off()
     expect(set?.size).toBe(0)
+  })
+
+  it('delivers the startup update-check event', () => {
+    const received: unknown[] = []
+    const off = api.events.on(EVENTS.updateAvailable, (availability) => received.push(availability))
+    for (const l of listeners.get(EVENTS.updateAvailable) ?? []) l({}, { available: true, version: '1.5.0', checkedAt: '2026-10-09T00:00:00.000Z' })
+    expect(received).toEqual([{ available: true, version: '1.5.0', checkedAt: '2026-10-09T00:00:00.000Z' }])
+    off()
+    expect(listeners.get(EVENTS.updateAvailable)?.size).toBe(0)
   })
 
   it('rejects unknown event channels and non-function listeners', () => {

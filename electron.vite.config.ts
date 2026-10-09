@@ -9,7 +9,12 @@ export default defineConfig({
       rollupOptions: {
         // index.ts only sets PLAYWRIGHT_BROWSERS_PATH, then dynamically imports main.ts
         // (emitted as a sibling chunk) so playwright-core is not evaluated too early.
-        input: { index: resolve(__dirname, 'src/main/index.ts'), 'qa-cli': resolve(__dirname, 'src/main/qa/cli.ts') },
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'qa-cli': resolve(__dirname, 'src/main/qa/cli.ts'),
+          // MCP server over stdio (docs/MCP-SERVER.md); like qa-cli it must never import Electron.
+          'qa-mcp': resolve(__dirname, 'src/main/mcp/server.ts'),
+        },
         external: ['playwright-core', 'node:sqlite', 'original-fs'],
         // main.ts resolves ../preload and ../renderer from its own __dirname, so the chunk
         // must sit next to index.js in out/main rather than in out/main/chunks/.
