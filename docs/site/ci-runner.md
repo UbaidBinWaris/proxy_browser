@@ -1,6 +1,6 @@
 # CI runner
 
-The headless runner executes scenario and suite manifests exported from the desktop app and writes JSON, JUnit XML and HTML reports, from the command line, a Docker image or a GitHub Action.
+The headless runner executes scenario and suite manifests exported from the desktop app, including [recorded scenarios](/use-cases/test-recorder), and writes JSON, JUnit XML and HTML reports, from the command line, a Docker image or a GitHub Action.
 
 Use the runner only on sites you own or are contracted to test. The full reference is in [docs/CI-RUNNER.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/CI-RUNNER.md).
 
@@ -10,7 +10,7 @@ In the desktop app, open **QA automation** and use:
 
 - **Export for CI** on a scenario. The manifest contains `scenario`, `profile` and optionally a `matrix` (`engines`, `devices`, `targets`, `concurrency`, `retries`).
 - **Export suite for CI** on a suite. It includes the suite's scenarios, profiles and workspace environments.
-- **Export approved baselines for CI** for visual comparisons, which writes a `.qavb` pack.
+- **Export approved baselines for CI** for visual comparisons, which writes a `.qavb` pack. Approve baselines on the same operating system and browser versions the CI uses (for example in the Linux app with the same bundled engines); otherwise comparisons fail.
 
 Manifests are executable configuration. Never commit real form data or credentials in them; URLs with embedded usernames or passwords are rejected.
 
@@ -74,7 +74,7 @@ Leave all proxy variables unset for a direct (unproxied) run. For profiles that 
 
 ## Docker image
 
-The runner image `ghcr.io/ubaidbinwaris/proxy-qa-runner` is built on the official Playwright image and contains Node 24, Chromium, Firefox and WebKit, the runner and the [MCP server](/docs/mcp-server). It contains no credentials, runs as the non-root user `pwuser`, and is published for `linux/amd64`. Installed vendor browsers (Chrome, Edge, Brave and others) are not included; use `chromium`, `firefox` or `webkit`.
+The runner image `ghcr.io/ubaidbinwaris/proxy-qa-runner` is published for `linux/amd64`. Its only browsers are Chromium, Firefox and WebKit; it also contains Node 24, the runner and the [MCP server](/docs/mcp-server). It is built on the official Playwright image, contains no credentials and runs as the non-root user `pwuser`. Installed vendor browsers (Chrome, Edge, Brave and others) are not included; use `chromium`, `firefox` or `webkit`.
 
 ```bash
 docker run --rm --init --ipc=host \
@@ -102,7 +102,7 @@ Pin the image to a release tag or digest. To build it locally, see [docs/CI-RUNN
 
 ## GitHub Action
 
-The composite action `UbaidBinWaris/proxy_browser/action` runs the image on **Linux runners with Docker** (GitHub-hosted `ubuntu-*` runners qualify), uploads the report directory and fails the step when the exit code is not 0.
+To run browser tests in GitHub Actions, use the composite action `UbaidBinWaris/proxy_browser/action`. It runs the image on **Linux runners with Docker** (GitHub-hosted `ubuntu-*` runners qualify), uploads the report directory and fails the step when the exit code is not 0.
 
 ```yaml
 jobs:
@@ -159,3 +159,9 @@ docker run --rm --init --ipc=host --network host --user "$(id -u):$(id -g)" -e H
 ```
 
 Expected: `passed: 1/1 cases`, exit code 0, and `qa-results/results.{json,xml,html}`.
+
+## Common questions
+
+### How do I pass proxy credentials in CI?
+
+Leave all proxy variables unset for a direct run. For profiles that use a built-in provider, pass the credentials as `QA_PROVIDER*` environment variables (or the older `DATAIMPULSE_PROXY_*` alias) from your CI secret store; `QA_PROXY_*` instead sets one custom gateway for the whole run. See [Proxy credentials](#proxy-credentials).

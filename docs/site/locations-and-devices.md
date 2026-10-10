@@ -1,6 +1,6 @@
 # Locations and devices
 
-Choose a US exit location down to the ZIP code, let the app verify that the exit IP really is there, and emulate any of 226 device presets.
+Target a country or a US state, city or ZIP code, check the exit IP's reported location before the browser window opens, and emulate any of 226 phone, tablet and desktop presets.
 
 ## Choosing a location
 
@@ -18,9 +18,11 @@ On the Launch page, **Exit location** connects by **Country**, **State**, **City
 
 Location search runs entirely on your computer and never sends your query anywhere. Recent locations are kept in the app's local storage only.
 
+See it in practice: [test your website from different locations](/use-cases/location-testing).
+
 ## Exit-IP verification
 
-Before the browser opens, the app looks up the exit IP **through the same proxy login the browser will use** and compares the reported country, region, city and postal code with your target.
+To check your proxy's location, the app looks up the exit IP on each launch before the browser opens (or when you click **Test Proxy** on a profile), **through the same proxy login the browser will use**, and compares the reported country, region, city and postal code with your target.
 
 | Badge | Meaning |
 | --- | --- |
@@ -66,7 +68,9 @@ The timeout is 15,000 ms by default (1,000–120,000) with 2 retries (0–5) and
 
 ## Devices
 
-The catalog holds **226 presets**: 198 from Playwright's device descriptors (portrait and landscape) and 28 curated by the project (desktops and current Android phones Playwright lacks).
+For a walkthrough, see how to [test your website on different devices](/use-cases/device-testing).
+
+The catalog holds **226 presets**: 198 from Playwright's device descriptors (portrait and landscape) and 28 curated by the project (desktops and current Android phones Playwright lacks). The table shows the preset types with examples.
 
 | Type | Presets | Examples |
 | --- | --- | --- |
@@ -113,3 +117,13 @@ User agent rules:
 - A custom viewport stops the preset's physical screen size from being reported.
 
 Device emulation is for layout and behaviour testing of your own pages. It is not designed to disguise the browser from bot detection, and the project does not add such features. See [Responsible use](/docs/introduction#responsible-use).
+
+## Common questions
+
+### How do I check that my proxy's exit IP is in the location I picked?
+
+You do not need a separate checker. Before the browser opens, the app looks up the exit IP through the same proxy login and compares country, region, city and postal code with your target. The run shows **Match**, **Partial**, **Mismatch** or **Unverified**. With a sticky session and a target, the app can retry with a new sticky session until the result meets your **Location match** policy, up to the number of attempts you set (default 3). Otherwise it uses the best result and shows a warning.
+
+### Why did the exit IP land in another city, and how accurate is ZIP targeting?
+
+IP geolocation is a third-party estimate, and your site's own geo-IP database may disagree with it. Some ZIP codes have only a handful of exit IPs, and carrier IPs often geolocate to the carrier's hub. **Same state** is the default match policy. For thin ZIP codes, use City or State targeting, rotating mode, or wait. IPRoyal has no ZIP mode. See [ZIP targeting caveat](#zip-targeting-caveat).

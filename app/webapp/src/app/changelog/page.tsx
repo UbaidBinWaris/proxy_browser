@@ -1,16 +1,18 @@
 import type { Metadata } from 'next'
+import { JsonLd } from '@/components/JsonLd'
 import { loadChangelog } from '@/lib/changelog'
-import { pageMetadata } from '@/lib/seo'
+import { pageBreadcrumbs, pageMetadata } from '@/lib/seo'
 import { REPO_URL } from '@/lib/site'
 
-export const metadata: Metadata = pageMetadata({ title: 'Changelog', description: 'What changed in each Proxy QA Browser release, newest first.', path: '/changelog' })
+export const metadata: Metadata = pageMetadata({ title: 'Changelog and release notes', description: 'Release notes for Proxy QA Browser, newest first: the features, fixes and changes in each release of the free, open-source desktop QA app.', path: '/changelog' })
 
 export default async function Changelog() {
   const entries = await loadChangelog()
   return <>
+    <JsonLd data={pageBreadcrumbs('Changelog', '/changelog')} />
     <header className="page-header">
       <span className="eyebrow">RELEASES</span>
-      <h1>Changelog</h1>
+      <h1>Changelog and release notes</h1>
       <p className="page-lead">What&apos;s new in each release, newest first. The desktop app shows the same notes in <strong>Settings → App &amp; updates</strong>.</p>
     </header>
     <div className="changelog">

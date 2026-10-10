@@ -4,10 +4,10 @@ The `qa-mcp` server lets AI coding assistants such as Claude Code or Cursor run 
 
 ## What it does
 
-`qa-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on the same headless runtime as the [CI runner](/docs/ci-runner). You can ask an assistant, for example, "open staging.example.com on an iPhone 15 in WebKit from Austin, TX, submit the form with synthetic data and tell me what broke." The assistant gets a structured result and up to four masked screenshots back.
+`qa-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server on the same headless runtime as the [CI runner](/docs/ci-runner), so Claude Code, Cursor or another MCP client can run browser tests on your allowlisted origins. You can ask an assistant, for example, "open staging.example.com on an iPhone 15 in WebKit from Austin, TX, submit the form with synthetic data and tell me what broke." The assistant gets a structured result and up to four masked screenshots back.
 
 - **stdio only.** The server opens no network port. Protocol messages use stdout; logs and audit lines go to stderr.
-- **Allowlisted origins only.** The server does not start without `QA_MCP_ALLOWED_ORIGINS`, and the assistant cannot open any other origin.
+- **Navigation limited to allowlisted origins.** The server does not start without `QA_MCP_ALLOWED_ORIGINS`, and the assistant cannot navigate to any other origin. The page's own scripts, images and API calls can still reach other origins; this is a navigation boundary, not a network firewall.
 - **No credentials for the assistant.** Proxy credentials come from the server's environment, are removed from it before a browser starts, and are redacted from every result.
 - **Bounded.** Each call has a case limit, concurrent browsers are capped, and each UTC day has a budget of case attempts.
 
@@ -90,7 +90,7 @@ Any other MCP client with stdio support works the same way. The server takes no 
 | `list_capabilities` | Installed engines, proxy providers and products with credentials, whether a custom gateway is set, and the limits (allowed origins, cases per call, concurrency, daily budget and attempts left). The assistant should call it first |
 | `search_devices` | Find device preset IDs by words (`"iphone 15 pro"`, `"galaxy"`), engine or device type |
 | `search_locations` | Search the bundled US dataset (`"austin tx"`, `"new jersey"`, `"78701"`); each entry includes a `target` object for the tools below |
-| `check_exit_ip` | Open a sticky proxy session and verify the exit IP, re-rolling up to three times for a target; returns IP, location, ISP and ASN, and the match verdict. Counts one case attempt |
+| `check_exit_ip` | Open a sticky proxy session and [verify the exit IP](/use-cases/location-testing), re-rolling up to three times for a target; returns IP, location, ISP and ASN, and the match verdict. Needs proxy credentials. Counts one case attempt |
 | `run_check` | Open an allowlisted URL in every engine × device × target combination and run optional steps |
 | `run_manifest` | Run a scenario or suite manifest exported from the desktop app, from inside `QA_MCP_WORKSPACE` |
 | `get_results` | Return the stored summary of an earlier run in the same server process (the latest 50 runs are kept in memory) |
@@ -108,7 +108,7 @@ Any other MCP client with stdio support works the same way. The server takes no 
 | `direct` | Connect without the proxy even when credentials are configured |
 | `timeoutMs` | Per-step timeout, 1000–60000 (default 15000) |
 
-Steps use the scenario step schema of the desktop app (see [Scenarios and matrices](/docs/automation#steps)). `goto` steps need absolute URLs on allowlisted origins; variables are only available in manifests. `upload` steps need fixtures embedded in a scenario, so use `run_manifest` for uploads. There is no arbitrary JavaScript and no download, and traces are never captured.
+Steps use the scenario step schema of the desktop app (see [Scenarios and matrices](/docs/automation#steps)), so they can include checks such as `checkAccessibility` (see [Consent, accessibility and performance checks](/docs/checks)). `goto` steps need absolute URLs on allowlisted origins; variables are only available in manifests. `upload` steps need fixtures embedded in a scenario, so use `run_manifest` for uploads. There is no arbitrary JavaScript and no download, and traces are never captured.
 
 ```json
 {
@@ -194,3 +194,13 @@ Do not pass `-t`: a TTY changes line endings and breaks the protocol stream. Add
 | Location targets refused | Configure proxy credentials and do not set `direct` |
 | `SESSION_LIMIT` | The daily budget is used up. It resets at 00:00 UTC, or raise `QA_MCP_DAILY_BUDGET` |
 | Garbled protocol or invalid JSON in the client | Start the server with `node …/qa-mcp.js`, not `npm run`, and without `docker -t` |
+
+## Common questions
+
+### Can the assistant open any website?
+
+No. The server does not start without `QA_MCP_ALLOWED_ORIGINS`, the allowlist is checked before any browser launch, and the navigation guard blocks other origins and redirects during the run. The page's own scripts, images and API calls can still reach other origins: it limits navigation, it is not a network firewall.
+
+### Does the MCP server need the desktop app?
+
+No. It ships with the source code and the runner Docker image, runs under Node.js 22.13 or later, and does not control the desktop app or its sessions.

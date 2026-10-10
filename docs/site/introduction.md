@@ -1,30 +1,30 @@
 # Introduction
 
-Proxy QA Browser is a free, open-source desktop app for testing your own web forms in real browsers, on emulated devices, from verified proxy exit locations.
+Proxy QA Browser is a free, open-source desktop app for testing your own web forms in real browsers, on emulated devices, through proxy exit IPs whose location is checked before each launch.
 
 ## What it does
 
-Proxy QA Browser opens a real browser window inside an isolated, temporary browser profile and routes it either directly or through a proxy exit IP in the location you choose. Before the window opens, the app looks up the exit IP and compares it with the location you asked for, so you know where the test traffic really comes from.
+Proxy QA Browser opens a real browser window inside an isolated, temporary browser profile and routes it either directly or through a proxy exit IP in the location you choose. Before the window opens, the app looks up the exit IP and compares it with the location you asked for, so you know which exit IP and reported location the test traffic uses.
 
 ![The Launch page: DataImpulse residential pool, exit location Austin, TX, WebKit and Apple iPhone 15 Pro, ready to connect.](images/launch.webp "The Launch page: provider and pool, exit location, browser and device, then Connect & Launch.")
 
 | Area | What you get |
 | --- | --- |
-| Browsers | Bundled Chromium, Firefox and WebKit, plus installed Google Chrome, Microsoft Edge, Brave, Opera, Opera GX, Vivaldi and system Chromium. See [Browsers](/docs/browsers). |
-| Devices | 226 phone, tablet and desktop presets with viewport, scale factor, touch and user agent. See [Locations and devices](/docs/locations-and-devices). |
+| Browsers | Bundled Chromium, Firefox and WebKit, plus installed Google Chrome, Microsoft Edge, Brave, Opera, Opera GX and system Chromium for [cross-browser testing](/use-cases/cross-browser-testing). Vivaldi installs and is detected, but launches fail: Vivaldi 8.2 hangs under automation. See [Browsers](/docs/browsers). |
+| Devices | 226 [emulated device presets](/use-cases/device-testing) for phones, tablets and desktops, with viewport, scale factor, touch and user agent. See [Locations and devices](/docs/locations-and-devices). |
 | Proxies | DataImpulse (live-tested) and the community-verified Bright Data, Oxylabs, Decodo and IPRoyal, with country, state, city and ZIP targeting and sticky or rotating sessions. See [Proxy providers](/docs/proxy-providers). |
 | Evidence | Every launch is recorded locally: exit IP, location verdict, HTTP status, screenshot, captured network requests, and lead or certificate IDs the form returned. See [Launching browsers](/docs/launching). |
-| QA automation | Recorded scenarios, datasets, suites, environments, browser/device/location matrices, visual comparisons, compliance, accessibility and performance checks, schedules and JSON, JUnit and HTML reports. See [Scenarios and matrices](/docs/automation). |
+| QA automation | Recorded scenarios, datasets, suites, environments, browser/device/location matrices, visual comparisons, consent, accessibility and performance checks, schedules and JSON, JUnit and HTML reports. See [Scenarios and matrices](/docs/automation). |
 | CI and AI assistants | A headless command-line runner, a Docker image, a GitHub Action and an MCP server. See [CI runner](/docs/ci-runner) and [MCP server](/docs/mcp-server). |
 
 The app is desktop-only. There is no account, no sign-in, no telemetry and nothing is uploaded. Proxy credentials are encrypted on each computer and never leave it. See [Security and privacy](/docs/security-and-privacy).
 
 ## Who it is for
 
-- **QA engineers and testers** who check lead forms, sign-up flows and landing pages across devices, browsers and US locations before and after release.
+- **QA engineers and testers** who check lead forms, sign-up flows and landing pages across devices, browsers and US locations before and after release, for example [testing a website from different locations](/use-cases/location-testing) or [checking consent disclosures on your lead forms](/use-cases/tcpa-consent-testing).
 - **Developers** who want repeatable regression checks of their own forms in CI, or who want to build and extend the app. Start with [Architecture](/docs/architecture) and [Contributing](/docs/contributing).
 
-You do not need a proxy plan to start. Direct (unproxied) launches and all QA automation features work without one. Location targeting needs your own plan with a supported provider.
+You do not need a proxy plan to start. Direct (unproxied) launches and QA automation runs without location targets work without one. Location targeting, including location cases in QA automation, needs your own plan with a supported provider.
 
 ## Responsible use
 

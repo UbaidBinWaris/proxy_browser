@@ -1,6 +1,6 @@
 # Scenarios and matrices
 
-QA automation records and runs repeatable scenarios against your own forms across browsers, devices, datasets and verified locations, and exports reports for review or CI.
+QA automation records and runs repeatable scenarios against your own forms across browsers, devices, datasets and proxy locations, and exports reports for review or CI.
 
 Everything runs locally in the desktop app: no sign-in, shared server, cloud account or remote worker. Open **QA automation** in the sidebar. Its tabs are **Scenarios**, **Suites & environments**, **Results**, **Schedules**, **Data controls** and **Audit history**.
 
@@ -34,7 +34,7 @@ Automation runs headlessly; manual sessions keep using Launch and Sessions. Work
 | `assertUrl` | Expect the URL to contain a value |
 | `assertStatus` | Expect the final document's HTTP status (100–599) |
 | `assertScreenshot` | Compare a screenshot with an approved baseline (see [Visual comparisons](#visual-comparisons)) |
-| `checkConsent`, `checkConsentCheckbox`, `checkScriptLoaded`, `checkAccessibility`, `checkPerformance` | Compliance, accessibility and performance checks; see [Checks](/docs/checks) |
+| `checkConsent`, `checkConsentCheckbox`, `checkScriptLoaded`, `checkAccessibility`, `checkPerformance` | Consent, accessibility and performance checks; see [Checks](/docs/checks) |
 
 ![The Test steps list of a scenario: check consent checkbox, three fill steps using {{name}}, {{phone}} and {{zip}} variables, check checkbox and check consent disclosure.](images/automation-steps.webp "Steps use CSS selectors and {{variables}}; checks can continue on failure so one run reports everything.")
 
@@ -44,7 +44,7 @@ Each case and each retry runs in a fresh browser context with a temporary profil
 
 ## Record actions
 
-In the scenario editor, enter a starting URL and choose **Record actions**. A separate visible browser opens with a temporary profile.
+In the scenario editor, enter a starting URL and choose **Record actions**. A separate visible browser opens with a temporary profile. For an overview, see [record-and-playback testing](/use-cases/test-recorder).
 
 1. Interact with your test form.
 2. Click **Stop recording** in the app, then **Use recorded steps**.
@@ -70,6 +70,8 @@ Ordinary text inputs are recorded as entered, so use synthetic data while record
 > **Note:** Upload fixtures are test data. They travel with the scenario into exports, CI manifests and encrypted backups, and anyone who can read those can read the files. Use synthetic files only, never real CVs, IDs or invoices.
 
 ## Variables and datasets
+
+For data-driven tests, each dataset row, typed or imported from CSV, runs as its own case. Use synthetic data against your own staging site.
 
 Expand **Variables and datasets** in the editor. Default variables are a JSON object:
 
@@ -104,7 +106,7 @@ Under **Suites & environments**, save named environments and group scenarios int
 
 ## Matrices, retries and limits
 
-A matrix is every combination of the chosen engines (up to 10), devices (up to 20), locations (up to 20) and dataset rows. There is one active automation batch per installation; cases in it run concurrently up to the policy limit (1–4 browsers).
+A matrix is every combination of the chosen engines (up to 10), devices (up to 20), locations (up to 20) and dataset rows. Matrices are capped at 100 cases by default (**Maximum cases per matrix**, configurable up to 500). There is one active automation batch per installation; cases in it run concurrently up to the policy limit (1–4 browsers).
 
 A failed case can be retried at most twice. Retrying repeats all actions, including submissions. JSON reports keep every attempt's evidence, and a case that passed after retries is marked in Results.
 

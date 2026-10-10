@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import { DocsSearchForm } from '@/components/DocsSearchForm'
 
-export const metadata: Metadata = { title: 'Page not found', robots: { index: false } }
+// Next.js adds a noindex robots tag to every 404 response itself; null drops the inherited "index, follow" so that tag is the only one.
+export const metadata: Metadata = { title: 'Page not found', robots: null }
 
 export default function NotFound() {
   return <section className="not-found">

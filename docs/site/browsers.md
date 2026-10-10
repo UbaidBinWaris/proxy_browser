@@ -1,6 +1,6 @@
 # Browsers
 
-Proxy QA Browser drives bundled Playwright engines and the real browsers installed on your computer, installs most of them in one click, and detects them without ever starting them.
+Proxy QA Browser drives bundled Playwright engines and the Chromium-family browsers installed on your computer, installs most of them in one click, and detects them without ever starting them. For a task-level guide, see [free cross-browser testing](/use-cases/cross-browser-testing).
 
 ## Supported browsers
 
@@ -21,7 +21,7 @@ Proxy QA Browser drives bundled Playwright engines and the real browsers install
 
 The bundled engines come from Playwright 1.63: Chromium 153, Firefox 155 and WebKit 26.6. **WebKit is not Apple Safari**; it is the open-source engine Safari is built on, labelled "WebKit / Safari-compatible QA" everywhere in the app.
 
-**Installed browsers are the real browsers.** They are started through Chromium's automation protocol with their own executable, so the window really is Chrome, Edge, Brave, Opera or Vivaldi and identifies as itself. Each launch uses a fresh temporary browser profile; your own bookmarks, cookies and extensions are never touched.
+**Installed browsers are the real browsers.** They are started through Chromium's automation protocol with their own executable, so the window really is Chrome, Edge, Brave or Opera and identifies as itself. Each launch uses a fresh temporary browser profile; your own bookmarks, cookies and extensions are never touched.
 
 ## Managing browsers
 

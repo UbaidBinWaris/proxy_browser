@@ -4,8 +4,8 @@ import { firstParagraph, renderMarkdown } from './markdown.ts'
 import type { Heading, ImageSize } from './markdown.ts'
 
 export type DocPage = { slug: string; title: string; description?: string }
-/** A manifest page as synced: plus its last commit date and the images it shows (paths relative to docs/site). */
-export type ManifestPage = DocPage & { lastModified?: string; images?: string[] }
+/** A manifest page as synced: plus its first and last commit dates and the images it shows (paths relative to docs/site). */
+export type ManifestPage = DocPage & { seoTitle?: string; datePublished?: string; lastModified?: string; images?: string[] }
 export type DocSection = { title: string; pages: ManifestPage[] }
 export type DocsManifest = { sections: DocSection[] }
 export type DocNeighbours = { previous: DocPage | null; next: DocPage | null }
@@ -32,10 +32,16 @@ export function parseManifest(raw: string): DocsManifest {
   if (!Array.isArray(data.sections)) throw new Error('content/manifest.json has no sections')
   return { sections: data.sections.map(s => ({ title: s.title, pages: s.pages.map(p => ({
     slug: p.slug, title: p.title,
+    ...(p.seoTitle ? { seoTitle: p.seoTitle } : {}),
     ...(p.description ? { description: p.description } : {}),
+    ...(p.datePublished ? { datePublished: p.datePublished } : {}),
     ...(p.lastModified ? { lastModified: p.lastModified } : {}),
     ...(p.images?.length ? { images: p.images } : {}),
   })) })) }
+}
+/** "10 October 2026": the calendar date an ISO date or date-time is written with, whatever the server's time zone. */
+export function longDate(iso: string): string {
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })
 }
 export function loadManifest(): Promise<DocsManifest> { return readContent('manifest.json', parseManifest) }
 /** Width and height of each docs image (content/images.json, written by scripts/sync-docs.mjs). */

@@ -1,22 +1,21 @@
 import type { Metadata, Viewport } from 'next'
 import type { ReactNode } from 'react'
 import { SiteFooter, SiteHeader } from '@/components/SiteChrome'
-import { OWNER, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site'
+import { HOME_TITLE, OWNER, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site'
 import './globals.css'
 // Every page is rendered per request so Next.js can apply the CSP nonce from src/proxy.ts.
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: `${SITE_NAME} — Test forms from real locations, devices and browsers`, template: `%s | ${SITE_NAME}` },
+  title: { default: HOME_TITLE, template: `%s | ${SITE_NAME}` },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
   authors: [{ name: OWNER.name, url: OWNER.website }],
   creator: OWNER.name,
-  alternates: { canonical: '/' },
-  openGraph: { type: 'website', siteName: SITE_NAME, title: `${SITE_NAME} — Test your forms from real locations, devices and browsers`, description: SITE_DESCRIPTION, url: '/', locale: 'en' },
-  twitter: { card: 'summary_large_image', title: `${SITE_NAME} — Test your forms from real locations, devices and browsers`, description: SITE_DESCRIPTION },
+  openGraph: { type: 'website', siteName: SITE_NAME, title: HOME_TITLE, description: SITE_DESCRIPTION, url: '/', locale: 'en_US' },
+  twitter: { card: 'summary_large_image', title: HOME_TITLE, description: SITE_DESCRIPTION },
   robots: { index: true, follow: true },
-  icons: { icon: '/favicon.ico', apple: '/brand/icon.png' },
+  icons: { apple: '/brand/icon.png' },
 }
 export const viewport: Viewport = { themeColor: '#fbfaf7', colorScheme: 'light' }
 export default function RootLayout({ children }: { children: ReactNode }) {

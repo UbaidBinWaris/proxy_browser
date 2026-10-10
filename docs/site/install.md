@@ -52,7 +52,7 @@ Your data lives in `~/.config/proxy-qa-browser` and the vault key in `~/.local/s
 
 ## macOS
 
-macOS 12 (Monterey) or later. Use the `-macOS-arm64` file for Apple silicon (M1 and later) and `-macOS-x64` for Intel Macs.
+macOS 12 (Monterey) or later. The DMG is unsigned, so macOS asks you to allow it in **System Settings → Privacy & Security → Open Anyway**, once per downloaded copy (again after each update, because Mac updates are new downloads). Use the `-macOS-arm64` file for Apple silicon (M1 and later) and `-macOS-x64` for Intel Macs.
 
 1. Open the DMG and drag **Proxy-QA-Browser** into **Applications** (or `~/Applications`). There is no installer and the app never asks for an administrator password.
 2. **Gatekeeper.** A build without Apple credentials is only ad-hoc signed and not notarized. A downloaded copy is then refused with *"cannot be opened because Apple cannot check it for malicious software"* (macOS 15: *"Apple could not verify…"*). Open **System Settings → Privacy & Security**, scroll to the message about Proxy-QA-Browser and click **Open Anyway**, then confirm. On macOS 14 and earlier, Control-click the app and choose **Open** also works. This is needed once per copy. A build you made yourself on the same Mac opens directly; a signed and notarized build opens without the prompt.
@@ -98,6 +98,12 @@ Close the app, then delete:
 If you set up a computer copy, also delete its Desktop shortcut and its Start menu or applications-menu entry. Browsers installed with winget on Windows stay installed; remove them in Windows **Settings → Apps** if you no longer want them.
 
 Deleting only the vault key or `install.json` makes the stored credentials unreadable; deleting `<userData>` starts the first-run setup again.
+
+## Common questions
+
+### Why does macOS say the app can't be opened?
+
+The DMGs are free but unsigned: ad-hoc signed and not notarized by Apple. Gatekeeper therefore refuses each downloaded copy, including every update, until you allow it as in step 2 of [macOS](#macos).
 
 ## Next step
 

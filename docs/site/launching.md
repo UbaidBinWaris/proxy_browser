@@ -1,6 +1,8 @@
 # Launching browsers
 
-The Launch page opens a verified, isolated browser session in one click, and every launch is recorded with its exit IP, outcome and evidence.
+The Launch page opens an isolated browser session in one click after checking its exit IP, and every launch is recorded with its exit IP, outcome and evidence.
+
+Manual launches go through a built-in provider (DataImpulse, or the community-verified Bright Data, Oxylabs, Decodo and IPRoyal) or a direct connection. Custom HTTP/HTTPS or unauthenticated SOCKS5 gateways work in QA automation only. There are no command-line flags to set: the app builds the proxy login, checks the exit IP and opens the browser in a fresh temporary profile, adding the proxy username and password itself. Proxy QA Browser is independent and [not affiliated with or endorsed by any proxy provider or browser vendor](/docs/introduction#license).
 
 ## The Launch page
 
@@ -12,8 +14,8 @@ Launch is the start page. It is one form with one primary button, **Connect & La
 
 - **Proxy provider**: the providers that have keys (all of them while none has).
 - **Proxy pool**: the provider's products (for DataImpulse, **Residential** and **Mobile**) and **Direct**, which uses no proxy and this computer's own IP. A pool without keys shows **Not set up** and cannot be selected; the **Manage keys** link under the row opens the [Manage keys window](/docs/first-run#the-manage-keys-window). The shuffle icon (**Random pool**) picks one of the configured pools.
-- **Exit location**: connect by **Country**, **State**, **City** or **ZIP** (disabled for Direct). See [Locations and devices](/docs/locations-and-devices#choosing-a-location).
-- **Options · sticky / rotating** (collapsed): **Sticky session** (on by default; keeps the same exit IP for the whole session) and **Session TTL (min)** (1–1440; empty uses the provider default). See [Sticky and rotating sessions](/docs/proxy-providers#sticky-and-rotating-sessions).
+- **Exit location**: connect by **Country**, **State**, **City** or **ZIP** (disabled for Direct). See [Locations and devices](/docs/locations-and-devices#choosing-a-location), and the guide to [testing your site from a chosen location](/use-cases/location-testing).
+- **Options · sticky / rotating** (collapsed): **Sticky session** (on by default; keeps the same exit IP for the session TTL) and **Session TTL (min)** (1–1440; empty uses the provider default). See [Sticky and rotating sessions](/docs/proxy-providers#sticky-and-rotating-sessions).
 
 ### Browser and device
 
@@ -61,11 +63,12 @@ Header buttons while the session is live: **Bring to Front**, **Take Screenshot*
 
 ### Network tab
 
-When the network inspector is on, this tab lists every request of the session with method, URL, status and timing. Filter by text or with the quick filters `lead`, `submit`, `certificate`, `cert`, `form` and `api`. IDs found in JSON responses (`leadId`, `lead_id`, `certificateId`, `certificate_id`) appear as badges, and the first lead and certificate IDs are filled into the outcome. Response bodies are inspected in memory and never stored.
+With the network inspector on (the default), this tab lists every request the page makes, with method, URL, status and timing. Filter by text or with the quick filters `lead`, `submit`, `certificate`, `cert`, `form` and `api`. IDs found in JSON responses (`leadId`, `lead_id`, `certificateId`, `certificate_id`) appear as badges, and the first lead and certificate IDs are filled into the outcome. Response bodies are inspected in memory and never stored.
 
 ## How a session behaves
 
 - **Isolation**: every session is a separate browser process with its own context: separate cookies, storage, cache and proxy login. Installed browsers use a fresh temporary profile, so your own bookmarks, cookies and extensions are never touched.
+- **Proxy password**: never shown again after saving and never written to logs or the database. With WebKit it never reaches the browser process, because a [local relay](/docs/security-and-privacy#local-relay-for-webkit) adds the login; Chromium-family browsers and Firefox receive it to authenticate to the proxy directly.
 - **Timeouts**: browser start-up must finish within 45 seconds (`BROWSER_LAUNCH_FAILED` otherwise). Opening the start URL may take up to the navigation timeout (60 seconds by default).
 - **HTTP errors**: a status of 400 or higher marks the run failed (`SITE_HTTP_ERROR`) but keeps the window open as evidence.
 - **Ending**: closing the last tab or window ends the session within about 5 seconds. A run ends as **success** when the page loaded, **aborted** when cancelled during launch, and **failed** otherwise; you can change success or failed afterwards in **Outcome**.

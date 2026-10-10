@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { DocsNav } from '@/components/DocsNav'
 import { JsonLd } from '@/components/JsonLd'
 import { Prose, Toc } from '@/components/Prose'
-import { allPages, loadDoc, loadManifest, neighbours } from '@/lib/docs'
+import { allPages, loadDoc, loadManifest, longDate, neighbours } from '@/lib/docs'
 import { breadcrumbList, docArticle, pageMetadata } from '@/lib/seo'
 import { DOCS_EDIT_URL } from '@/lib/site'
 
@@ -18,11 +18,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   // Resolving the 404 here (before streaming starts) lets the not-found page render on the server.
   if (!doc) notFound()
   return pageMetadata({
-    title: doc.title,
+    // The search-result title can be more descriptive than the on-page heading (docs/site/manifest.json "seoTitle").
+    title: doc.seoTitle ?? doc.title,
     description: doc.description,
     path: `/docs/${doc.slug}`,
     image: { url: `/og/${doc.slug}`, width: 1200, height: 630, alt: `${doc.title}: Proxy QA Browser documentation` },
-    article: { section: doc.section, ...(doc.lastModified ? { modifiedTime: doc.lastModified } : {}) },
+    article: { section: doc.section, ...(doc.datePublished ? { publishedTime: doc.datePublished } : {}), ...(doc.lastModified ? { modifiedTime: doc.lastModified } : {}) },
   })
 }
 
@@ -40,6 +41,8 @@ export default async function DocPage({ params }: Props) {
         <span className="eyebrow">{doc.section.toUpperCase()}</span>
         <h1>{doc.title}</h1>
         {doc.description ? <p className="page-lead">{doc.description}</p> : null}
+        {/* The same value as the structured data's dateModified. */}
+        {doc.lastModified ? <p className="doc-updated">Last updated <time dateTime={doc.lastModified}>{longDate(doc.lastModified)}</time></p> : null}
       </header>
       <Toc headings={doc.headings} className="toc-inline" />
       <Prose html={doc.html} />

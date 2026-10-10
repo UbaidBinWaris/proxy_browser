@@ -1,6 +1,6 @@
-# Compliance, accessibility and performance checks
+# Consent, accessibility and performance checks
 
-Checks are assertion steps that inspect the page your scenario has reached and record evidence: consent disclosures and checkboxes, lead-certificate scripts, axe-core accessibility rules and performance budgets.
+Checks are assertion steps that inspect the page your scenario has reached and record evidence: consent disclosures and checkboxes, lead-certificate scripts, axe-core accessibility rules and performance budgets. For the end-to-end workflow, see [TCPA consent testing](/use-cases/tcpa-consent-testing); for phones and tablets, see [small-screen disclosure checks](/use-cases/device-testing).
 
 ## How checks work
 
@@ -44,7 +44,7 @@ Place it **before** any step that ticks the box. It fails when the box is checke
 
 ## Lead-certificate scripts (`checkScriptLoaded`)
 
-The check waits up to the step timeout for the page's own script to finish:
+Use this step to check that the TrustedForm or Jornaya LeadiD script loaded on your form, or a custom lead-certificate script. It waits up to the step timeout for the page's own script to finish:
 
 | Preset | Passes when |
 | --- | --- |
@@ -54,9 +54,11 @@ The check waits up to the step timeout for the page's own script to finish:
 
 The token or certificate value is **never recorded**, only whether it is populated and its length. The runner never calls these services itself; the page's own script contacts its vendor exactly as it would for a visitor, so use the vendor's test or staging configuration where it offers one.
 
+TrustedForm, Jornaya and LeadiD are trademarks of their owners; this project is not affiliated with them.
+
 ## Accessibility (`checkAccessibility`)
 
-Runs [axe-core](https://github.com/dequelabs/axe-core) (bundled, MPL-2.0) in the page's main frame with the chosen rule tags (`wcag2a`, `wcag2aa`, `wcag21aa`, `wcag22aa`, `best-practice` and others), optionally scoped to one element.
+Runs [axe-core](https://github.com/dequelabs/axe-core) by Deque (bundled, MPL-2.0) in the page's main frame with the chosen rule tags (`wcag2a`, `wcag2aa`, `wcag21aa`, `wcag22aa`, `best-practice` and others), optionally scoped to one element.
 
 - Violations at or above `failOn` (`minor` < `moderate` < `serious` < `critical`) fail the step; lower ones are a warning.
 - Evidence lists each violation's rule ID, impact, help text and link, the number of failing elements and up to `maxNodes` element selectors.
@@ -117,4 +119,10 @@ Example scenario steps:
 ]
 ```
 
-> **Note:** These checks automate repeatable parts of compliance QA. They are not legal advice and do not decide whether a disclosure is sufficient. Approved wording, placement rules and consent requirements come from your counsel.
+> **Note:** These checks automate repeatable parts of consent QA. They are not legal advice and do not decide whether a disclosure is sufficient. Approved wording, placement rules and consent requirements come from your counsel.
+
+## Common questions
+
+### Can automated accessibility checks replace a manual review?
+
+No. axe-core rules find a subset of WCAG issues. Use the check to catch regressions on every run, and keep a manual accessibility review.

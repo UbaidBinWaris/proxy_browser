@@ -1,14 +1,31 @@
 import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { findPage, loadManifest } from './lib/docs.ts'
+import { findUseCase } from './lib/use-cases.ts'
 
-export function proxy(request: NextRequest) {
+/**
+ * Unknown /docs/<slug> and /use-cases/<slug> URLs. Their pages call notFound(), but in a per-request render Next.js
+ * only catches that in the browser (the not-found boundary is a client error boundary), so the server HTML would be an
+ * empty error shell. Rewritten to a path no route matches (/404), they get the not-found page as a normal render: status
+ * 404 with the full page in the HTML. Without synced docs, the docs page itself decides.
+ */
+async function unknownPage(pathname: string): Promise<boolean> {
+  const doc = /^\/docs\/([^/]+)$/.exec(pathname)?.[1]
+  if (doc && doc !== 'search') { const manifest = await loadManifest().catch(() => null); return manifest !== null && !findPage(manifest, doc) }
+  const useCase = /^\/use-cases\/([^/]+)$/.exec(pathname)?.[1]
+  return useCase !== undefined && !findUseCase(useCase)
+}
+
+export async function proxy(request: NextRequest) {
   const nonce = randomBytes(16).toString('base64')
   const policy = ["default-src 'self'", `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`, "style-src 'self' 'unsafe-inline'", "img-src 'self' data:", "font-src 'self'", "connect-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'"].join('; ')
   const headers = new Headers(request.headers)
   headers.set('x-nonce', nonce)
   headers.set('Content-Security-Policy', policy)
-  const response = NextResponse.next({ request: { headers } })
+  const response = await unknownPage(request.nextUrl.pathname)
+    ? NextResponse.rewrite(new URL('/404', request.url), { request: { headers } })
+    : NextResponse.next({ request: { headers } })
   response.headers.set('Content-Security-Policy', policy)
   response.headers.set('Cache-Control', 'private, no-store')
   return response

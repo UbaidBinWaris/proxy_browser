@@ -1,8 +1,13 @@
 import type { Metadata } from 'next'
-import { pageMetadata } from '@/lib/seo'
+import { JsonLd } from '@/components/JsonLd'
+import { pageBreadcrumbs, pageMetadata, profilePage } from '@/lib/seo'
 import { LICENSE_URL, OWNER, REPO_BLOB_URL, REPO_URL } from '@/lib/site'
 
-export const metadata: Metadata = pageMetadata({ title: `Built by ${OWNER.name}`, description: `Proxy QA Browser is a free, open-source, privacy-first QA browser created and maintained by ${OWNER.name}, an independent AI systems and full-stack engineer.`, path: '/about' })
+export const metadata: Metadata = pageMetadata({ title: `Built by ${OWNER.name}`, description: `Proxy QA Browser is a free, open-source QA browser created and maintained by ${OWNER.name}, an independent AI systems and full-stack engineer.`, path: '/about' })
+
+// Shown on the page and repeated in the ProfilePage structured data, so both always say the same.
+const lead = `Proxy QA Browser is an independent open-source project, created, owned and maintained by ${OWNER.name}, and free for everyone.`
+const bio = `${OWNER.name} is an independent developer based in ${OWNER.location}, working as an AI systems and full-stack engineer. He builds practical tools for people who test and ship web products.`
 
 const contacts = [
   { label: 'Website', detail: 'ubaidbinwaris.com', href: OWNER.website },
@@ -13,17 +18,19 @@ const contacts = [
 
 export default function About() {
   return <>
+    <JsonLd data={pageBreadcrumbs('About', '/about')} />
+    <JsonLd data={profilePage({ description: lead, bio })} />
     <header className="page-header">
       <span className="eyebrow">ABOUT THE PROJECT</span>
       <h1>Built by {OWNER.name}.</h1>
-      <p className="page-lead">Proxy QA Browser is an independent open-source project, created, owned and maintained by {OWNER.name}, and free for everyone.</p>
+      <p className="page-lead">{lead}</p>
     </header>
     <div className="about-grid">
       <div className="prose">
         <h2 id="the-developer">The developer</h2>
-        <p>{OWNER.name} is an independent developer based in {OWNER.location}, working as an AI systems and full-stack engineer. He builds practical tools for people who test and ship web products.</p>
+        <p>{bio}</p>
         <h2 id="the-mission">The mission</h2>
-        <p>Testing your own forms across browsers, devices and locations should not need expensive tools, an account or sending your data to someone else. Proxy QA Browser aims to be a <strong>free, open-source, privacy-first QA browser for everyone</strong>:</p>
+        <p>Testing your own forms across browsers and devices should not need expensive tools, an account or sending your data to someone else, whether that is <a href="/use-cases/location-testing">testing forms from different locations</a> or <a href="/use-cases/tcpa-consent-testing">consent QA for lead forms</a>. Proxy QA Browser aims to be a <strong>free, open-source, privacy-first QA browser for everyone</strong>:</p>
         <ul>
           <li><strong>Free</strong>, with no paid tiers, licence keys or sign-in.</li>
           <li><strong>Open source</strong> under the <a href={LICENSE_URL} rel="noopener noreferrer">Apache License 2.0</a>, so you can read, audit, change and redistribute it.</li>

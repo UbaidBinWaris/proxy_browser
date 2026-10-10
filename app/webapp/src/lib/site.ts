@@ -1,7 +1,15 @@
 /** Public facts about the site and its owner, shared by pages, metadata, the sitemap and security.txt. */
 export const SITE_URL = 'https://proxybrowser.ubaidbinwaris.com'
 export const SITE_NAME = 'Proxy QA Browser'
-export const SITE_DESCRIPTION = 'Free, open-source QA browser for your own forms: verified exit locations, 226 device presets and real browsers, on Windows, Linux and macOS.'
+/** Title of the home page (it sets none of its own) and of its Open Graph and Twitter cards; at most 60 characters. */
+export const HOME_TITLE = `${SITE_NAME} – Free, open-source website form testing`
+/** Home meta description; also feeds the home JSON-LD, the Open Graph and Twitter tags and /llms.txt (120-158 characters, no counts). */
+export const SITE_DESCRIPTION = 'Free, open-source desktop app to test your own web forms: target a US state, city or ZIP with your own proxy plan, check the exit IP first, emulate devices.'
+/**
+ * Number of emulated device presets in the app's catalog, used in marketing copy instead of a literal number.
+ * It must match the count stated in docs/site/locations-and-devices.md (checked by tests/home.test.ts).
+ */
+export const DEVICE_PRESET_COUNT = 226
 export const OWNER = {
   name: 'Ubaid Bin Waris',
   email: 'ubaidwaris34@gmail.com',
@@ -33,6 +41,7 @@ export const LEGAL_LINKS: SiteLink[] = [
 export const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: '/', priority: 1 },
   { path: '/docs', priority: 0.9 },
+  { path: '/use-cases', priority: 0.8 },
   { path: '/changelog', priority: 0.6 },
   { path: '/about', priority: 0.5 },
   ...LEGAL_LINKS.map(link => ({ path: link.href, priority: 0.3 })),

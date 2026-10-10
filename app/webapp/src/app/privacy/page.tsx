@@ -3,7 +3,7 @@ import { LegalPage } from '@/components/LegalPage'
 import { pageMetadata } from '@/lib/seo'
 import { OWNER, REPO_URL, SITE_URL } from '@/lib/site'
 
-export const metadata: Metadata = pageMetadata({ title: 'Privacy policy', description: 'What the Proxy QA Browser website and desktop app collect: no accounts, cookies, analytics or telemetry. Data stays on your device; every network connection is listed.', path: '/privacy' })
+export const metadata: Metadata = pageMetadata({ title: 'Privacy policy', description: 'What the Proxy QA Browser website and app collect: no accounts, cookies, analytics or telemetry. Data stays on your device; every connection is listed.', path: '/privacy' })
 
 const host = SITE_URL.replace('https://', '')
 const markdown = `

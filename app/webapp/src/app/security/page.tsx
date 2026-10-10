@@ -3,7 +3,7 @@ import { LegalPage } from '@/components/LegalPage'
 import { pageMetadata } from '@/lib/seo'
 import { OWNER, REPO_BLOB_URL, SECURITY_ADVISORY_URL } from '@/lib/site'
 
-export const metadata: Metadata = pageMetadata({ title: 'Security', description: 'How to report a security vulnerability in Proxy QA Browser, what to expect after you report, and what is in scope.', path: '/security' })
+export const metadata: Metadata = pageMetadata({ title: 'Security', description: 'How to report a security vulnerability in Proxy QA Browser privately, when to expect a response, which versions are supported and what is in scope.', path: '/security' })
 
 const markdown = `
 ## Report a vulnerability

@@ -4,6 +4,7 @@ import { DocsSearchForm } from '@/components/DocsSearchForm'
 import { loadManifest } from '@/lib/docs'
 import { loadSearchIndex, MAX_QUERY_LENGTH, MAX_TERMS, MIN_QUERY_LENGTH, parseQuery, popularPages, search } from '@/lib/docs-search'
 import type { PopularPage, SearchResult } from '@/lib/docs-search'
+import { pageMetadata } from '@/lib/seo'
 
 type Props = { searchParams: Promise<{ q?: string | string[] }> }
 
@@ -13,9 +14,7 @@ const searchHref = (q: string) => `/docs/search?q=${encodeURIComponent(q)}`
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const { text } = parseQuery((await searchParams).q)
   return {
-    title: text ? `Search: ${text}` : 'Search the docs',
-    description: 'Search the Proxy QA Browser documentation.',
-    alternates: { canonical: '/docs/search' },
+    ...pageMetadata({ title: text ? `Search: ${text}` : 'Search the docs', description: 'Search the Proxy QA Browser documentation by topic, setting, error code or environment variable, across install, proxies, automation and CI guides.', path: '/docs/search' }),
     // Result pages are endless and thin: keep them out of search engines (and out of the sitemap).
     robots: { index: false, follow: true },
   }

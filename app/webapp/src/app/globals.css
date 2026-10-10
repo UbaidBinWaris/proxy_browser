@@ -1197,6 +1197,11 @@ h2 {
   font-weight: 400;
 }
 
+/* The link itself is empty (its name is the aria-label), so the "#" never becomes part of the heading text. */
+.heading-anchor::before {
+  content: '#';
+}
+
 .prose :is(h2, h3, h4, h5, h6):hover .heading-anchor, .heading-anchor:focus-visible {
   opacity: 1;
 }
@@ -2120,3 +2125,290 @@ h2 {
 }
 
 /* --- /Docs search --- */
+
+/* --- Use cases --- */
+
+/* Landing pages (/use-cases/<slug>), their index (/use-cases) and the links from the home page cards. Mobile first. */
+
+.home-use-case-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+}
+
+.use-case-header {
+  max-width: 860px;
+  padding: 24px 0 32px;
+}
+
+.use-case-breadcrumb ol {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  margin: 0 0 16px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.use-case-breadcrumb li + li::before {
+  content: '/';
+  margin-right: 8px;
+}
+
+.use-case-breadcrumb a {
+  display: inline-block;
+  padding: 8px 0;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.use-case-breadcrumb a:hover {
+  color: var(--purple-text);
+}
+
+.use-case-header .hero-actions {
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 32px 0 0;
+}
+
+.use-case-header .hero-actions .button {
+  width: 100%;
+  min-height: 48px;
+  justify-content: space-between;
+}
+
+.use-case-sections {
+  padding: 48px 0 24px;
+}
+
+.use-case-section {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 28px 0;
+}
+
+.use-case-section h2 {
+  font-size: 22px;
+  line-height: 1.3;
+  letter-spacing: -.5px;
+  font-weight: 600;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.use-case-section p, .use-case-section ul {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #33364a;
+  max-width: 68ch;
+  margin: 0;
+}
+
+.use-case-section ul {
+  margin-top: 16px;
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+.use-case-section li + li {
+  margin-top: 8px;
+}
+
+/* Inline links in the lead, sections and steps (`[anchor](/path)` in src/lib/use-cases.ts). */
+.use-case-header .page-lead a, .use-case-section a, .use-case-steps li p a {
+  color: var(--purple-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.use-case-section .use-case-note {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.use-case-steps {
+  margin-top: 24px;
+}
+
+.use-case-steps h3 {
+  font-size: 15px;
+}
+
+.use-case-steps li p, .use-case-steps > div > p {
+  font-size: 14px;
+}
+
+.use-case-faq {
+  padding-top: 56px;
+}
+
+.use-case-related {
+  padding: 0 0 56px;
+}
+
+.use-case-related h2 {
+  font-size: 29px;
+  margin-bottom: 24px;
+}
+
+.use-case-doc-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.use-case-doc-links a {
+  display: block;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  padding: 16px 20px;
+  transition: border-color .15s;
+}
+
+.use-case-doc-links a:hover {
+  border-color: var(--purple);
+}
+
+.use-case-doc-links strong {
+  display: block;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.use-case-doc-links small {
+  display: block;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.use-case-index {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 80px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+}
+
+.use-case-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  padding: 16px 16px 24px;
+  transition: border-color .15s;
+}
+
+.use-case-card:hover, .use-case-card:focus-within {
+  border-color: var(--purple);
+}
+
+.use-case-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid #d6d6e0;
+  border-radius: 8px;
+  background: #141414;
+  margin-bottom: 20px;
+}
+
+.use-case-card h2 {
+  font-size: 22px;
+  line-height: 1.3;
+  letter-spacing: -.4px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+
+/* The heading link covers the whole card, so the card is one target with one accessible name. */
+.use-case-card h2 a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+}
+
+.use-case-card h2 a:hover {
+  color: var(--purple-text);
+}
+
+.use-case-card p {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.use-case-card .quiet-link {
+  color: var(--purple-text);
+}
+
+@media (min-width: 761px) {
+  .use-case-header {
+    padding-top: 32px;
+  }
+  .use-case-header .hero-actions .button {
+    width: auto;
+  }
+  .use-case-section {
+    padding: 36px 0;
+  }
+  .use-case-faq {
+    padding-top: 88px;
+  }
+  .use-case-related {
+    padding-bottom: 88px;
+  }
+  .use-case-related h2 {
+    font-size: 31px;
+  }
+  .use-case-doc-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .use-case-index {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
+  }
+  .use-case-card {
+    padding: 20px 20px 28px;
+  }
+}
+
+@media (min-width: 1000px) {
+  .use-case-section {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr);
+    gap: 48px;
+  }
+}
+
+/* --- /Use cases --- */
+
+/* --- Page meta --- */
+.doc-updated {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+/* --- /Page meta --- */

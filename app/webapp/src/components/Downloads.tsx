@@ -52,7 +52,7 @@ function FirstLaunch({ platform }: { platform: DownloadPlatform }) {
 
 function FileDetails({ version, file, label }: { version: string; file: DownloadFile; label: string }) {
   return <div className="dl-file">
-    <a className="button primary" href={downloadHref(version, file.fileName)}>{label} <span aria-hidden="true">↓</span></a>
+    <a className="button primary" href={downloadHref(version, file.fileName)} rel="nofollow">{label} <span aria-hidden="true">↓</span></a>
     <dl className="dl-meta">
       <div><dt>File</dt><dd><code>{file.fileName}</code></dd></div>
       <div><dt>Size</dt><dd>{formatSize(file.size)}</dd></div>

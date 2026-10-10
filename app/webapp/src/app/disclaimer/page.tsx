@@ -3,7 +3,7 @@ import { LegalPage } from '@/components/LegalPage'
 import { pageMetadata } from '@/lib/seo'
 import { OWNER } from '@/lib/site'
 
-export const metadata: Metadata = pageMetadata({ title: 'Disclaimer', description: 'Trademarks and affiliation, community-verified proxy provider support, IP geolocation accuracy and the limits of the compliance checks in Proxy QA Browser.', path: '/disclaimer' })
+export const metadata: Metadata = pageMetadata({ title: 'Disclaimer', description: 'Trademarks and affiliation, community-verified proxy provider support, IP geolocation accuracy and the limits of the consent checks in Proxy QA Browser.', path: '/disclaimer' })
 
 const markdown = `
 ## No affiliation or endorsement
@@ -24,7 +24,7 @@ The software does not include a proxy subscription. Your contract with your prox
 
 Exit locations are checked with third-party IP geolocation services (ip-api.com, ipinfo.io and ipwho.is). Geolocation databases are estimates: they can be out of date, disagree with each other or place an IP in the wrong city, state or ZIP code. A "match" means that the selected service reported the location you asked for at the time of the check; it is **not a guarantee** of where the traffic appears to come from for any particular website. ZIP-level targeting in particular depends on the provider's pool and may not be available.
 
-## Compliance, accessibility and performance checks
+## Consent, accessibility and performance checks
 
 The consent, disclosure (for example TCPA) and lead-certificate checks, the axe-core accessibility checks and the performance budgets help you find problems in your own forms. They are automated aids, **not legal advice**, and they cannot prove that a page complies with any law, regulation or standard. Automated accessibility testing finds only part of the issues that affect people. Ask a qualified professional when compliance matters.
 

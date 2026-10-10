@@ -86,8 +86,9 @@ function imageTag(path: string, alt: string, options: RenderOptions): string {
 
 /**
  * Renders trusted-but-not-blindly-trusted Markdown to static HTML: raw HTML is shown as text, headings get
- * GitHub-style ids and anchor links, links are restricted to safe schemes, external links get
- * rel="noopener noreferrer", and tables are wrapped for horizontal scrolling. Never emits scripts.
+ * GitHub-style ids and anchor links (empty, so the heading text stays clean; CSS draws the "#"), links are
+ * restricted to safe schemes, external links get rel="noopener noreferrer", and tables are wrapped for horizontal
+ * scrolling. Never emits scripts.
  */
 export function renderMarkdown(source: string, options: RenderOptions = {}): RenderedMarkdown {
   const slug = createSlugger(), headings: Heading[] = []
@@ -99,7 +100,7 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): Ren
     const level = depth === 1 ? 2 : depth
     const inner = this.parser.parseInline(tokens), text = stripTags(inner).trim(), id = slug(text)
     headings.push({ depth: level, text, id })
-    return `<h${level} id="${escapeHtml(id)}">${inner}<a class="heading-anchor" href="#${escapeHtml(id)}" aria-label="Link to section: ${escapeHtml(text)}">#</a></h${level}>\n`
+    return `<h${level} id="${escapeHtml(id)}">${inner}<a class="heading-anchor" href="#${escapeHtml(id)}" aria-label="Link to section: ${escapeHtml(text)}"></a></h${level}>\n`
   }
   renderer.link = function ({ href, title, tokens }: Tokens.Link) {
     const inner = this.parser.parseInline(tokens), target = resolveHref(href, options)

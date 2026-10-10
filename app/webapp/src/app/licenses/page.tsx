@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
+import { JsonLd } from '@/components/JsonLd'
 import { Prose, Toc } from '@/components/Prose'
 import { readContent } from '@/lib/docs'
 import { escapeHtml, renderMarkdown } from '@/lib/markdown'
-import { pageMetadata } from '@/lib/seo'
+import { pageBreadcrumbs, pageMetadata } from '@/lib/seo'
 import { LICENSE_URL, OWNER, POLICY_DATE, POLICY_DATE_LABEL, REPO_BLOB_URL } from '@/lib/site'
 
 export const metadata: Metadata = pageMetadata({ title: 'Licences', description: 'Proxy QA Browser is licensed under the Apache License 2.0. The NOTICE file and the licences of bundled third-party components, data and browsers.', path: '/licenses' })
@@ -53,6 +54,7 @@ export default async function Licenses() {
   const { html, headings } = renderMarkdown(markdown)
   const body = html.replace(/<p>NOTICE_PLACEHOLDER<\/p>/, `<div class="code-block"><pre tabindex="0"><code>${escapeHtml(notice.trim())}</code></pre></div>`)
   return <>
+    <JsonLd data={pageBreadcrumbs('Licences', '/licenses')} />
     <header className="page-header">
       <span className="eyebrow">OPEN SOURCE</span>
       <h1>Licences</h1>

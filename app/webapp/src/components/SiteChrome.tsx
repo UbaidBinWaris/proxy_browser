@@ -1,8 +1,10 @@
 import { LEGAL_LINKS, OWNER, REPO_URL } from '@/lib/site'
 import type { SiteLink } from '@/lib/site'
+import { USE_CASES, USE_CASES_PATH, useCasePath } from '@/lib/use-cases'
 
 const MAIN_LINKS: SiteLink[] = [
   { href: '/#features', label: 'Features' },
+  { href: '/use-cases', label: 'Use cases' },
   { href: '/docs', label: 'Docs' },
   { href: '/changelog', label: 'Changelog' },
   { href: REPO_URL, label: 'GitHub', external: true },
@@ -39,7 +41,7 @@ export function SiteFooter() {
       <p>A free, open-source desktop workspace for authorized browser testing of your own sites.</p>
     </div>
     <nav className="footer-columns" aria-label="Footer">
-      <div><h2 className="footer-heading">Product</h2><ul><li><a href="/#download">Download</a></li><li><a href="/docs">Docs</a></li><li><a href="/changelog">Changelog</a></li></ul></div>
+      <div><h2 className="footer-heading">Product</h2><ul><li><a href="/#download">Download</a></li><li><a href={USE_CASES_PATH}>Use cases</a></li>{USE_CASES.map(useCase => <li key={useCase.slug}><a href={useCasePath(useCase.slug)}>{useCase.navLabel}</a></li>)}<li><a href="/docs">Docs</a></li><li><a href="/changelog">Changelog</a></li></ul></div>
       <div><h2 className="footer-heading">Legal</h2><ul>{LEGAL_LINKS.map(link => <li key={link.href}><a href={link.href}>{link.label}</a></li>)}</ul></div>
       <div><h2 className="footer-heading">Developer</h2><ul><li><a href="/about">Built by {OWNER.name}</a></li><li><NavLink link={{ href: REPO_URL, label: 'GitHub', external: true }} /></li><li><a className="external" href={OWNER.website} rel="noopener noreferrer">Website<span aria-hidden="true"> ↗</span></a></li></ul></div>
     </nav>

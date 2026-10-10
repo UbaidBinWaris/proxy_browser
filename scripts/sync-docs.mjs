@@ -1,7 +1,7 @@
 /* global process, URL, console */
 /**
  * Copies the website documentation into app/webapp/content/ (generated, gitignored):
- *   docs/site/manifest.json      -> content/manifest.json (+ per page: last commit date from git, images used)
+ *   docs/site/manifest.json      -> content/manifest.json (+ per page: first and last commit dates from git, images used)
  *   docs/site/<slug>.md          -> content/docs/<slug>.md
  *   docs/site/**\/*.{png,jpg,…}   -> public/docs-assets/… (images referenced by the docs)
  *                                   + content/images.json (width and height of each PNG/WebP/GIF image)
@@ -9,7 +9,8 @@
  *   NOTICE                       -> content/NOTICE.txt (shown on the licences page)
  *
  * The manifest is validated first (unique slugs, every page file present, each page title equal to the
- * file's first `# ` heading, every relative image a page references exists); any problem fails the sync with a non-zero exit code. `--allow-missing`
+ * file's first `# ` heading, every relative image a page references exists, every search-result title (`seoTitle`, else the title) at
+ * most SEO_TITLE_MAX characters); any problem fails the sync with a non-zero exit code. `--allow-missing`
  * (local development only, never CI) tolerates absent page files: they are dropped from the copied manifest.
  *
  * Usage: node scripts/sync-docs.mjs [--allow-missing] [--root <repo>] [--out <webapp dir>]
@@ -20,6 +21,9 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const RESERVED_SLUGS = new Set(['search'])
+// The website appends the suffix to every docs title; search results show about 60 characters in all.
+const SEO_TITLE_SUFFIX = ' | Proxy QA Browser'
+const SEO_TITLE_MAX = 60 - SEO_TITLE_SUFFIX.length
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i
 
@@ -89,13 +93,17 @@ export async function validateManifest(raw, readPage, imageExists = async () => 
       seen.add(page.slug)
       if (typeof page.title !== 'string' || !page.title.trim()) errors.push(`${where} (${page.slug}): "title" is required`)
       if (page.description !== undefined && typeof page.description !== 'string') errors.push(`${where} (${page.slug}): "description" must be a string`)
+      // Optional search-result title; the website appends SEO_TITLE_SUFFIX, so keep it short.
+      if (page.seoTitle !== undefined && (typeof page.seoTitle !== 'string' || !page.seoTitle.trim() || page.seoTitle.length > SEO_TITLE_MAX)) errors.push(`${where} (${page.slug}): "seoTitle" must be 1-${SEO_TITLE_MAX} characters`)
+      // Without a seoTitle the page title is the search-result title, so it must be short too.
+      else if (page.seoTitle === undefined && typeof page.title === 'string' && page.title.length > SEO_TITLE_MAX) errors.push(`${where} (${page.slug}): title "${page.title}" is ${page.title.length} characters; add a "seoTitle" of at most ${SEO_TITLE_MAX}`)
       const markdown = await readPage(page.slug)
       if (markdown === null) { missing.push(page.slug); continue }
       const heading = firstHeading(markdown)
       if (heading === null) errors.push(`${page.slug}.md: no "# " heading found`)
       else if (heading !== page.title) errors.push(`${page.slug}.md: first heading "${heading}" does not match manifest title "${page.title}"`)
       for (const image of imageReferences(markdown)) if (!(await imageExists(image))) errors.push(`${page.slug}.md: image "${image}" does not exist in docs/site`)
-      pages.push({ slug: page.slug, title: page.title, ...(page.description ? { description: page.description } : {}) })
+      pages.push({ slug: page.slug, title: page.title, ...(page.seoTitle ? { seoTitle: page.seoTitle } : {}), ...(page.description ? { description: page.description } : {}) })
     }
     if (pages.length) sections.push({ title: section.title, pages })
   }
@@ -107,6 +115,16 @@ export function lastCommitDate(root, path) {
   try {
     const date = execFileSync('git', ['log', '-1', '--format=%cI', '--', path], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
     return date || null
+  } catch {
+    return null
+  }
+}
+
+/** ISO date of the commit that added a file (following renames), or null outside a git checkout (or for untracked files). */
+export function firstCommitDate(root, path) {
+  try {
+    const dates = execFileSync('git', ['log', '--follow', '--diff-filter=A', '--format=%cI', '--', path], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(line => line.trim())
+    return dates.at(-1)?.trim() || null
   } catch {
     return null
   }
@@ -159,9 +177,11 @@ export async function syncDocs({ root, out, allowMissing = false }) {
     if (size) sizes[image.split(/[\\/]/).join('/')] = size
   }
   await writeFile(join(content, 'images.json'), `${JSON.stringify(sizes, null, 2)}\n`)
-  // For the sitemap: when each page last changed (git history; CI checks out full history) and which images it shows.
+  // For the sitemap and structured data: when each page was added and last changed (git history; CI checks out
+  // full history) and which images it shows.
   for (const page of manifest.sections.flatMap(s => s.pages)) {
-    const lastModified = lastCommitDate(root, join('docs', 'site', `${page.slug}.md`))
+    const file = join('docs', 'site', `${page.slug}.md`), datePublished = firstCommitDate(root, file), lastModified = lastCommitDate(root, file)
+    if (datePublished) page.datePublished = datePublished
     if (lastModified) page.lastModified = lastModified
     const images = imageReferences(await readFile(join(site, `${page.slug}.md`), 'utf8'))
     if (images.length) page.images = [...new Set(images)]

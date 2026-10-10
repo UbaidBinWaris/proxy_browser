@@ -166,7 +166,7 @@ export async function downloadResponse(request: Request, version: string, name: 
   let transferred = false
   try {
     const info = await handle.stat(); if (!info.isFile() || info.size !== asset.size) throw new ReleaseError(422, 'Release file is unavailable.')
-    const headers = new Headers({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'Accept-Ranges': 'bytes', 'ETag': `"${asset.sha256}"`, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' })
+    const headers = new Headers({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${name}"`, 'Accept-Ranges': 'bytes', 'ETag': `"${asset.sha256}"`, 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff', 'X-Robots-Tag': 'noindex' })
     let start = 0, end = asset.size - 1, status = 200
     const range = request.headers.get('range')
     if (range && (!request.headers.get('if-range') || request.headers.get('if-range') === headers.get('etag'))) {

@@ -4,11 +4,27 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DEFAULT_PLATFORM_ORDER, detectOs, formatSize, isMobileOs, macDownloads, orderDownloadCards, platformAsset, recommendedPlatform } from '../src/lib/downloads.ts'
 import type { VisitorOs } from '../src/lib/downloads.ts'
-import { FAQS, FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, SCREENSHOT_MAX_BYTES, USE_CASES, SCREENSHOT_SMALL_WIDTH, screenshotSrcSet } from '../src/lib/home.ts'
+import { FAQS, FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, MORE_USE_CASE_LINKS, SCREENSHOT_MAX_BYTES, STEPS, USE_CASES, SCREENSHOT_SMALL_WIDTH, screenshotSrcSet } from '../src/lib/home.ts'
 import type { Release } from '../src/lib/releases.ts'
+import { DEVICE_PRESET_COUNT, HOME_TITLE, SITE_DESCRIPTION, SITE_NAME } from '../src/lib/site.ts'
+import { USE_CASES as USE_CASE_PAGES } from '../src/lib/use-cases.ts'
 
 const webapp = resolve(import.meta.dirname, '..')
 const repo = resolve(webapp, '../..')
+const homePage = () => readFile(join(webapp, 'src', 'app', 'page.tsx'), 'utf8')
+/** The visible home copy: the page's own JSX text plus the data it renders. */
+async function homeCopy(): Promise<string> {
+  return [
+    await homePage(),
+    ...FEATURES.flatMap(f => [f.title, f.text]),
+    ...USE_CASES.flatMap(u => [u.title, u.text, ...u.points]),
+    ...MORE_USE_CASE_LINKS.map(l => l.label),
+    ...STEPS.flatMap(s => [s.title, s.text]),
+    ...FAQS.flatMap(f => [f.question, f.answer]),
+    ...[HERO_SCREENSHOT, ...GALLERY_SCREENSHOTS].map(shot => shot.caption),
+  ].join('\n')
+}
+const occurrences = (text: string, phrase: string) => text.toLowerCase().split(phrase.toLowerCase()).length - 1
 
 const USER_AGENTS: Array<[string, VisitorOs]> = [
   ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', 'windows'],
@@ -86,6 +102,74 @@ test('every home page docs link points to an existing docs page', async () => {
   assert.ok(FEATURES.length >= 9)
   assert.equal(new Set(FEATURES.map(f => f.docSlug)).size, FEATURES.length, 'each feature links to its own page')
   for (const href of FAQS.flatMap(f => f.link && !f.link.href.startsWith('/docs/') ? [f.link.href] : [])) assert.match(href, /^\/(acceptable-use|privacy|terms|security|licenses|disclaimer|changelog|about)$/)
+})
+
+test('the home title, description and social cards describe the app without overclaiming', async () => {
+  assert.ok(HOME_TITLE.startsWith(SITE_NAME), HOME_TITLE)
+  assert.ok(HOME_TITLE.length <= 60, `${HOME_TITLE.length} characters`)
+  assert.match(HOME_TITLE, /website form testing/)
+  assert.ok(SITE_DESCRIPTION.length >= 120 && SITE_DESCRIPTION.length <= 158, `${SITE_DESCRIPTION.length} characters`)
+  for (const text of [HOME_TITLE, SITE_DESCRIPTION]) {
+    // Devices are emulated, a location is checked (a third-party estimate), and counts go stale in metadata.
+    assert.ok(!/\breal (locations?|devices?|phones?)\b/i.test(text), text)
+    assert.ok(!/\bverified\b/i.test(text), text)
+    assert.ok(!/\d{3}/.test(text), text)
+  }
+  const layout = await readFile(join(webapp, 'src', 'app', 'layout.tsx'), 'utf8')
+  for (const usage of ['title: { default: HOME_TITLE,', "openGraph: { type: 'website', siteName: SITE_NAME, title: HOME_TITLE, description: SITE_DESCRIPTION,", "twitter: { card: 'summary_large_image', title: HOME_TITLE, description: SITE_DESCRIPTION }"]) assert.ok(layout.includes(usage), usage)
+})
+
+test('the home page has one H1, which does not claim real devices', async () => {
+  const page = await homePage()
+  const h1s = [...page.matchAll(/<h1\b[^>]*>(.*?)<\/h1>/g)].map(m => m[1]!)
+  assert.equal(h1s.length, 1)
+  assert.equal(h1s[0], 'Test your web forms by location, device and browser.')
+  assert.ok(!/\breal\b/i.test(h1s[0]!))
+})
+
+test('home copy stays within what the docs support', async () => {
+  const copy = await homeCopy()
+  // Vivaldi installs but cannot be automated (docs/site/browsers.md, Known limitations), so it is never advertised.
+  assert.ok(!/vivaldi/i.test(copy), 'Vivaldi is not a supported browser in marketing copy')
+  // Phones and tablets are emulated presets inside desktop browsers.
+  assert.ok(!/\breal (devices?|phones?|tablets?|iphones?)\b/i.test(copy))
+  // QA aids, not legal determinations.
+  assert.ok(!/tcpa compliance|compliance (check|software)/i.test(copy))
+  for (const title of [...FEATURES.map(f => f.title), ...USE_CASES.map(u => u.title)]) assert.ok(!/compliance|verified/i.test(title), title)
+  for (const point of USE_CASES.flatMap(u => u.points)) assert.ok(!/\bverified\b/i.test(point), point)
+  // No positioning the product as an evasion tool.
+  assert.ok(!/anti-?detect|fingerprint spoof|multi-?account|unblock|bypass/i.test(copy))
+  // Location targeting needs the user's own proxy plan; the hero and the location feature say so.
+  const hero = /<p className="hero-description">(.*?)<\/p>/.exec(await homePage())?.[1] ?? ''
+  assert.match(hero, /your own proxy plan/)
+  assert.match(FEATURES.find(f => f.docSlug === 'locations-and-devices')!.text, /your own proxy plan/)
+  // Each exact-match search phrase appears at most once on the page.
+  for (const phrase of ['test your website from different locations', 'free cross-browser testing', 'website form testing', 'website testing tool']) assert.ok(occurrences(copy, phrase) <= 1, phrase)
+})
+
+test('the device preset count comes from one constant that matches the docs', async () => {
+  const doc = await readFile(join(repo, 'docs', 'site', 'locations-and-devices.md'), 'utf8')
+  const stated = [...doc.matchAll(/\b(\d+)\**\s+(?:[a-z,]+\s+){0,4}?presets\b/gi)].map(m => Number(m[1]))
+  assert.ok(stated.length > 0, 'docs/site/locations-and-devices.md states the number of presets')
+  for (const count of stated) assert.equal(count, DEVICE_PRESET_COUNT, 'DEVICE_PRESET_COUNT (src/lib/site.ts) must match docs/site/locations-and-devices.md')
+  // The home copy interpolates the constant instead of repeating the number.
+  for (const file of [join(webapp, 'src', 'lib', 'home.ts'), join(webapp, 'src', 'app', 'page.tsx')]) {
+    const source = await readFile(file, 'utf8')
+    assert.ok(!/\b\d+\s+(?:[a-z,]+\s+){0,4}?presets\b/i.test(source), `${file}: use DEVICE_PRESET_COUNT`)
+  }
+  assert.ok(FEATURES.some(f => f.text.startsWith(`${DEVICE_PRESET_COUNT} emulated`)))
+  assert.ok(STEPS.some(s => s.text.includes(`${DEVICE_PRESET_COUNT} emulated device presets`)))
+})
+
+test('the home page body links each use-case page once, and only published ones', async () => {
+  const linked = [...USE_CASES.flatMap(u => u.useCaseSlug ? [u.useCaseSlug] : []), ...MORE_USE_CASE_LINKS.map(l => l.slug)]
+  assert.equal(new Set(linked).size, linked.length, 'one link per use-case page')
+  assert.equal(new Set(MORE_USE_CASE_LINKS.map(l => l.label)).size, MORE_USE_CASE_LINKS.length)
+  for (const page of USE_CASE_PAGES) assert.ok(linked.includes(page.slug), `the home page does not link /use-cases/${page.slug}`)
+  // Cards and the "More use cases" row render a link only when the page exists.
+  const page = await homePage()
+  assert.ok(page.includes('MORE_USE_CASE_LINKS.filter(link => findUseCase(link.slug))'))
+  assert.ok(page.includes('useCase.useCaseSlug ? findUseCase(useCase.useCaseSlug) : null'))
 })
 
 // Screenshots live in docs/site/images (published with the docs under /docs-assets/images).

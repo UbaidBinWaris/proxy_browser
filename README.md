@@ -11,8 +11,8 @@ desktop-only and requires no sign-in.
 
 Proxy QA Browser is a desktop app (Windows, Linux and macOS) for **authorized QA
 testing of your own web forms**. It opens a real browser window — bundled
-Chromium, Firefox or WebKit, or a real Chrome, Edge, Brave, Opera, Opera GX,
-Vivaldi or Chromium installed on the machine — inside an isolated browser
+Chromium, Firefox or WebKit, or a real Chrome, Edge, Brave, Opera, Opera GX
+or Chromium installed on the machine — inside an isolated browser
 profile that emulates a chosen device (226 phone, tablet and desktop presets),
 and routes it through a proxy exit IP of a built-in provider (**DataImpulse**,
 plus community-verified **Bright Data**, **Oxylabs**, **Decodo** and
@@ -793,7 +793,7 @@ continues without an IP.
 
 - **Installed browsers are the real browsers**: they are started through
   Chromium's automation protocol with their own executable, so the window that
-  opens really is Chrome, Edge, Brave, Opera or Vivaldi and identifies as
+  opens really is Chrome, Edge, Brave or Opera and identifies as
   itself. Each launch uses a fresh temporary browser profile; your own
   bookmarks, cookies and extensions are never touched.
 - Without winget (App Installer) on Windows, every vendor browser falls back to
@@ -1393,8 +1393,10 @@ The features are the same. The differences:
 **Is my password safe?**
 It is encrypted with AES-256-GCM in a local vault whose key is protected by
 Windows DPAPI or your Linux keyring (or a machine-derived key, flagged as
-*Reduced protection*). It is never shown again after saving, never written to
-logs or the database, and never given to the browser. Anyone who can log in as
+*Reduced protection*). It is never shown again after saving and never written to
+logs or the database. WebKit sessions get only a local relay address, so the
+password never reaches that browser; Chromium-family browsers and Firefox receive
+it to sign in to the proxy. Anyone who can log in as
 your OS user on that machine can, in principle, use the app with it — protect
 your OS account. See [Security and privacy](#security-and-privacy).
 

@@ -1,10 +1,10 @@
 # Self-healing selectors
 
-Recorded steps keep backup locators, so a scenario keeps running when a page's `id` or class changes, flags the healed step and lets you update the scenario in one click.
+[Recorded steps](/use-cases/test-recorder) keep backup locators, so a scenario keeps running when a page's `id` or class changes, flags the healed step and lets you update the scenario in one click.
 
 ## Why it exists
 
-Pages change. An `id` gets renamed and a recorded `#submit-btn` stops matching. Without fallbacks the step fails and someone has to find the new selector by hand. Self-healing tries a small set of more stable locators for the same element, and reports what it did so that the change is reviewed rather than hidden.
+Pages change. An `id` gets renamed and a recorded `#submit-btn` stops matching. Without fallbacks the step fails and someone has to find the new selector by hand. Self-healing tries a small set of more stable locators for the same element, and reports what it did so that the change is reviewed rather than hidden. The same idea is also called self-healing locators.
 
 ## Fallbacks
 

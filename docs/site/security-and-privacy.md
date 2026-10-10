@@ -2,7 +2,7 @@
 
 How Proxy QA Browser protects your proxy credentials, what it stores and where, and which network connections it makes.
 
-There is no account, no telemetry and nothing is uploaded. Everything the app records stays on your computer. The website's own data practices are described in the [Privacy policy](/privacy). To report a vulnerability, see [Security](/security).
+There is no account, no sign-in and no telemetry, and nothing is uploaded. Everything the app records stays on your computer. The website's own data practices are described in the [Privacy policy](/privacy). To report a vulnerability, see [Security](/security).
 
 ## Credential vault
 

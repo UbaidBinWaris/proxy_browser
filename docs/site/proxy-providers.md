@@ -1,6 +1,6 @@
 # Proxy providers
 
-Proxy QA Browser builds each provider's login and targeting parameters for you, with DataImpulse live-tested and Bright Data, Oxylabs, Decodo and IPRoyal community-verified.
+Proxy QA Browser builds each provider's login and targeting parameters for you, with DataImpulse live-tested and Bright Data, Oxylabs, Decodo and IPRoyal community-verified. The app does not sell or include proxies: each user brings their own plan, and targeting depends on the provider (IPRoyal has no ZIP mode). The project is [not affiliated with or endorsed by any proxy provider](/docs/introduction#license).
 
 ## Built-in providers
 
@@ -25,7 +25,7 @@ Profiles, quick launches, CLI runs, proxy sessions and run history record which 
 The app stores **one login per provider product**. A product without a login is shown as **Not set up** and cannot be used. **Direct** uses no proxy at all.
 
 - DataImpulse sells **Residential** and **Mobile** as separate plans, each with its own login, on the same gateway. A Residential login is never used for the Mobile pool.
-- Each user needs their **own plan** with the provider. Usage is billed by the provider to that plan.
+- Each user needs their **own plan** with the provider. Usage is billed by the provider to that plan. See how to run [location tests with your proxy plan](/use-cases/location-testing).
 - DataImpulse bills **state, city and ZIP targeting at 2×** and country-only targeting at the normal rate; the launcher warns about it. The community-verified providers document no targeting surcharge, so no billing note is shown for them.
 - Every exit-IP check and every location re-roll is one small HTTP request through the proxy.
 
@@ -79,6 +79,8 @@ These providers accept only certain sticky session IDs (letters and digits only;
 
 ## Sticky and rotating sessions
 
+Use sticky for multi-step forms: one exit IP is kept for the session TTL (about 30 minutes by default with DataImpulse; Bright Data ends a session after 5 idle minutes). Rotating may use a different exit IP for every request.
+
 | Mode | Behaviour |
 | --- | --- |
 | **Sticky** (default) | A session ID pins one exit IP for about 30 minutes (DataImpulse default) or for **Session TTL** minutes. Quick launches generate a fresh ID per launch, `ql-<YYYYMMDD>-<4 random characters>`. Saved profiles use their **Sticky session ID**; a sticky profile without one gets `profile-<name>` generated and saved on first use |
@@ -86,7 +88,7 @@ These providers accept only certain sticky session IDs (letters and digits only;
 
 **Rotate** under **Settings → Advanced → Proxy session history** appends `-r2`, `-r3`, … to a profile's ID. That is a new sticky session, normally with a new exit IP, and the app tests it at once.
 
-Before the browser opens, the app verifies the exit IP and, for sticky sessions with a target, can re-roll the session until the location matches. See [Exit-IP verification](/docs/locations-and-devices#exit-ip-verification).
+Before the browser opens, the app verifies the exit IP and, for sticky sessions with a target, can re-roll the session, up to the **Attempts** limit, until the location meets your match policy. See [Exit-IP verification](/docs/locations-and-devices#exit-ip-verification).
 
 ## Custom gateways (QA automation)
 

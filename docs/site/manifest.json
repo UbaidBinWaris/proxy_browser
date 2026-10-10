@@ -4,47 +4,47 @@
     {
       "title": "Getting started",
       "pages": [
-        { "slug": "introduction", "title": "Introduction", "description": "What Proxy QA Browser is: a free, open-source desktop QA browser for testing your own forms from verified US locations, on real devices and browsers." },
-        { "slug": "install", "title": "Install", "description": "Download and run Proxy QA Browser on Windows 10 and 11, Linux (AppImage) and macOS 12 or later, with first-launch steps, moving to another computer and uninstalling." },
-        { "slug": "first-run", "title": "First run", "description": "The first-run set-up wizard: bundled browsers, optional proxy keys stored in the encrypted vault, the Manage keys window and a tour of the main window." }
+        { "slug": "introduction", "title": "Introduction", "seoTitle": "Introduction: free QA for your web forms", "description": "What Proxy QA Browser is: a free, open-source desktop app for testing your own web forms by location, on emulated devices and in real browsers." },
+        { "slug": "install", "title": "Install", "seoTitle": "Install on Windows, Linux and macOS", "description": "Download and run Proxy QA Browser on Windows 10 and 11 (portable EXE), Linux (AppImage) and macOS 12+ (DMG): first launch, moving and uninstalling." },
+        { "slug": "first-run", "title": "First run", "seoTitle": "First run: setup wizard and proxy keys", "description": "The first-run set-up wizard: bundled browsers, optional proxy keys stored in the encrypted vault, the Manage keys window and a tour of the main window." }
       ]
     },
     {
       "title": "Using the app",
       "pages": [
-        { "slug": "launching", "title": "Launching browsers", "description": "Launch an isolated browser through a verified exit IP: the Launch page, live sessions, run results with network capture, history and saved profiles." },
-        { "slug": "proxy-providers", "title": "Proxy providers", "description": "Use DataImpulse, Bright Data, Oxylabs, Decodo or IPRoyal: products and logins, username syntax, sticky and rotating sessions, and custom gateways." },
-        { "slug": "locations-and-devices", "title": "Locations and devices", "description": "Target a US state, city or ZIP code, verify the exit IP against it before the window opens, and emulate any of 226 phone, tablet and desktop presets." },
-        { "slug": "browsers", "title": "Browsers", "description": "Bundled Chromium, Firefox and WebKit plus installed Chrome, Edge, Brave, Opera and Vivaldi: one-click installs, detection, custom paths and known limits." },
-        { "slug": "site-access-tokens", "title": "Site access tokens", "description": "Send a secret header only to the origins you list, so your own WAF, CAPTCHA or fraud scoring can recognize and allow your QA traffic." },
-        { "slug": "updates", "title": "Updates", "description": "How signed online and USB updates are verified with Ed25519 and SHA-256, the computer copy, the startup update check and updating on macOS." }
+        { "slug": "launching", "title": "Launching browsers", "seoTitle": "Launch QA browsers through a proxy", "description": "Launch Chrome, Edge, Brave or a bundled engine for QA through a built-in proxy provider or directly, in a fresh profile, with the exit IP checked first." },
+        { "slug": "proxy-providers", "title": "Proxy providers", "seoTitle": "Use your own proxy plan for QA testing", "description": "Bring your own plan from a supported proxy provider: logins, location targeting by provider and sticky or rotating sessions. Not affiliated with any provider." },
+        { "slug": "locations-and-devices", "title": "Locations and devices", "seoTitle": "Verify exit-IP location; emulate devices", "description": "Target a country or a US state, city or ZIP, check the exit IP's reported location before the window opens, and emulate phone, tablet and desktop presets." },
+        { "slug": "browsers", "title": "Browsers", "seoTitle": "Bundled and installed browsers for QA", "description": "Bundled Chromium, Firefox and WebKit plus installed Chrome, Edge, Brave and Opera: one-click installs, detection without starting them, and known limits." },
+        { "slug": "site-access-tokens", "title": "Site access tokens", "seoTitle": "Allowlist QA traffic in your own WAF", "description": "Send a secret header only to origins you list, so your own staging WAF or CAPTCHA can allow QA traffic and your form backend can tag it as test leads." },
+        { "slug": "updates", "title": "Updates", "seoTitle": "Signed updates, online or from USB", "description": "How signed online and USB updates are verified with Ed25519 and SHA-256, the computer copy, the startup update check and updating on macOS." }
       ]
     },
     {
       "title": "QA automation",
       "pages": [
-        { "slug": "automation", "title": "Scenarios and matrices", "description": "Record QA scenarios, add variables and datasets, run browser × device × location matrices, compare screenshots, schedule runs and export reports." },
-        { "slug": "checks", "title": "Compliance, accessibility and performance checks", "description": "Automated consent and TCPA disclosure checks, consent checkbox and lead-certificate script checks, axe-core accessibility rules and performance budgets." },
-        { "slug": "self-healing", "title": "Self-healing selectors", "description": "How self-healing selectors work: recorded fallback locators, healed steps flagged in results, warn or fail modes, and updating a scenario in one click." },
-        { "slug": "ci-runner", "title": "CI runner", "description": "Run exported scenarios and suites headless in CI with the command-line runner, the Docker image or the GitHub Action, with JSON, JUnit and HTML reports." },
-        { "slug": "mcp-server", "title": "MCP server", "description": "Connect Claude Code, Cursor or another MCP client so an AI assistant can run geo- and device-aware QA checks, limited to the origins you allow." }
+        { "slug": "automation", "title": "Scenarios and matrices", "seoTitle": "Scenarios, CSV datasets and test matrices", "description": "Record QA scenarios, import CSV datasets, run browser × device × location matrices, compare screenshots, schedule runs and export JSON, JUnit or HTML." },
+        { "slug": "checks", "title": "Consent, accessibility and performance checks", "seoTitle": "Automated accessibility and script checks", "description": "Check consent disclosures and checkboxes, lead-certificate scripts (TrustedForm, Jornaya LeadiD), axe-core accessibility rules and performance budgets." },
+        { "slug": "self-healing", "title": "Self-healing selectors", "seoTitle": "Self-healing selectors and locators", "description": "How self-healing selectors keep recorded tests running when an id or class changes: up to four fallback locators, flagged in results, warn or fail modes." },
+        { "slug": "ci-runner", "title": "CI runner", "seoTitle": "CI runner for headless browser tests", "description": "Run exported scenarios and suites headless in CI with the command-line runner, the Docker image or the GitHub Action, with JSON, JUnit and HTML reports." },
+        { "slug": "mcp-server", "title": "MCP server", "seoTitle": "MCP server for browser QA testing", "description": "Connect Claude Code, Cursor or another MCP client so an AI assistant can run geo- and device-aware QA checks, with navigation limited to origins you allow." }
       ]
     },
     {
       "title": "Reference",
       "pages": [
-        { "slug": "security-and-privacy", "title": "Security and privacy", "description": "The AES-256-GCM credential vault and OS keychain, what is never logged, Electron hardening, every network connection the app makes and where data is stored." },
-        { "slug": "settings", "title": "Settings reference", "description": "Reference for every Proxy QA Browser setting: where it lives, its default and allowed range, QA automation policy limits and environment variables." },
-        { "slug": "troubleshooting", "title": "Troubleshooting", "description": "Fix common problems when installing and starting, with proxies and locations, browsers, sessions, the vault and QA automation, and look up error codes." },
-        { "slug": "faq", "title": "FAQ", "description": "Answers to common questions about Proxy QA Browser: cost, responsible use, data and privacy, proxy plans and providers, browsers, devices and security." }
+        { "slug": "security-and-privacy", "title": "Security and privacy", "seoTitle": "Security and privacy: vault, no telemetry", "description": "The AES-256-GCM credential vault and OS keychain, what is never logged, Electron hardening, every network connection the app makes and where data is stored." },
+        { "slug": "settings", "title": "Settings reference", "seoTitle": "Settings reference: defaults and limits", "description": "Reference for every Proxy QA Browser setting: where it lives, its default and allowed range, QA automation policy limits and environment variables." },
+        { "slug": "troubleshooting", "title": "Troubleshooting", "seoTitle": "Troubleshooting and error codes", "description": "Fix common problems with installing, proxies and locations, browsers, sessions, the vault and QA automation, and look up what each error code means." },
+        { "slug": "faq", "title": "FAQ", "seoTitle": "FAQ: cost, privacy, proxies and browsers", "description": "Answers to common questions about Proxy QA Browser: cost, responsible use, data and privacy, proxy plans, browsers, emulated devices, CI and AI assistants." }
       ]
     },
     {
       "title": "Developers",
       "pages": [
-        { "slug": "architecture", "title": "Architecture", "description": "How Proxy QA Browser is built: the Electron process model and IPC contracts, source layout, start-up, a launch step by step, providers, data and security." },
-        { "slug": "contributing", "title": "Contributing", "description": "Set up a development environment, run the tests, follow the code conventions and project scope, add a proxy provider and open a pull request." },
-        { "slug": "building-and-releasing", "title": "Building and releasing", "description": "Build the Windows EXE, Linux AppImage and macOS DMG, sign update manifests with Ed25519, publish tagged releases through CI and deploy the website." }
+        { "slug": "architecture", "title": "Architecture", "seoTitle": "Architecture: processes, IPC and data", "description": "How Proxy QA Browser is built: the Electron process model and IPC contracts, source layout, start-up, a launch step by step, providers, data and security." },
+        { "slug": "contributing", "title": "Contributing", "seoTitle": "Contributing: set up, test and open a PR", "description": "Set up a development environment, run the tests, follow the code conventions and project scope, add a proxy provider and open a pull request." },
+        { "slug": "building-and-releasing", "title": "Building and releasing", "seoTitle": "Build, sign and release the desktop app", "description": "Build the Windows EXE, Linux AppImage and macOS DMG, sign update manifests with Ed25519, publish tagged releases through CI and deploy the website." }
       ]
     }
   ]

@@ -23,7 +23,8 @@ test('headings get GitHub-style ids, anchor links and a table of contents', () =
   const { html, headings } = renderMarkdown('# Title\n\nIntro\n\n## Getting started\n\n### Step 1: Install `npm`!\n\n## Getting started\n\n## Café & résumé', { stripTitle: true })
   assert.ok(!html.includes('<h1'), 'the page title is rendered by the page, not the Markdown')
   assert.deepEqual(headings.map(h => [h.depth, h.id]), [[2, 'getting-started'], [3, 'step-1-install-npm'], [2, 'getting-started-1'], [2, 'café--résumé']])
-  assert.ok(html.includes('<h2 id="getting-started">Getting started<a class="heading-anchor" href="#getting-started"'))
+  // The anchor is empty (CSS draws the "#"), so the heading text search engines read is just the heading.
+  assert.ok(html.includes('<h2 id="getting-started">Getting started<a class="heading-anchor" href="#getting-started" aria-label="Link to section: Getting started"></a></h2>'))
   assert.ok(html.includes('<code>npm</code>'))
 })
 

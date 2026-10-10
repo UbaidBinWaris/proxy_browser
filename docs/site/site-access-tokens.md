@@ -10,7 +10,7 @@ A site access token is a header such as `X-QA-Access: <long random value>` that 
 
 > **Note:** This is an allowlisting feature for sites you own or are contracted to test, configured with the site owner's agreement on the site itself. It is **not** an evasion feature. It cannot change the user agent, cookies, client IP or any browser-controlled header, and it sends nothing to sites you did not list. The project does not provide, and will not accept, features for bypassing bot detection, CAPTCHA or fraud controls of anyone's site. See the [Acceptable use policy](/acceptable-use).
 
-Use tokens together with synthetic test data, and tag every submission that carries the header as a test lead so it is never sold, billed or counted. Do not use them to create fake leads.
+Use tokens together with synthetic test data, and tag every submission that carries the header as a test lead so it is never sold, billed or counted. Do not use them to create fake leads. Lead-form teams can combine tokens with [consent QA on staging](/use-cases/tcpa-consent-testing).
 
 ## Set up a token
 
@@ -33,7 +33,7 @@ Two tokens may not send the same header name to the same origin; this is refused
 On your staging or QA environment:
 
 1. Add a WAF rule that skips bot and challenge rules **only** when the header matches the secret and the host is your staging host. On Cloudflare, use *WAF custom rules* with the *Skip* action; on Akamai, a request-header match in a security-policy exception. Rotate the value like any other secret.
-2. Use your CAPTCHA vendor's **test keys** on staging instead of solving challenges (reCAPTCHA *test keys*, Cloudflare Turnstile *testing* dummy keys, hCaptcha *test keys*).
+2. On your staging site, use your CAPTCHA vendor's **test keys** (for example reCAPTCHA *test keys*, Cloudflare Turnstile *testing* dummy keys or hCaptcha *test keys*) instead of solving challenges.
 3. Tag every submission that carries the header as a **test lead** in your form backend, so it is never sold, billed, routed to sales or counted in metrics.
 
 ## What is sent where
@@ -62,3 +62,9 @@ Side effects while a token is enabled:
 Enabled tokens apply to every QA automation run and to the recorder in the desktop app, with the same exact-origin and redirect rules.
 
 The [CI runner](/docs/ci-runner), its Docker image, the GitHub Action and the [MCP server](/docs/mcp-server) cannot use tokens, by design. In CI, allowlist the runner's traffic on your site instead, for example a staging environment that accepts the CI network, or test keys from your bot-protection vendor, configured on the site rather than in the manifest.
+
+## Common questions
+
+### How do I allowlist my own automated tests in my site's CAPTCHA?
+
+On your staging site, use your CAPTCHA vendor's test keys, and add a WAF rule that skips challenges only when your secret header matches and the host is your staging host. Tag every submission carrying the header as a test lead. Tokens are sent only by desktop launches, QA automation runs and the recorder. For the CI runner, its Docker image, the GitHub Action and the MCP server, allowlist the runner's network on staging or use test keys.
