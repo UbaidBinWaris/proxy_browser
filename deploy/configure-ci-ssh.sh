@@ -3,14 +3,17 @@
 # port come from the production environment's secrets (DEPLOY_HOST, DEPLOY_USER, optional DEPLOY_PORT),
 # so they are never stored in this public repository.
 set -euo pipefail
-test -n "${DEPLOY_SSH_KEY:-}" || { echo 'DEPLOY_SSH_KEY secret is not set' >&2; exit 1; }
-test -n "${DEPLOY_KNOWN_HOSTS:-}" || { echo 'DEPLOY_KNOWN_HOSTS secret is not set' >&2; exit 1; }
-test -n "${DEPLOY_HOST:-}" || { echo 'DEPLOY_HOST secret is not set' >&2; exit 1; }
-test -n "${DEPLOY_USER:-}" || { echo 'DEPLOY_USER secret is not set' >&2; exit 1; }
+# Failures are also written as GitHub annotations: step logs need admin rights, annotations show on the check.
+# Messages name the secret, never its value.
+fail() { [[ "${GITHUB_ACTIONS:-}" == true ]] && echo "::error title=Deployment SSH settings::$1"; echo "$1" >&2; exit 1; }
+test -n "${DEPLOY_SSH_KEY:-}" || fail 'DEPLOY_SSH_KEY secret is not set in the production environment'
+test -n "${DEPLOY_KNOWN_HOSTS:-}" || fail 'DEPLOY_KNOWN_HOSTS secret is not set in the production environment'
+test -n "${DEPLOY_HOST:-}" || fail 'DEPLOY_HOST secret is not set in the production environment'
+test -n "${DEPLOY_USER:-}" || fail 'DEPLOY_USER secret is not set in the production environment'
 DEPLOY_PORT="${DEPLOY_PORT:-22}"
-[[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || { echo 'DEPLOY_HOST must be a host name or IP address' >&2; exit 1; }
-[[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo 'DEPLOY_USER must be a plain user name' >&2; exit 1; }
-[[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || { echo 'DEPLOY_PORT must be a port number' >&2; exit 1; }
+[[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] || fail 'DEPLOY_HOST must be a host name or IP address'
+[[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail 'DEPLOY_USER must be a plain user name'
+[[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || fail 'DEPLOY_PORT must be a port number'
 umask 077
 mkdir -p ~/.ssh
 printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/proxy-browser-deploy

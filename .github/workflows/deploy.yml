@@ -36,7 +36,8 @@ jobs:
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
         run: |
           bash deploy/configure-ci-ssh.sh
-          ssh proxy-browser-production 'test -d /var/lib/proxy-browser/staging && test -w /var/lib/proxy-browser/staging && echo "Deployment SSH authentication and host-key verification passed"'
+          ssh proxy-browser-production 'test -d /var/lib/proxy-browser/staging && test -w /var/lib/proxy-browser/staging && echo "Deployment SSH authentication and host-key verification passed"' \
+            || { echo '::error title=Deployment SSH::Could not sign in to the production server or its staging folder is missing or not writable. Check DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS (must match DEPLOY_HOST and DEPLOY_PORT), DEPLOY_HOST, DEPLOY_USER and DEPLOY_PORT.'; exit 1; }
       - name: Clear ephemeral SSH key
         if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy
