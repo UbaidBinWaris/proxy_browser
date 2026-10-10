@@ -22,6 +22,17 @@ is checked and compared with the location you asked for. Every launch is
 recorded locally with its exit IP, location verdict, HTTP status, screenshot,
 captured network requests and any lead / certificate IDs the form returned.
 
+![The Launch page of Proxy QA Browser: DataImpulse residential pool, exit location Austin, TX, WebKit and Apple iPhone 15 Pro, ready to connect and launch.](docs/site/images/launch.webp)
+
+| QA automation results | Step-by-step check evidence |
+| --- | --- |
+| ![A six-case browser × device matrix: desktop cases pass, phone cases fail the consent font-size check.](docs/site/images/qa-results-720.webp) | ![The evidence of a failed iPhone case: the consent disclosure font is 9 px, below the 10 px minimum.](docs/site/images/check-evidence-720.webp) |
+| **Verified exit IP and captured IDs per launch** | **226 device presets** |
+| ![A finished run: verified exit IP in Austin, Texas matching the request, HTTP 200, lead and certificate IDs and the final screenshot.](docs/site/images/run-detail-720.webp) | ![The device picker with filters by type, brand, operating system and orientation.](docs/site/images/launch-device-picker-720.webp) |
+
+Screenshots are taken from the real app with demo data by `scripts/capture-screenshots.mjs`. Full documentation:
+**[proxybrowser.ubaidbinwaris.com/docs](https://proxybrowser.ubaidbinwaris.com/docs)**.
+
 > **Responsible use.** Use this tool only on forms, funnels and sites that you
 > own or are explicitly contracted to test, and only with a proxy plan you are
 > entitled to use. It is not a tool for evading rate limits or fraud controls,

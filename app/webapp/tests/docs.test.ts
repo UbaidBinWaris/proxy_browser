@@ -43,6 +43,23 @@ test('sync copies docs, images, release notes and NOTICE when the manifest is va
   assert.deepEqual(JSON.parse(await readFile(join(out, 'content', 'release-notes.json'), 'utf8')), { '1.0.0': ['First'] })
 })
 
+test('sync records image sizes and the images each page shows, and rejects references to missing images', async () => {
+  // 2×3 PNG: signature, IHDR length and type, then width and height.
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 0, 2, 0, 0, 0, 3])])
+  const { root, out } = await fixtureRepo('images', { introduction: '# Introduction\n\n![Shot](images/real.png "Caption")\n\n```md\n![ignored](images/none.png)\n```', install: '# Install\n', faq: '# FAQ\n' })
+  await writeFile(join(root, 'docs', 'site', 'images', 'real.png'), png)
+  assert.equal(sync(root, out).status, 0)
+  assert.deepEqual(JSON.parse(await readFile(join(out, 'content', 'images.json'), 'utf8')), { 'images/real.png': { width: 2, height: 3 } })
+  const synced = JSON.parse(await readFile(join(out, 'content', 'manifest.json'), 'utf8')) as DocsManifest
+  assert.deepEqual(findPage(synced, 'introduction')?.images, ['images/real.png'])
+  assert.equal(findPage(synced, 'install')?.images, undefined)
+
+  await writeFile(join(root, 'docs', 'site', 'install.md'), '# Install\n\n![Gone](images/missing.webp)\n')
+  const broken = sync(root, out)
+  assert.equal(broken.status, 1)
+  assert.match(broken.stderr, /install\.md: image "images\/missing\.webp" does not exist in docs\/site/)
+})
+
 test('a missing page fails the sync unless --allow-missing is given', async () => {
   const { root, out } = await fixtureRepo('missing', { introduction: '# Introduction\n', faq: '# FAQ\n' })
   const strict = sync(root, out)

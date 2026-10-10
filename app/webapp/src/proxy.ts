@@ -14,4 +14,4 @@ export function proxy(request: NextRequest) {
   return response
 }
 // Pages get a per-request nonce; static files, metadata images and security.txt keep their own cache headers.
-export const config = { matcher: ['/((?!api|_next/static|_next/image|favicon.ico|brand|screenshots|docs-assets|.well-known|robots.txt|sitemap.xml|opengraph-image).*)'] }
+export const config = { matcher: ['/((?!api|_next/static|_next/image|favicon.ico|brand|docs-assets|og/|.well-known|llms.txt|robots.txt|sitemap.xml|opengraph-image).*)'] }

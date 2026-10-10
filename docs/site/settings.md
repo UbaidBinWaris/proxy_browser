@@ -33,6 +33,8 @@ Settings are stored in the local database and validated on load, key by key, so 
 | `networkInspectorEnabled` | Advanced → Network inspector → **Capture requests and extract lead / certificate ids** | on | Record requests and extract IDs on the run page |
 | `navigationTimeoutMs` | Advanced → Network inspector → **Navigation timeout (ms)** | `60000` | 5,000–300,000; how long opening the start URL may take |
 
+![Settings, General: default start URL, one session at a time, check for updates on startup, and the screenshot folder.](images/settings-general.webp "Settings → General.")
+
 ## Other Advanced sections
 
 These sections hold data and tools rather than settings:

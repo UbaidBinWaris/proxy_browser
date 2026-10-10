@@ -6,6 +6,8 @@ The Launch page opens a verified, isolated browser session in one click, and eve
 
 Launch is the start page. It is one form with one primary button, **Connect & Launch**, and it remembers what you used last. **Random all** in the header picks a configured pool (Direct when none is configured), a current device, a compatible installed browser and, unless the pool is Direct, a random location.
 
+![The Launch page with the Connection card (provider, pool, exit location), the Browser & device card and the Session card with the start URL and the Will connect as preview.](images/launch.webp "Connection on the left, browser and device on the right, the start URL and the exact proxy login below.")
+
 ### Connection
 
 - **Proxy provider**: the providers that have keys (all of them while none has).
@@ -55,6 +57,8 @@ Header buttons while the session is live: **Bring to Front**, **Take Screenshot*
 - **Outcome**: **Lead ID** and **Certificate ID** (filled automatically when found in a JSON response; your edits win), **Status** (**Success** / **Failed**) and **Notes** (up to 4,000 characters). Click **Save Changes** to keep edits.
 - **Screenshot**: the last screenshot of the run, with **Reveal in folder**.
 
+![The Result tab of a finished run: verified exit IP 203.0.113.24 in Austin, Texas, a Match badge for the requested city, HTTP status 200, lead and certificate IDs and the final screenshot.](images/run-detail.webp "A finished run: requested vs. verified location, HTTP status, captured IDs and the last screenshot.")
+
 ### Network tab
 
 When the network inspector is on, this tab lists every request of the session with method, URL, status and timing. Filter by text or with the quick filters `lead`, `submit`, `certificate`, `cert`, `form` and `api`. IDs found in JSON responses (`leadId`, `lead_id`, `certificateId`, `certificate_id`) appear as badges, and the first lead and certificate IDs are filled into the outcome. Response bodies are inspected in memory and never stored.
@@ -76,9 +80,13 @@ The **Sessions** page lists open browsers and their verified exit IPs. Each live
 
 **History** shows an overview (saved profiles, runs today, success rate of finished runs, last verified exit IP) and the latest 200 runs. Click a row to open its run page.
 
+![The History page: profile, run and success-rate totals above a table of runs with time, profile, engine, device, pool, requested location and exit IP.](images/history.webp "History lists every launch with its browser, device, requested location and exit IP.")
+
 ## Profiles
 
 **Browser Profiles** are saved, repeatable setups. Quick launches stay hidden unless saved.
+
+![The Browser Profiles page with saved profiles as cards, each showing engine, device, pool, location target and Launch Browser and Test Proxy buttons.](images/profiles.webp "Saved profiles: one click launches the same browser, device, pool and location again.")
 
 Each profile card shows browser, device, proxy mode, pool, sticky session ID, requested location and the last proxy status, with **Launch Browser** and **Test Proxy** (one IP check through the profile's sticky session). The **…** menu has **Edit**, **Duplicate** (adds " (copy)" and a new sticky ID) and **Delete** (past runs are kept).
 

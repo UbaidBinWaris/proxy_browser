@@ -1,18 +1,20 @@
 /* global process, URL, console */
 /**
  * Copies the website documentation into app/webapp/content/ (generated, gitignored):
- *   docs/site/manifest.json      -> content/manifest.json
+ *   docs/site/manifest.json      -> content/manifest.json (+ per page: last commit date from git, images used)
  *   docs/site/<slug>.md          -> content/docs/<slug>.md
  *   docs/site/**\/*.{png,jpg,…}   -> public/docs-assets/… (images referenced by the docs)
+ *                                   + content/images.json (width and height of each PNG/WebP/GIF image)
  *   resources/release-notes.json -> content/release-notes.json
  *   NOTICE                       -> content/NOTICE.txt (shown on the licences page)
  *
  * The manifest is validated first (unique slugs, every page file present, each page title equal to the
- * file's first `# ` heading); any problem fails the sync with a non-zero exit code. `--allow-missing`
+ * file's first `# ` heading, every relative image a page references exists); any problem fails the sync with a non-zero exit code. `--allow-missing`
  * (local development only, never CI) tolerates absent page files: they are dropped from the copied manifest.
  *
  * Usage: node scripts/sync-docs.mjs [--allow-missing] [--root <repo>] [--out <webapp dir>]
  */
+import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +22,32 @@ import { fileURLToPath } from 'node:url'
 const RESERVED_SLUGS = new Set(['search'])
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i
+
+/** Width and height of a PNG, GIF or WebP image, or null for other formats. */
+export function imageSize(bytes) {
+  if (bytes.length >= 24 && bytes.readUInt32BE(0) === 0x89504e47) return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+  if (bytes.length >= 10 && bytes.subarray(0, 3).toString('latin1') === 'GIF') return { width: bytes.readUInt16LE(6), height: bytes.readUInt16LE(8) }
+  if (bytes.length >= 30 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') {
+    const chunk = bytes.subarray(12, 16).toString('latin1')
+    if (chunk === 'VP8X') return { width: 1 + bytes.readUIntLE(24, 3), height: 1 + bytes.readUIntLE(27, 3) }
+    if (chunk === 'VP8 ') return { width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff }
+    if (chunk === 'VP8L') {
+      const b = bytes.subarray(21, 25)
+      return { width: 1 + (((b[1] & 0x3f) << 8) | b[0]), height: 1 + (((b[3] & 0xf) << 10) | (b[2] << 2) | ((b[1] & 0xc0) >> 6)) }
+    }
+  }
+  return null
+}
+
+/** Relative image paths (from docs/site) a page references with `![alt](path)`, outside fenced code blocks. */
+export function imageReferences(markdown) {
+  const refs = [], prose = markdown.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[^\n]*$/gm, '')
+  for (const match of prose.matchAll(/!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)) {
+    const target = match[1]
+    if (!/^[a-z][a-z0-9+.-]*:|^\/|^#/i.test(target)) refs.push(target.replace(/^\.\//, ''))
+  }
+  return refs
+}
 
 /** The first ATX level-1 heading outside fenced code blocks, or null. */
 export function firstHeading(markdown) {
@@ -40,10 +68,11 @@ export function firstHeading(markdown) {
 
 /**
  * Validates the manifest shape and every page against its Markdown file.
- * `readPage(slug)` returns the file contents or null when the file does not exist.
+ * `readPage(slug)` returns the file contents or null when the file does not exist; `imageExists(path)`
+ * tells whether a referenced image (relative to docs/site) exists.
  * Returns { manifest (only present pages), missing: string[], errors: string[] }.
  */
-export async function validateManifest(raw, readPage) {
+export async function validateManifest(raw, readPage, imageExists = async () => true) {
   const errors = [], missing = [], seen = new Set()
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sections) || raw.sections.length === 0) return { manifest: { sections: [] }, missing, errors: ['manifest.json must contain a non-empty "sections" array'] }
   const sections = []
@@ -65,11 +94,22 @@ export async function validateManifest(raw, readPage) {
       const heading = firstHeading(markdown)
       if (heading === null) errors.push(`${page.slug}.md: no "# " heading found`)
       else if (heading !== page.title) errors.push(`${page.slug}.md: first heading "${heading}" does not match manifest title "${page.title}"`)
+      for (const image of imageReferences(markdown)) if (!(await imageExists(image))) errors.push(`${page.slug}.md: image "${image}" does not exist in docs/site`)
       pages.push({ slug: page.slug, title: page.title, ...(page.description ? { description: page.description } : {}) })
     }
     if (pages.length) sections.push({ title: section.title, pages })
   }
   return { manifest: { sections }, missing, errors }
+}
+
+/** ISO date of the last commit that touched a file, or null outside a git checkout (or for untracked files). */
+export function lastCommitDate(root, path) {
+  try {
+    const date = execFileSync('git', ['log', '-1', '--format=%cI', '--', path], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return date || null
+  } catch {
+    return null
+  }
 }
 
 async function readOptional(path) {
@@ -95,7 +135,8 @@ export async function syncDocs({ root, out, allowMissing = false }) {
   if (rawManifest === null) throw new Error(`Missing ${join(site, 'manifest.json')}`)
   let parsed
   try { parsed = JSON.parse(rawManifest) } catch (error) { throw new Error(`docs/site/manifest.json is not valid JSON: ${error.message}`, { cause: error }) }
-  const { manifest, missing, errors } = await validateManifest(parsed, slug => readOptional(join(site, `${slug}.md`)))
+  const exists = path => readFile(join(site, path)).then(() => true, () => false)
+  const { manifest, missing, errors } = await validateManifest(parsed, slug => readOptional(join(site, `${slug}.md`)), image => exists(image))
   if (missing.length && !allowMissing) errors.push(...missing.map(slug => `docs/site/${slug}.md is listed in manifest.json but does not exist`))
   if (errors.length) throw new Error(`Documentation sync failed:\n  - ${errors.join('\n  - ')}`)
   const notes = await readOptional(join(root, 'resources', 'release-notes.json'))
@@ -110,7 +151,21 @@ export async function syncDocs({ root, out, allowMissing = false }) {
   await mkdir(docs, { recursive: true })
   for (const page of manifest.sections.flatMap(s => s.pages)) await copyFile(join(site, `${page.slug}.md`), join(docs, `${page.slug}.md`))
   const images = await imagesIn(site)
-  for (const image of images) { await mkdir(dirname(join(assets, image)), { recursive: true }); await copyFile(join(site, image), join(assets, image)) }
+  const sizes = {}
+  for (const image of images) {
+    await mkdir(dirname(join(assets, image)), { recursive: true })
+    await copyFile(join(site, image), join(assets, image))
+    const size = imageSize(await readFile(join(site, image)))
+    if (size) sizes[image.split(/[\\/]/).join('/')] = size
+  }
+  await writeFile(join(content, 'images.json'), `${JSON.stringify(sizes, null, 2)}\n`)
+  // For the sitemap: when each page last changed (git history; CI checks out full history) and which images it shows.
+  for (const page of manifest.sections.flatMap(s => s.pages)) {
+    const lastModified = lastCommitDate(root, join('docs', 'site', `${page.slug}.md`))
+    if (lastModified) page.lastModified = lastModified
+    const images = imageReferences(await readFile(join(site, `${page.slug}.md`), 'utf8'))
+    if (images.length) page.images = [...new Set(images)]
+  }
   await writeFile(join(content, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   await writeFile(join(content, 'release-notes.json'), notes)
   await writeFile(join(content, 'NOTICE.txt'), notice)

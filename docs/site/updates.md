@@ -38,6 +38,8 @@ If the app was run straight from a downloaded file and then updates, the updated
 
 In **Settings → App & updates**, click **Check for updates**. When a newer release exists, click **Download v… and restart**. The app downloads and verifies the file, closes its browser sessions, restarts into the new version, and the new version finishes the update. An existing computer copy is upgraded at the same path, so shortcuts and pins stay valid.
 
+![Settings, App & updates: the installed version, platform and Playwright version, the data, key and vault locations, and the attribution notes.](images/settings-about.webp "Settings → App & updates shows the version, where your data lives and the update controls.")
+
 ### Startup update check
 
 With **Settings → General → Check for updates on startup** on (the default), the app checks the signed feed once after the window opens, at most once every 24 hours.

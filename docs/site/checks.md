@@ -85,6 +85,8 @@ A metric over its budget fails the step (equal passes). A budgeted metric the br
 
 Each case lists its checks with a status and a headline. **Results** shows a summary above the matrix with every failed or warning check, for example `Apple iPhone SE (3rd gen) · WebKit · Texas: consent font 9px FAIL`, a badge per check in each case, and the evidence under each step. JSON exports contain everything; JUnit adds a `check` property and a `system-out` line per check; the HTML report adds a **Checks** table.
 
+![The evidence of a failed iPhone 15 Pro case: each step with a screenshot link, the consent checkbox check passing, the consent disclosure failing because its font is 9 px, and the accessibility check passing.](images/check-evidence.webp "Every check appears as a badge on the case and as a line in the step-by-step evidence.")
+
 ## Pre-launch consent QA workflow
 
 Run this before a lead form goes live, and after every change to its disclosure, layout or vendor scripts.

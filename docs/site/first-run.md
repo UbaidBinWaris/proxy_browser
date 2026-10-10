@@ -25,6 +25,8 @@ Until you click **Open launcher**, each start reopens the wizard at the first st
 
 You can skip proxy keys entirely. Direct launches, which use this computer's own connection, need no keys. Add keys at any time with **Manage keys** on the Launch page, or under **Settings → Advanced → Proxy keys → Manage keys…**.
 
+![The set-up wizard on the Proxy credentials step: provider DataImpulse, host and port filled in, username and password fields, Test connection and Save encrypted buttons.](images/first-run.webp "The Proxy credentials step of the set-up wizard. Skip it to test on your own connection first.")
+
 Each provider product (plan) has its own login. For DataImpulse, **Residential** and **Mobile** are separate plans with separate logins on the same gateway; a Residential login is never used for the Mobile pool. Each person needs their own plan with the provider.
 
 Credentials are encrypted on this computer with AES-256-GCM and the password is write-only: it is never shown again after saving. See [Security and privacy](/docs/security-and-privacy#credential-vault).

@@ -6,6 +6,8 @@ Proxy QA Browser builds each provider's login and targeting parameters for you, 
 
 Providers are built into the app; no plug-ins are loaded at runtime, because a provider sees your credentials. Each provider declares its products (plans), target modes, sticky-session rules, default gateway and any extra credential fields, and the Launch page, profile editor, keys window and Settings are built from that.
 
+![Settings, Advanced, Proxy keys: DataImpulse Residential configured, Mobile and the Bright Data, Oxylabs, Decodo and IPRoyal products not set up, with Manage keys and security health.](images/proxy-keys.webp "Proxy keys per provider and product, stored in the encrypted vault on this computer.")
+
 | Provider | Products | Default gateway | Targeting (US) | Sticky session / TTL | Verification |
 | --- | --- | --- | --- | --- | --- |
 | **DataImpulse** | Residential, Mobile | `gw.dataimpulse.com:823` | Country, State, City, ZIP | `sessid` + `sessttl` (1–1440 min) | Live-tested |

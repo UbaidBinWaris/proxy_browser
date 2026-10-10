@@ -16,6 +16,8 @@ Use tokens together with synthetic test data, and tag every submission that carr
 
 Open **Settings → Advanced → Site access tokens** and click **Add Token**.
 
+![Settings, Advanced, Site access tokens: a token named Staging WAF allowlist for https://staging.example.com that sends the X-QA-Access header, with its value masked.](images/site-access-tokens.webp "A token is sent only to the origins you list; its value is never shown again after saving.")
+
 | Field | Rules |
 | --- | --- |
 | **Name** | Free text, shown in lists and in evidence |

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { DocsNav } from '@/components/DocsNav'
+import { JsonLd } from '@/components/JsonLd'
 import { Prose, Toc } from '@/components/Prose'
 import { allPages, loadDoc, loadManifest, neighbours } from '@/lib/docs'
-import { pageMetadata } from '@/lib/seo'
+import { breadcrumbList, docArticle, pageMetadata } from '@/lib/seo'
 import { DOCS_EDIT_URL } from '@/lib/site'
 
 type Props = { params: Promise<{ slug: string }> }
@@ -16,7 +17,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const doc = await loadDoc((await params).slug)
   // Resolving the 404 here (before streaming starts) lets the not-found page render on the server.
   if (!doc) notFound()
-  return pageMetadata({ title: doc.title, description: doc.description, path: `/docs/${doc.slug}` })
+  return pageMetadata({
+    title: doc.title,
+    description: doc.description,
+    path: `/docs/${doc.slug}`,
+    image: { url: `/og/${doc.slug}`, width: 1200, height: 630, alt: `${doc.title}: Proxy QA Browser documentation` },
+    article: { section: doc.section, ...(doc.lastModified ? { modifiedTime: doc.lastModified } : {}) },
+  })
 }
 
 export default async function DocPage({ params }: Props) {
@@ -25,6 +32,8 @@ export default async function DocPage({ params }: Props) {
   if (!doc) notFound()
   const manifest = await loadManifest(), { previous, next } = neighbours(manifest, slug)
   return <div className="docs-shell">
+    <JsonLd data={docArticle(doc)} />
+    <JsonLd data={breadcrumbList([{ name: 'Home', path: '/' }, { name: 'Documentation', path: '/docs' }, { name: doc.title, path: `/docs/${slug}` }])} />
     <DocsNav manifest={manifest} current={slug} />
     <article className="docs-article">
       <header className="page-header">

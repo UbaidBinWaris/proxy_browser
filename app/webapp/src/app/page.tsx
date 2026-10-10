@@ -6,6 +6,7 @@ import { LICENSE_URL, OWNER, REPO_URL, SITE_DESCRIPTION, SITE_NAME, SITE_URL } f
 import { currentRelease } from '@/lib/releases'
 import { OS_LABELS, detectOs, recommendedPlatform } from '@/lib/downloads'
 import { FAQS, FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, STEPS, USE_CASES, screenshotSrcSet } from '@/lib/home'
+import { webSite } from '@/lib/seo'
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
@@ -27,7 +28,7 @@ export default async function Home() {
     isAccessibleForFree: true,
     license: LICENSE_URL,
     codeRepository: REPO_URL,
-    screenshot: `${SITE_URL}${HERO_SCREENSHOT.src}`,
+    screenshot: [HERO_SCREENSHOT, ...GALLERY_SCREENSHOTS].map(shot => `${SITE_URL}${shot.src}`),
     featureList: FEATURES.map(feature => feature.title),
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     author: { '@type': 'Person', name: OWNER.name, url: OWNER.website, sameAs: [OWNER.github, OWNER.linkedin] },
@@ -39,6 +40,7 @@ export default async function Home() {
     mainEntity: FAQS.map(faq => ({ '@type': 'Question', name: faq.question, acceptedAnswer: { '@type': 'Answer', text: faq.answer } })),
   }
   return <>
+    <JsonLd data={webSite(SITE_DESCRIPTION)} />
     <JsonLd data={structuredData} />
     <JsonLd data={faqData} />
     <section className="home-hero" aria-labelledby="hero-title">
@@ -57,7 +59,7 @@ export default async function Home() {
         </ul>
       </div>
       <figure className="shot shot-hero">
-        <img src={HERO_SCREENSHOT.src} srcSet={screenshotSrcSet(HERO_SCREENSHOT)} sizes="(max-width: 760px) 100vw, 720px" width={HERO_SCREENSHOT.width} height={HERO_SCREENSHOT.height} alt={HERO_SCREENSHOT.alt} fetchPriority="high" decoding="async" />
+        <img src={HERO_SCREENSHOT.src} srcSet={screenshotSrcSet(HERO_SCREENSHOT)} sizes="(max-width: 1440px) 100vw, 1296px" width={HERO_SCREENSHOT.width} height={HERO_SCREENSHOT.height} alt={HERO_SCREENSHOT.alt} fetchPriority="high" decoding="async" />
         <figcaption>{HERO_SCREENSHOT.caption}</figcaption>
       </figure>
     </section>
@@ -68,7 +70,7 @@ export default async function Home() {
       <div className="home-engines-installed"><strong>Chrome</strong><i/><strong>Edge</strong><i/><strong>Brave</strong><i/><strong>Opera</strong><i/><strong>Vivaldi</strong></div>
     </div>
     <section id="features" className="section" aria-labelledby="features-title">
-      <div className="section-heading"><div><span className="eyebrow">WHAT YOU GET</span><h2 id="features-title">Everything a form test needs,<br />on your own machine.</h2></div><p>Manual sessions when you want to look, automation when you want to repeat, and evidence either way.</p></div>
+      <div className="section-heading"><div><span className="eyebrow">WHAT YOU GET</span><h2 id="features-title">Everything a form test needs,{' '}<br />on your own machine.</h2></div><p>Manual sessions when you want to look, automation when you want to repeat, and evidence either way.</p></div>
       <ul className="home-features">{FEATURES.map(feature => <li key={feature.title} className="home-feature">
         <h3>{feature.title}</h3>
         <p>{feature.text}</p>
@@ -83,7 +85,7 @@ export default async function Home() {
       </figure>)}</div>
     </section>
     <section id="use-cases" className="section" aria-labelledby="use-cases-title">
-      <div className="section-heading"><div><span className="eyebrow">USE CASES</span><h2 id="use-cases-title">Built for QA of<br />forms you own.</h2></div><p>For QA engineers, testers and developers checking lead forms, sign-up flows and landing pages before and after release.</p></div>
+      <div className="section-heading"><div><span className="eyebrow">USE CASES</span><h2 id="use-cases-title">Built for QA of{' '}<br />forms you own.</h2></div><p>For QA engineers, testers and developers checking lead forms, sign-up flows and landing pages before and after release.</p></div>
       <div className="home-use-cases">{USE_CASES.map(useCase => <article key={useCase.title} className="home-use-case">
         <h3>{useCase.title}</h3>
         <p>{useCase.text}</p>
@@ -92,7 +94,7 @@ export default async function Home() {
       </article>)}</div>
     </section>
     <section id="how-it-works" className="how section" aria-labelledby="how-title">
-      <div><span className="eyebrow">HOW IT WORKS</span><h2 id="how-title">From download<br />to your first test.</h2><p>Set it up once. Your profiles, scenarios and keys are kept across updates.</p><a className="quiet-link" href="#download">Find your download <span aria-hidden="true">→</span></a></div>
+      <div><span className="eyebrow">HOW IT WORKS</span><h2 id="how-title">From download{' '}<br />to your first test.</h2><p>Set it up once. Your profiles, scenarios and keys are kept across updates.</p><a className="quiet-link" href="#download">Find your download <span aria-hidden="true">→</span></a></div>
       <ol>{STEPS.map((step, i) => <li key={step.title}><span aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div><h3>{step.title}</h3><p>{step.text}</p></div></li>)}</ol>
     </section>
     <Downloads initialRelease={release} visitorOs={visitorOs} />

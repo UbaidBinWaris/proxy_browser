@@ -88,10 +88,13 @@ test('every home page docs link points to an existing docs page', async () => {
   for (const href of FAQS.flatMap(f => f.link && !f.link.href.startsWith('/docs/') ? [f.link.href] : [])) assert.match(href, /^\/(acceptable-use|privacy|terms|security|licenses|disclaimer|changelog|about)$/)
 })
 
+// Screenshots live in docs/site/images (published with the docs under /docs-assets/images).
+const screenshotFile = (src: string) => join(repo, 'docs', 'site', src.slice('/docs-assets/'.length))
+
 test('referenced screenshots exist, match their declared size and stay under the size limit', async () => {
   for (const shot of [HERO_SCREENSHOT, ...GALLERY_SCREENSHOTS]) {
-    assert.match(shot.src, /^\/screenshots\/[a-z0-9-]+\.(webp|png)$/)
-    const file = join(webapp, 'public', shot.src)
+    assert.match(shot.src, /^\/docs-assets\/images\/[a-z0-9-]+\.webp$/)
+    const file = screenshotFile(shot.src)
     const info = await stat(file)
     assert.ok(info.size > 0 && info.size <= SCREENSHOT_MAX_BYTES, `${shot.src}: ${info.size} bytes`)
     const bytes = await readFile(file)
@@ -102,7 +105,7 @@ test('referenced screenshots exist, match their declared size and stay under the
     assert.ok(shot.alt.length >= 40, `${shot.src} needs descriptive alt text`)
     // The 720 px copy in the srcset exists, has the declared width and is smaller than the original.
     const small = screenshotSrcSet(shot).split(', ')[0]!.split(' ')[0]!
-    const smallBytes = await readFile(join(webapp, 'public', small))
+    const smallBytes = await readFile(screenshotFile(small))
     assert.equal(webpSize(smallBytes).width, SCREENSHOT_SMALL_WIDTH, small)
     assert.ok(smallBytes.length < bytes.length, `${small} should be smaller than ${shot.src}`)
   }

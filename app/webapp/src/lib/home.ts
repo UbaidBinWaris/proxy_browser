@@ -17,45 +17,62 @@ export type HomeUseCase = { title: string; text: string; points: string[]; docSl
 export type HomeStep = { title: string; text: string }
 export type HomeFaq = { question: string; answer: string; link?: { href: string; label: string } }
 
-/** Upper bound for a home page screenshot file, so the page stays light. */
+/**
+ * Screenshots are captured from the real app by scripts/capture-screenshots.mjs into docs/site/images/ and
+ * published with the docs under /docs-assets/images/. Upper bound for one file, so the page stays light.
+ */
 export const SCREENSHOT_MAX_BYTES = 350 * 1024
 
 export const HERO_SCREENSHOT: HomeScreenshot = {
-  src: '/screenshots/launch-location-picker.webp',
-  alt: 'The Launch page of Proxy QA Browser: the US state search lists popular states with their city and ZIP counts, WebKit is chosen as the browser and Apple iPhone 15 Pro as the device, ready to connect and launch https://staging.example.com/quote.',
+  src: '/docs-assets/images/launch.webp',
+  alt: 'The Launch page of Proxy QA Browser: DataImpulse residential pool, exit location Austin, TX, WebKit as the browser and Apple iPhone 15 Pro as the device. The Will connect as line shows the sticky targeting string, ready to connect and launch https://staging.example.com/quote.',
   caption: 'Launch: pick a proxy pool, a US state, city or ZIP, a browser and a device, then connect.',
-  width: 1440,
-  height: 900,
+  width: 1600,
+  height: 1000,
 }
 
 export const GALLERY_SCREENSHOTS: HomeScreenshot[] = [
   {
-    src: '/screenshots/qa-matrix-results.webp',
+    src: '/docs-assets/images/qa-results.webp',
     alt: 'QA automation results for a six-case matrix: Chromium and WebKit on Windows desktop, iPhone 15 Pro and Galaxy S23. The summary reports 14 of 18 checks passed; desktop cases pass while every phone case fails the consent check because the disclosure font is 9 px.',
     caption: 'A browser × device matrix with check badges per case. Export JSON, JUnit or HTML reports.',
-    width: 1440,
-    height: 900,
+    width: 1600,
+    height: 1000,
   },
   {
-    src: '/screenshots/consent-check-evidence.webp',
+    src: '/docs-assets/images/check-evidence.webp',
     alt: 'The evidence of a failed iPhone 15 Pro case, step by step: consent checkbox not pre-checked (pass), consent disclosure font 9 px below the 10 px minimum (fail), axe-core accessibility with no violations (pass), then the form submits.',
     caption: 'Step-by-step evidence: the consent check names exactly what failed and where.',
-    width: 1440,
-    height: 900,
+    width: 1600,
+    height: 1000,
   },
   {
-    src: '/screenshots/launch-device-picker.webp',
-    alt: 'The device picker filtered to devices WebKit can emulate: brand and operating system filters, portrait or landscape, and cards for iPhone and iPad models with their viewport, scale factor and touch support.',
+    src: '/docs-assets/images/run-detail.webp',
+    alt: 'The result of a launch: verified exit IP 203.0.113.24 in Austin, Texas matching the requested city, HTTP status 200, lead ID and certificate ID captured from the form responses, and the final screenshot of the quote form.',
+    caption: 'Every launch records the verified exit IP, location match, HTTP status, captured IDs and a screenshot.',
+    width: 1600,
+    height: 1000,
+  },
+  {
+    src: '/docs-assets/images/launch-device-picker.webp',
+    alt: 'The device picker: filters by device type, brand, operating system and orientation, and cards for desktop presets with their viewport, scale factor and user agent.',
     caption: 'Device picker: 226 presets with filters by type, brand, OS and orientation.',
-    width: 1440,
-    height: 900,
+    width: 1600,
+    height: 1000,
   },
   {
-    src: '/screenshots/proxy-keys-providers.webp',
-    alt: 'Settings, Proxy keys: DataImpulse Residential and Mobile, Bright Data, Oxylabs, Decodo and IPRoyal, all marked Not set up, with a Manage keys button and the vault security health.',
+    src: '/docs-assets/images/launch-browser-picker.webp',
+    alt: 'The browser picker: bundled Chromium, Firefox and WebKit, installed Google Chrome, and one-click installs for Microsoft Edge, Brave and Opera.',
+    caption: 'Bundled Chromium, Firefox and WebKit, plus the browsers installed on your computer.',
+    width: 1600,
+    height: 1000,
+  },
+  {
+    src: '/docs-assets/images/proxy-keys.webp',
+    alt: 'Settings, Proxy keys: DataImpulse Residential configured in the encrypted vault, Mobile, Bright Data, Oxylabs, Decodo and IPRoyal not set up, and security health Healthy with the OS keychain.',
     caption: 'Proxy keys per provider, encrypted on your computer. Leave them empty to test direct.',
-    width: 1440,
-    height: 900,
+    width: 1600,
+    height: 1000,
   },
 ]
 

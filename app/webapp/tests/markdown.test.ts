@@ -61,6 +61,15 @@ test('code blocks and tables are styled without client JavaScript', () => {
   assert.ok(html.includes('<th>A</th>'))
 })
 
+test('a screenshot alone in its paragraph becomes a sized figure with its title as the caption', () => {
+  const images = { 'images/shot.webp': { width: 1600, height: 1000 }, 'images/shot-720.webp': { width: 720, height: 450 }, 'images/plain.png': { width: 800, height: 600 } }
+  const { html } = renderMarkdown('![The Launch page](images/shot.webp "Launch: pick a location")\n\n![No caption](images/plain.png)\n\nInline ![icon](images/plain.png) here.', { images })
+  assert.ok(html.includes('<figure class="doc-figure"><a href="/docs-assets/images/shot.webp" aria-label="Open full-size image: The Launch page"><img src="/docs-assets/images/shot.webp" alt="The Launch page" width="1600" height="1000" srcset="/docs-assets/images/shot-720.webp 720w, /docs-assets/images/shot.webp 1600w" sizes="(max-width: 760px) 100vw, 640px" loading="lazy" decoding="async"></a><figcaption>Launch: pick a location</figcaption></figure>'), html)
+  assert.ok(html.includes('<img src="/docs-assets/images/plain.png" alt="No caption" width="800" height="600" loading="lazy" decoding="async"></a></figure>'), 'no srcset without a smaller copy, no empty caption')
+  assert.ok(html.includes('<p>Inline <img src="/docs-assets/images/plain.png" alt="icon" width="800" height="600" loading="lazy" decoding="async"> here.</p>'), 'inline images stay inline')
+  assert.ok(!/<p>\s*<figure/.test(html), 'a figure is never wrapped in a paragraph')
+})
+
 test('images are limited to bundled docs assets', () => {
   const { html } = renderMarkdown('![Shot](images/a.png) ![Remote](https://example.com/a.png)')
   assert.ok(html.includes('<img src="/docs-assets/images/a.png" alt="Shot" loading="lazy" decoding="async">'))

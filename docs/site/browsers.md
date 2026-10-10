@@ -17,6 +17,8 @@ Proxy QA Browser drives bundled Playwright engines and the real browsers install
 | `vivaldi` | Vivaldi (installed) | Installed | One click (official `.deb`) | One click (winget, per user) | **Get** |
 | `system-chromium` | Chromium (system install) | Installed | Your package manager (for example `sudo pacman -S chromium` or `sudo apt install chromium`); detected automatically | One click (winget) | **Get** |
 
+![The browser picker on the Launch page: bundled Chromium, Firefox and WebKit, installed Google Chrome, and Install buttons for Microsoft Edge, Brave and Opera.](images/launch-browser-picker.webp "Bundled engines first, then installed browsers; missing ones offer a one-click install.")
+
 The bundled engines come from Playwright 1.63: Chromium 153, Firefox 155 and WebKit 26.6. **WebKit is not Apple Safari**; it is the open-source engine Safari is built on, labelled "WebKit / Safari-compatible QA" everywhere in the app.
 
 **Installed browsers are the real browsers.** They are started through Chromium's automation protocol with their own executable, so the window really is Chrome, Edge, Brave, Opera or Vivaldi and identifies as itself. Each launch uses a fresh temporary browser profile; your own bookmarks, cookies and extensions are never touched.
@@ -24,6 +26,8 @@ The bundled engines come from Playwright 1.63: Chromium 153, Firefox 155 and Web
 ## Managing browsers
 
 Open **Settings → Browsers**:
+
+![Settings, Browsers: bundled Playwright engines with their status, and the installed browsers table with version, path and Install or Remove actions.](images/settings-browsers.webp "Settings → Browsers shows every engine, where it was found and what can be installed.")
 
 - **Bundled browsers (Playwright)**: Chromium, Firefox and WebKit with their status, **Install** / **Reinstall** buttons and **Install All Missing**. In the AppImage this card shows **Bundled** and no install buttons.
 - **Installed browsers**: the seven vendor browsers with **Status** (*Detected automatically*, *Custom path*, *Path saved automatically*, *Not installed* or *No build available*), version, **Path** and **Action**: **Install** (one click), **Get** (opens the vendor page, for example **Get Google Chrome**) or **Uninstall** (only for copies the app installed). The header shows *"N of 7 available"*, **Install All Missing (N)** and **Re-detect**.

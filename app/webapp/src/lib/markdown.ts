@@ -12,7 +12,13 @@ export type RenderOptions = {
   sourceDir?: string
   /** Drop the first level-1 heading (the page renders its own title). */
   stripTitle?: boolean
+  /** Width and height of docs images by path relative to docs/site (content/images.json), for layout without shifts. */
+  images?: Readonly<Record<string, ImageSize>>
 }
+export type ImageSize = { width: number; height: number }
+
+/** Width of the smaller copy of a docs screenshot (`<name>-720.webp`), offered in srcset when it exists. */
+export const DOC_IMAGE_SMALL_WIDTH = 720
 
 const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
 export function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, c => ENTITIES[c]!) }
@@ -58,11 +64,24 @@ export function resolveHref(raw: string, options: RenderOptions = {}): Target {
   return { href: `${REPO_BLOB_URL}/${resolved}${hash}`, external: true }
 }
 
-function imageSource(raw: string, options: RenderOptions): string | null {
+/** Path of a docs image relative to docs/site, or null when it is not a local docs image. */
+function imagePath(raw: string, options: RenderOptions): string | null {
   const href = raw.trim()
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//') || href.startsWith('/')) return null
   const resolved = posix.normalize(posix.join(options.sourceDir ?? 'docs/site', href))
-  return resolved.startsWith('docs/site/') ? `/docs-assets/${resolved.slice('docs/site/'.length)}` : null
+  return resolved.startsWith('docs/site/') ? resolved.slice('docs/site/'.length) : null
+}
+
+/** <img> for a docs image: explicit size when known, and a srcset with the 720 px copy when there is one. */
+function imageTag(path: string, alt: string, options: RenderOptions): string {
+  const size = options.images?.[path]
+  const small = path.replace(/\.(webp|png|jpe?g)$/i, `-${DOC_IMAGE_SMALL_WIDTH}.$1`)
+  const smallSize = small !== path ? options.images?.[small] : undefined
+  const srcset = size && smallSize && smallSize.width < size.width
+    ? ` srcset="/docs-assets/${escapeHtml(small)} ${smallSize.width}w, /docs-assets/${escapeHtml(path)} ${size.width}w" sizes="(max-width: 760px) 100vw, 640px"`
+    : ''
+  const dimensions = size ? ` width="${size.width}" height="${size.height}"` : ''
+  return `<img src="/docs-assets/${escapeHtml(path)}" alt="${escapeHtml(alt)}"${dimensions}${srcset} loading="lazy" decoding="async">`
 }
 
 /**
@@ -91,12 +110,21 @@ export function renderMarkdown(source: string, options: RenderOptions = {}): Ren
       : `<a href="${escapeHtml(target.href)}"${titleAttr}>${inner}</a>`
   }
   renderer.image = ({ href, title, text }: Tokens.Image) => {
-    const src = imageSource(href, options)
-    if (!src) {
+    const path = imagePath(href, options)
+    if (!path) {
       const target = resolveHref(href, options)
       return target ? `<a href="${escapeHtml(target.href)}" rel="noopener noreferrer" class="external">${escapeHtml(text || 'Image')}</a>` : escapeHtml(text)
     }
-    return `<img src="${escapeHtml(src)}" alt="${escapeHtml(text)}"${title ? ` title="${escapeHtml(title)}"` : ''} loading="lazy" decoding="async">`
+    return imageTag(path, text, options).replace(/>$/, `${title ? ` title="${escapeHtml(title)}"` : ''}>`)
+  }
+  // An image alone in its paragraph is a figure: the title becomes the caption and the image links to the full size.
+  renderer.paragraph = function ({ tokens }: Tokens.Paragraph) {
+    const content = tokens.filter(t => !(t.type === 'text' && !t.raw.trim()))
+    const only = content.length === 1 && content[0]!.type === 'image' ? content[0] as Tokens.Image : null
+    const path = only ? imagePath(only.href, options) : null
+    if (!only || !path) return `<p>${this.parser.parseInline(tokens)}</p>\n`
+    const caption = only.title ? `<figcaption>${escapeHtml(only.title)}</figcaption>` : ''
+    return `<figure class="doc-figure"><a href="/docs-assets/${escapeHtml(path)}" aria-label="Open full-size image: ${escapeHtml(only.text || only.title || 'screenshot')}">${imageTag(path, only.text, options)}</a>${caption}</figure>\n`
   }
   renderer.code = ({ text, lang }: Tokens.Code) => {
     const language = (lang ?? '').match(/^[\w+-]+/)?.[0]

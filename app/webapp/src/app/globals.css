@@ -375,10 +375,11 @@ img {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .dl-card {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 32px 28px 24px;
@@ -391,11 +392,17 @@ img {
   box-shadow: 0 0 0 1px var(--purple), 0 16px 40px #6261e81a;
 }
 
+/* Sits on the card's top border so the recommended card's icon and title line up with the others. */
 .dl-badge {
+  position: absolute;
+  top: 0;
+  left: 28px;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 16px;
+  margin: 0;
+  border: 1px solid var(--purple);
   padding: 6px 12px;
   border-radius: 999px;
   background: #eeedff;
@@ -1236,9 +1243,34 @@ h2 {
 }
 
 .prose img {
+  max-width: 100%;
   height: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+/* Screenshots in the docs: an image alone in its paragraph, captioned by its Markdown title. */
+.prose .doc-figure {
+  margin: 24px 0 32px;
+}
+
+.prose .doc-figure a {
+  display: block;
+  border-radius: 8px;
+}
+
+.prose .doc-figure img {
+  display: block;
+  width: 100%;
+  background: #141414;
+  box-shadow: 0 12px 32px rgba(21, 21, 35, .12);
+}
+
+.prose .doc-figure figcaption {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .prose code {

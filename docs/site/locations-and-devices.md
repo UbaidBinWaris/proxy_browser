@@ -6,6 +6,8 @@ Choose a US exit location down to the ZIP code, let the app verify that the exit
 
 On the Launch page, **Exit location** connects by **Country**, **State**, **City** or **ZIP**. It is disabled for Direct. Only the modes the selected provider supports are offered (IPRoyal has no ZIP mode).
 
+![The city search on the Launch page: typing Austin lists Austin, Texas with 74 ZIP codes first, then towns named Austin in other states.](images/launch-location-picker.webp "Search a state, city or ZIP code; results show how many cities and ZIP codes each covers.")
+
 - **Country**: a two-letter code. `US` is the default, set under **Settings → Advanced → Targeting & location match → Default country**.
 - **State, City, ZIP**: a search field over the bundled US location dataset (51 states including DC, 29,540 cities, 40,977 ZIP codes, from [GeoNames](https://www.geonames.org), CC BY 4.0).
   - With an empty query it lists **Recent** picks and **Popular states** or **Popular cities** (**All states** in State mode).
@@ -77,6 +79,8 @@ The number changes when Playwright adds devices. 66 discontinued devices carry a
 ### Device picker
 
 The device field opens a large panel (a centered dialog on windows narrower than 900 px).
+
+![The device picker: filters for device type, brand, operating system and orientation, popular and recent groups, and preset cards with viewport size and user agent.](images/launch-device-picker.webp "The device picker filters 226 presets by type, brand, operating system and orientation.")
 
 - **Search** brand, model, OS or size, for example `pixel 9`, `ios 17`, `fold` or `1920`.
 - **Filters**: device type (**All / Phones / Tablets / Desktop**), orientation (**Portrait**, **Landscape**, **Both**), **Sort** (**Popular first**, **Newest**, **Name**, **Screen size**), **Brand** and **OS** chips, **Show legacy** and **Compatible with … only** (the selected browser) (on by default). **Reset filters** appears when anything is narrowed.

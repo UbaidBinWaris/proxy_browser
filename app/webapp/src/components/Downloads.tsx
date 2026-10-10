@@ -102,7 +102,7 @@ export default function Downloads({ initialRelease, visitorOs = 'unknown' }: { i
   }
   const cards = orderDownloadCards(visitorOs)
   return <section id="download" className="downloads section" aria-labelledby="download-title">
-    <div className="section-heading"><div><span className="eyebrow">DOWNLOAD</span><h2 id="download-title">Free for Windows,<br />Linux and macOS.</h2></div><p>No account and no installer wizard. Your profiles and proxy keys stay on your device, and every file below comes with its SHA-256 checksum.</p></div>
+    <div className="section-heading"><div><span className="eyebrow">DOWNLOAD</span><h2 id="download-title">Free for Windows,{' '}<br />Linux and macOS.</h2></div><p>No account and no installer wizard. Your profiles and proxy keys stay on your device, and every file below comes with its SHA-256 checksum.</p></div>
     {isMobileOs(visitorOs) ? <p className="dl-mobile-note">You are on {OS_LABELS[visitorOs]}. Proxy QA Browser is a desktop app: open this page on your Windows, Linux or Mac computer to download it. Phones and tablets are emulated inside the app.</p> : null}
     <div className="dl-grid">{cards.map(card => <DownloadCard key={card.platform} platform={card.platform} recommended={card.recommended} release={release} />)}</div>
     <div className="update-line"><span><span className="status-dot" /> {release ? `Version ${release.version}, published ${new Date(release.releasedAt).toLocaleDateString('en-GB', { timeZone: 'UTC' })}` : 'Preparing the first public release'}</span><button className="text-button" type="button" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check for the latest release'} <span aria-hidden="true">↻</span></button></div>

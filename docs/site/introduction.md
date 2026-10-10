@@ -6,6 +6,8 @@ Proxy QA Browser is a free, open-source desktop app for testing your own web for
 
 Proxy QA Browser opens a real browser window inside an isolated, temporary browser profile and routes it either directly or through a proxy exit IP in the location you choose. Before the window opens, the app looks up the exit IP and compares it with the location you asked for, so you know where the test traffic really comes from.
 
+![The Launch page: DataImpulse residential pool, exit location Austin, TX, WebKit and Apple iPhone 15 Pro, ready to connect.](images/launch.webp "The Launch page: provider and pool, exit location, browser and device, then Connect & Launch.")
+
 | Area | What you get |
 | --- | --- |
 | Browsers | Bundled Chromium, Firefox and WebKit, plus installed Google Chrome, Microsoft Edge, Brave, Opera, Opera GX, Vivaldi and system Chromium. See [Browsers](/docs/browsers). |

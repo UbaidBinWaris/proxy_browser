@@ -14,6 +14,8 @@ Everything runs locally in the desktop app: no sign-in, shared server, cloud acc
 4. Click **Run matrix**, choose installed browsers and compatible devices, and optionally add proxy locations. Unsupported browser/device combinations and location tests on a direct connection are refused before the run starts.
 5. Inspect **Results**: each combination's status, failure details, console errors, failed HTTP requests, step screenshots and retry counts. Export JSON, JUnit XML or standalone HTML reports.
 
+![QA automation, Scenarios tab, editing a scenario: proxy routing, base profile, starting URL, step timeout, self-healing mode, approved origins and network throttling.](images/automation-scenario.webp "The scenario editor: base profile, starting URL, approved origins and self-healing mode.")
+
 Automation runs headlessly; manual sessions keep using Launch and Sessions. Workspaces organize projects on one installation.
 
 ## Steps
@@ -33,6 +35,8 @@ Automation runs headlessly; manual sessions keep using Launch and Sessions. Work
 | `assertStatus` | Expect the final document's HTTP status (100–599) |
 | `assertScreenshot` | Compare a screenshot with an approved baseline (see [Visual comparisons](#visual-comparisons)) |
 | `checkConsent`, `checkConsentCheckbox`, `checkScriptLoaded`, `checkAccessibility`, `checkPerformance` | Compliance, accessibility and performance checks; see [Checks](/docs/checks) |
+
+![The Test steps list of a scenario: check consent checkbox, three fill steps using {{name}}, {{phone}} and {{zip}} variables, check checkbox and check consent disclosure.](images/automation-steps.webp "Steps use CSS selectors and {{variables}}; checks can continue on failure so one run reports everything.")
 
 A scenario has 1–100 steps and a per-step timeout of 1–60 seconds (15 seconds by default). Text, visibility and URL assertions wait within the step timeout. Action steps can carry self-healing fallbacks; see [Self-healing selectors](/docs/self-healing).
 
@@ -92,6 +96,8 @@ Variables are plain local configuration, not a secret store; they appear in conf
 
 Under **Suites & environments**, save named environments and group scenarios into suites.
 
+![The Suites & environments tab: an environment form with name, base origin and JSON variables, and a test suite form that includes the consent scenario.](images/automation-suites.webp "Environments swap the base origin and variables; suites group scenarios into one run.")
+
 - An **environment** has a base HTTP or HTTPS origin and optional variables. Navigation on the scenario's starting origin is rewritten to the environment's origin; paths, queries and fragments stay the same. `baseUrl` is reserved for the selected environment's origin.
 - Variable precedence: scenario defaults, then environment variables, then dataset values.
 - **Run suite**: select the environment and matrix and start. Each scenario keeps its own base profile; engines and devices chosen in the matrix override those profiles. Suite runs include all datasets.
@@ -130,6 +136,8 @@ Changed runs show the approved screenshot, the current one and the highlighted d
 
 **Results** lists each batch with every case's status, attempts, failed steps, console errors, failed requests, step screenshots, healed selectors and check outcomes. Exports:
 
+![Results of a six-case matrix: Chromium and WebKit on Windows desktop, iPhone 15 Pro and Galaxy S23; 14 of 18 checks passed, with JSON, JUnit and HTML export buttons.](images/qa-results.webp "Each case shows its status, timing, check badges and evidence; export JSON, JUnit or HTML.")
+
 | Format | Contents |
 | --- | --- |
 | JSON | Everything, including every attempt, redirects, healed steps and check evidence |
@@ -142,6 +150,8 @@ Use **Export for CI** on a scenario, or **Export suite for CI** on a suite, to p
 
 **Schedules** run a scenario at an interval of 5 minutes to 7 days **while the app is open**. Pause, resume or delete a schedule on the same tab. Missed intervals are skipped, not replayed. Each scheduled run uses the base profile with one worker and no retries; budget or validation failures appear as its last-attempt message.
 
+![The Schedules tab: choose a scenario and an interval in minutes, then Schedule.](images/automation-schedules.webp "Schedules repeat a scenario while the app is open.")
+
 ## Data controls
 
 | Setting | Range | Default |
@@ -151,6 +161,8 @@ Use **Export for CI** on a scenario, or **Export suite for CI** on a suite, to p
 | Concurrent automated browsers | 1–4 | 2 |
 | Daily case-attempt budget (UTC day, including requested retries) | 1–10,000 | 500 |
 | Allow scenarios to capture raw traces | on / off | off |
+
+![The Data controls tab: custom proxy gateways, verified updates for the automation runtime, and the execution and retention policy.](images/automation-data.webp "Data controls: custom gateways, retention and execution limits.")
 
 Retention removes expired completed automation records and their evidence at start-up and hourly while the app is open; **Clean expired evidence** runs it by hand. It does not delete manual launch history, log files, exported reports or backups.
 
