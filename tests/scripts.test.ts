@@ -420,9 +420,19 @@ describe('macOS CI', () => {
     expect(workflow).not.toMatch(/CSC_LINK|APPLE_/)
   })
 
-  it('is not part of the publishing workflow yet', () => {
-    const deploy = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8')
-    expect(deploy).not.toMatch(/macos-|--mac\b|platform:"darwin"/)
+  it('publishes unsigned DMGs for both architectures, and the release waits for them', () => {
+    const deploy = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8').replace(/\r\n/g, '\n')
+    const job = deploy.slice(deploy.indexOf('\n  macos:\n'), deploy.indexOf('\n  linux:\n'))
+    expect(job).toContain('runs-on: macos-latest')
+    expect(job).toContain('--mac dmg --arm64')
+    expect(job).toContain('--mac dmg --x64')
+    expect(job).toContain('node scripts/macos-smoke.mjs')
+    // Unsigned until Apple credentials exist: no setting in the job may demand signing (comments may explain how).
+    const settings = job.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n')
+    expect(settings).not.toMatch(/PROXY_QA_SIGNED_RELEASE|CSC_LINK|APPLE_API_KEY/)
+    expect(deploy).toMatch(/needs: \[windows, update-smoke, macos, linux, website\]/)
+    expect(deploy).toContain('{platform:"darwin",arch:"arm64",fileName:process.env.MAC_ARM64_FILE')
+    expect(deploy).toContain('{platform:"darwin",arch:"x64",fileName:process.env.MAC_X64_FILE')
   })
 
   it('finds the unpacked .app electron-builder leaves for each architecture', async () => {

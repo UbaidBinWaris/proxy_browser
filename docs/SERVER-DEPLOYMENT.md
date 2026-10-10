@@ -105,7 +105,7 @@ Unsigned EXEs show SmartScreen's "Windows protected your PC" warning. With **Azu
 
 Without these secrets the build stays unsigned, as before.
 
-macOS is verified by `.github/workflows/macos.yml` (unsigned build + smoke test) but is not part of this deploy workflow; signing/notarization variables and the steps to add a macOS publishing job are in [DISTRIBUTION.md → macOS](DISTRIBUTION.md#publishing-macos-releases-not-enabled-yet).
+macOS is part of this deploy workflow: the `macos` job builds, tests and smoke-tests unsigned DMGs for Apple silicon and Intel on `macos-latest`, and `publish` signs them into the release manifests. Adding Apple signing and notarization later is described in [DISTRIBUTION.md → Publishing macOS releases](DISTRIBUTION.md#publishing-macos-releases).
 
 Actions and build dependencies are pinned; build scripts do not receive the publisher key. Production dependency audits run in CI. Desktop build tools are not installed on the website server.
 

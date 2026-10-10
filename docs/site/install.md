@@ -10,9 +10,9 @@ Downloads are on the [download page](/#download). Each release ships one file pe
 | --- | --- | --- | --- |
 | Windows 10/11 x64 | `Proxy-QA-Browser-<version>-Windows-x64.exe` (portable) | Downloaded on first run (about 400 MB) | In the app, online or from USB |
 | Linux x86-64 | `Proxy-QA-Browser-<version>-x86_64.AppImage` | Chromium, Firefox and WebKit built in | In the app, online or from USB |
-| macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (also `.zip`) | Downloaded on first run | The app checks; you download from the website |
+| macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (unsigned) | Downloaded on first run | The app checks; you download from the website |
 
-> **Note:** macOS builds are not published on the download site yet. Until they are, build them from source on a Mac with `npm run build:mac` (see [Building and releasing](/docs/building-and-releasing)). The download page shows a macOS card only for releases that include macOS files.
+> **Note:** the macOS downloads are free, unsigned DMGs: ad-hoc signed and not notarized, because the project has no Apple Developer account yet. They are built and smoke-tested on a Mac in CI for every release. macOS blocks them the first time; step 2 of [macOS](#macos) shows how to open them once.
 
 The download page also lists the SHA-256 checksum of each file.
 

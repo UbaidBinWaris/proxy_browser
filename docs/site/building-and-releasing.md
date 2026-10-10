@@ -113,7 +113,7 @@ Pushes to `main` run the verification workflows but never publish. A `v*` tag ru
 
 Published versions cannot be overwritten or downgraded; tag a new version instead. The same tag also builds and publishes the runner image (`runner-image.yml`) after a smoke test. One-time GitHub environment and secret setup is described in [docs/SERVER-DEPLOYMENT.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/SERVER-DEPLOYMENT.md#github-actions-setup--required-once).
 
-macOS is built and smoke-tested by `macos.yml` on every push and pull request, but `deploy.yml` does not publish macOS yet. The steps to add it are in [docs/DISTRIBUTION.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/DISTRIBUTION.md#publishing-macos-releases-not-enabled-yet).
+macOS is built and smoke-tested by `macos.yml` on every push and pull request, and every tagged release publishes unsigned DMGs for Apple silicon and Intel from the `macos` job of `deploy.yml`. How to add signing and notarization later is in [docs/DISTRIBUTION.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/DISTRIBUTION.md#publishing-macos-releases).
 
 ## Local and USB releases
 

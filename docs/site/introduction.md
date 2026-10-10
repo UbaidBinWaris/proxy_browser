@@ -43,7 +43,7 @@ The full rules are in the [Acceptable use policy](/acceptable-use) and the proje
 | --- | --- | --- |
 | Windows 10/11 x64 | Portable EXE | Browser engines download on first run. |
 | Linux x86-64 | AppImage | Chromium, Firefox and WebKit are built in. |
-| macOS 12+ (Apple silicon and Intel) | DMG or ZIP, built from source | Not yet published on the download site. Updates come from the download page. |
+| macOS 12+ (Apple silicon and Intel) | DMG (unsigned; open once with **Open Anyway**) | Updates come from the download page. |
 
 See [Install](/docs/install) for details.
 

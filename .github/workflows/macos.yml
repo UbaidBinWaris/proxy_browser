@@ -1,7 +1,7 @@
 # Builds unsigned macOS apps natively and smoke-tests the packaged app (scripts/macos-smoke.mjs).
 # No Apple account or secrets are used: the build is ad-hoc signed (scripts/mac-signing.mjs).
-# This workflow verifies only; macOS is not published by deploy.yml yet — see
-# docs/DISTRIBUTION.md → macOS → "Publishing macOS releases" for the steps once signing exists.
+# This workflow verifies pushes and pull requests; tagged releases publish unsigned DMGs from the
+# macos job in deploy.yml (docs/DISTRIBUTION.md → "Publishing macOS releases").
 name: macOS build + smoke test
 
 on:

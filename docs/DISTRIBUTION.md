@@ -268,29 +268,28 @@ access to *Proxy-QA-Browser Safe Storage* because the ad-hoc signature changes
 with every build (a Developer ID signature keeps the same identity, so the
 Keychain grant persists).
 
-### Publishing macOS releases (not enabled yet)
+### Publishing macOS releases
 
-`.github/workflows/macos.yml` builds unsigned apps on `macos-latest` and runs
-`scripts/macos-smoke.mjs` on every push to `main` and pull request, but
-`deploy.yml` does not build or publish macOS. Once an Apple Developer account
-exists:
+Every tagged release builds macOS in the `macos` job of `deploy.yml` on
+`macos-latest`: tests, unsigned DMGs for Apple silicon and Intel, the packaged-app
+smoke test (`scripts/macos-smoke.mjs`), then both DMGs are transferred to staging
+and signed into the release manifests as `macAssets`. `publish` waits for it, so a
+failing macOS build blocks the release.
 
-1. Add environment secrets to *production*: `CSC_LINK` (base64 of the
-   Developer ID Application `.p12`), `CSC_KEY_PASSWORD`, and an App Store
-   Connect API key (`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, plus the `.p8`
-   contents, written to a file in the job and passed as `APPLE_API_KEY`).
-2. Add a `macos` job to `deploy.yml` after `preflight` on `macos-latest`
-   (pinned `actions/checkout`/`actions/setup-node` as in the other jobs):
-   `node scripts/ci-release-version.mjs`, `npm ci`, `npm test`, then
-   `PROXY_QA_SIGNED_RELEASE=1 npm run build:mac` with the secrets in `env`,
-   `node scripts/macos-smoke.mjs`, `node scripts/release-asset.mjs darwin arm64`
-   and `… darwin x64` as step outputs, and transfer both DMGs with `scp` to
-   `/var/lib/proxy-browser/staging/<version>/` exactly like the Windows job.
-3. Add the job to `publish.needs`, and append
-   `{platform:"darwin",arch:"arm64",fileName:…,size:…,sha256:…}` (and x64) to
-   the asset list passed to `createServerReleaseFromMetadata`. The website then
-   lists the macOS downloads and installed Macs see the update.
-4. Update the platform matrix in the README and the website hero text.
+The DMGs are **unsigned**: ad-hoc signed and not notarized, because there is no
+Apple Developer account yet. Users open them once with **System Settings → Privacy
+& Security → Open Anyway**; the download card and the install guide explain this.
+
+To sign and notarize later (Apple Developer Program, $99/year):
+
+1. Add environment secrets to *production*: `CSC_LINK` (base64 of the Developer ID
+   Application `.p12`), `CSC_KEY_PASSWORD`, and an App Store Connect API key
+   (`APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, and the `.p8` contents, written to a file
+   in the job and passed as `APPLE_API_KEY`).
+2. In the `macos` job, pass those secrets in `env` of the packaging step and set
+   `PROXY_QA_SIGNED_RELEASE=1`, which makes `scripts/mac-signing.mjs` require the
+   certificate and notarization.
+3. Remove the "unsigned" wording from the download card and the docs.
 
 ## Checks for v1.2.0
 

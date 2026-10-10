@@ -9,8 +9,7 @@ See [Desktop automation and distribution](docs/ENTERPRISE-DESKTOP.md) for usage,
 verification commands, privacy limits, and publisher setup. This edition stays
 desktop-only and requires no sign-in.
 
-Proxy QA Browser is a desktop app (Windows, Linux and — built from source, not yet
-published — macOS) for **authorized QA
+Proxy QA Browser is a desktop app (Windows, Linux and macOS) for **authorized QA
 testing of your own web forms**. It opens a real browser window — bundled
 Chromium, Firefox or WebKit, or a real Chrome, Edge, Brave, Opera, Opera GX,
 Vivaldi or Chromium installed on the machine — inside an isolated browser
@@ -68,15 +67,16 @@ captured network requests and any lead / certificate IDs the form returned.
 
 ## Download and run
 
-Choose the single portable Windows EXE or the Linux AppImage. macOS builds
-(DMG/ZIP for Apple silicon and Intel) can be built from source; they are not
-published on the download site yet. These builds contain no proxy credentials.
+Choose the single portable Windows EXE, the Linux AppImage, or the macOS DMG
+(Apple silicon or Intel). The macOS DMGs are **unsigned** (not notarized; the
+project has no Apple Developer account yet), so macOS needs **Open Anyway** once,
+see [macOS (DMG)](#macos-dmg). These builds contain no proxy credentials.
 
 | Platform | File | Size (v1.2.0 build) | Browsers | Signed | Updates |
 | --- | --- | --- | --- | --- | --- |
 | Windows 10/11 x64 | `Proxy-QA-Browser-<version>-Windows-x64.exe` (portable) | ≈ 100 MiB | Downloaded on first run | When Azure Trusted Signing is configured | In the app (online or USB) |
 | Linux x86-64 | `Proxy-QA-Browser-<version>-x86_64.AppImage` | ≈ 545 MiB | Chromium, Firefox and WebKit built in | n/a | In the app (online or USB) |
-| macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` (+ `.zip`) | built from source | Downloaded on first run | Ad-hoc unless Apple credentials are configured | The app checks; you download from the website |
+| macOS 12+ arm64 / x64 | `Proxy-QA-Browser-<version>-macOS-arm64.dmg` / `-macOS-x64.dmg` | shown on the download page | Downloaded on first run | Ad-hoc unless Apple credentials are configured | The app checks; you download from the website |
 
 ### Windows (portable EXE)
 

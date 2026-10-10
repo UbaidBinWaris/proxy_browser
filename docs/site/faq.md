@@ -86,9 +86,9 @@ The features are the same. The main differences:
 | Updates | In the app, online or USB | In the app, online or USB | From the download page |
 | WebKit | Native Windows build | Needs glibc 2.38 or newer | Native macOS build |
 
-### When will macOS downloads be available?
+### Is there a Mac version?
 
-macOS builds can be built from source today and are verified in CI, but they are not published on the download site yet. Until signing and notarization exist, downloaded copies need **Open Anyway** once. See [Install](/docs/install#macos).
+Yes. Every release includes DMGs for Apple silicon and Intel Macs (macOS 12 or later) on the [download page](/#download). They are free but **unsigned** (not notarized by Apple, because the project has no Apple Developer account yet), so macOS asks you to allow the app once: **System Settings → Privacy & Security → Open Anyway**. See [Install](/docs/install#macos). Updates on Mac come from the download page.
 
 ### How do I move to another computer?
 

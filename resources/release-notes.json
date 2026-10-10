@@ -22,6 +22,7 @@
     "After an update, a copy opened straight from a downloaded file becomes the computer copy with Desktop and Start menu shortcuts, so the next launch opens the new version; opening an older file offers the newer version.",
     "Linux: the app now reopens after an update or when opening the computer copy (the restarted AppImage previously failed with \"Cannot mount AppImage, please check your FUSE setup\").",
     "Now open source under the Apache License 2.0. Desktop and menu shortcuts are updated automatically; on Windows, unpin and re-pin a taskbar pin once if it opens a second taskbar button.",
-    "Fixed QA automation, the CI runner and the MCP server failing to start the bundled Chromium in the Linux app; first-run Chromium downloads on Windows and macOS are about 100 MB smaller."
+    "Fixed QA automation, the CI runner and the MCP server failing to start the bundled Chromium in the Linux app; first-run Chromium downloads on Windows and macOS are about 100 MB smaller.",
+    "macOS downloads for Apple silicon and Intel (unsigned DMGs: open once with System Settings → Privacy & Security → Open Anyway)."
   ]
 }

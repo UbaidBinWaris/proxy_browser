@@ -78,7 +78,7 @@ On macOS the app in Applications already is the computer copy, so **Set up on th
 
 **Settings → App & updates** and the startup check verify the signed feed exactly as on other platforms. When a release includes a macOS download for your Mac's architecture, the app shows **Download vX.Y.Z**, which opens the [download page](/#download). Replace the app in Applications with the new one; profiles, history and the vault live outside the app bundle and are kept. The app does not replace itself on macOS.
 
-macOS downloads are not published yet; see [Install](/docs/install#macos).
+macOS releases are unsigned DMGs for Apple silicon and Intel; a newly downloaded copy needs **Open Anyway** once, see [Install](/docs/install#macos).
 
 ## Upgrading from older versions
 

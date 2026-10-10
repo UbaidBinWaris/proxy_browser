@@ -126,6 +126,68 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/update-smoke.mjs
+  macos:
+    # Unsigned macOS builds: ad-hoc signed and not notarized (no Apple Developer account yet). Users open
+    # them once via System Settings → Privacy & Security → Open Anyway, as the download card explains.
+    # Once Apple credentials exist, add CSC_LINK/CSC_KEY_PASSWORD and APPLE_API_* here (scripts/mac-signing.mjs).
+    needs: preflight
+    runs-on: macos-latest
+    timeout-minutes: 60
+    environment: production
+    outputs:
+      arm64File: ${{ steps.arm64.outputs.fileName }}
+      arm64Size: ${{ steps.arm64.outputs.size }}
+      arm64Sha256: ${{ steps.arm64.outputs.sha256 }}
+      x64File: ${{ steps.x64.outputs.fileName }}
+      x64Size: ${{ steps.x64.outputs.size }}
+      x64Sha256: ${{ steps.x64.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - id: version
+        run: node scripts/ci-release-version.mjs
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-${{ runner.os }}-
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package unsigned DMGs (Apple silicon and Intel)
+        run: |
+          npx electron-builder --mac dmg --arm64 --config electron-builder.config.mjs
+          npx electron-builder --mac dmg --x64 --config electron-builder.config.mjs
+      - name: Smoke test the packaged Apple silicon app
+        run: node scripts/macos-smoke.mjs
+      - id: arm64
+        run: node scripts/release-asset.mjs darwin arm64 dmg
+      - id: x64
+        run: node scripts/release-asset.mjs darwin x64 dmg
+      - name: Transfer DMGs directly over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          ARM64_FILE: ${{ steps.arm64.outputs.fileName }}
+          X64_FILE: ${{ steps.x64.outputs.fileName }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          ssh proxy-browser-production "mkdir -p /var/lib/proxy-browser/staging/'$RELEASE_VERSION'"
+          rsync -av --partial "release/$ARM64_FILE" "release/$X64_FILE" "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
+      - if: always()
+        run: rm -f ~/.ssh/proxy-browser-deploy
   linux:
     needs: preflight
     runs-on: ubuntu-latest
@@ -231,7 +293,7 @@ jobs:
       - if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy
   publish:
-    needs: [windows, update-smoke, linux, website]
+    needs: [windows, update-smoke, macos, linux, website]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -253,12 +315,18 @@ jobs:
           LINUX_FILE: ${{ needs.linux.outputs.fileName }}
           LINUX_SIZE: ${{ needs.linux.outputs.size }}
           LINUX_SHA256: ${{ needs.linux.outputs.sha256 }}
+          MAC_ARM64_FILE: ${{ needs.macos.outputs.arm64File }}
+          MAC_ARM64_SIZE: ${{ needs.macos.outputs.arm64Size }}
+          MAC_ARM64_SHA256: ${{ needs.macos.outputs.arm64Sha256 }}
+          MAC_X64_FILE: ${{ needs.macos.outputs.x64File }}
+          MAC_X64_SIZE: ${{ needs.macos.outputs.x64Size }}
+          MAC_X64_SHA256: ${{ needs.macos.outputs.x64Sha256 }}
         run: |
           test -n "$RELEASE_SIGNING_PRIVATE_KEY"
           umask 077
           mkdir -p .release-keys
           printf '%s\n' "$RELEASE_SIGNING_PRIVATE_KEY" > .release-keys/private-key.pem
-          node --input-type=module -e 'import {createServerReleaseFromMetadata} from "./scripts/release.mjs"; await createServerReleaseFromMetadata(process.cwd(),[{platform:"win32",arch:"x64",fileName:process.env.WINDOWS_FILE,size:Number(process.env.WINDOWS_SIZE),sha256:process.env.WINDOWS_SHA256},{platform:"linux",arch:"x64",fileName:process.env.LINUX_FILE,size:Number(process.env.LINUX_SIZE),sha256:process.env.LINUX_SHA256}])'
+          node --input-type=module -e 'import {createServerReleaseFromMetadata} from "./scripts/release.mjs"; await createServerReleaseFromMetadata(process.cwd(),[{platform:"win32",arch:"x64",fileName:process.env.WINDOWS_FILE,size:Number(process.env.WINDOWS_SIZE),sha256:process.env.WINDOWS_SHA256},{platform:"linux",arch:"x64",fileName:process.env.LINUX_FILE,size:Number(process.env.LINUX_SIZE),sha256:process.env.LINUX_SHA256},{platform:"darwin",arch:"arm64",fileName:process.env.MAC_ARM64_FILE,size:Number(process.env.MAC_ARM64_SIZE),sha256:process.env.MAC_ARM64_SHA256},{platform:"darwin",arch:"x64",fileName:process.env.MAC_X64_FILE,size:Number(process.env.MAC_X64_SIZE),sha256:process.env.MAC_X64_SHA256}])'
           rm -f .release-keys/private-key.pem
       - name: Deploy website and atomically publish the verified binaries
         env:
