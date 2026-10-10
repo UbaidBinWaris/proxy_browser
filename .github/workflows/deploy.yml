@@ -59,7 +59,7 @@ jobs:
           cache: npm
       - id: version
         run: node scripts/ci-release-version.mjs
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -116,7 +116,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~\AppData\Local\electron\Cache
@@ -151,7 +151,7 @@ jobs:
           cache: npm
       - id: version
         run: node scripts/ci-release-version.mjs
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/Library/Caches/electron
@@ -216,7 +216,7 @@ jobs:
       - run: npm test
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
-      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             build/browsers/linux
