@@ -17,6 +17,7 @@ import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promi
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const RESERVED_SLUGS = new Set(['search'])
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i
 
@@ -54,6 +55,8 @@ export async function validateManifest(raw, readPage) {
       const where = `sections[${i}].pages[${j}]`
       if (!page || typeof page.slug !== 'string' || !SLUG.test(page.slug)) { errors.push(`${where}: "slug" must be lowercase words joined by hyphens`); continue }
       if (seen.has(page.slug)) { errors.push(`${where}: duplicate slug "${page.slug}"`); continue }
+      // Website routes under /docs that a page would shadow (src/app/docs/search/page.tsx).
+      if (RESERVED_SLUGS.has(page.slug)) { errors.push(`${where}: slug "${page.slug}" is reserved by the website (/docs/${page.slug})`); continue }
       seen.add(page.slug)
       if (typeof page.title !== 'string' || !page.title.trim()) errors.push(`${where} (${page.slug}): "title" is required`)
       if (page.description !== undefined && typeof page.description !== 'string') errors.push(`${where} (${page.slug}): "description" must be a string`)

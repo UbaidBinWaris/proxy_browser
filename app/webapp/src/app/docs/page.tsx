@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { DocsSearchForm } from '@/components/DocsSearchForm'
 import { loadManifest } from '@/lib/docs'
 import { pageMetadata } from '@/lib/seo'
 import { REPO_URL } from '@/lib/site'
@@ -12,6 +13,7 @@ export default async function DocsIndex() {
       <span className="eyebrow">DOCUMENTATION</span>
       <h1>Learn Proxy QA Browser.</h1>
       <p className="page-lead">Everything from the first download to scenario matrices in CI. New here? Start with the <a className="quiet-link" href={`/docs/${manifest.sections[0]?.pages[0]?.slug ?? ''}`}>{manifest.sections[0]?.pages[0]?.title ?? 'introduction'}</a>.</p>
+      {manifest.sections.length ? <DocsSearchForm id="docs-search-landing" variant="large" /> : null}
     </header>
     {manifest.sections.length
       ? <div className="docs-index">{manifest.sections.map((section, i) => <section className="docs-card" key={section.title} aria-labelledby={`section-${i}`}>

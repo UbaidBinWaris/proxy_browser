@@ -1,7 +1,7 @@
 /** Public facts about the site and its owner, shared by pages, metadata, the sitemap and security.txt. */
 export const SITE_URL = 'https://proxybrowser.ubaidbinwaris.com'
 export const SITE_NAME = 'Proxy QA Browser'
-export const SITE_DESCRIPTION = 'Free, open-source desktop browser for authorized QA testing on Windows, Linux and macOS: isolated profiles, your own proxies and verified exit locations.'
+export const SITE_DESCRIPTION = 'Free, open-source QA browser for your own forms: verified exit locations, 226 device presets and real browsers, on Windows, Linux and macOS.'
 export const OWNER = {
   name: 'Ubaid Bin Waris',
   email: 'ubaidwaris34@gmail.com',

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { allPages, findPage, loadDoc, neighbours, parseManifest } from '../src/lib/docs.ts'
 import type { DocsManifest } from '../src/lib/docs.ts'
 
@@ -87,4 +88,14 @@ test('loadDoc renders a synced page and returns null for unknown or malformed sl
     assert.equal(await loadDoc('unknown'), null)
     assert.equal(await loadDoc('../manifest'), null)
   } finally { if (previous === undefined) delete process.env.CONTENT_DIR; else process.env.CONTENT_DIR = previous }
+})
+
+test('a docs page cannot take a slug reserved by a website route', async () => {
+  // The script is plain JavaScript without type declarations: import it by URL with an explicit shape.
+  const { validateManifest } = (await import(pathToFileURL(script).href)) as {
+    validateManifest(raw: unknown, readPage: (slug: string) => Promise<string | null>): Promise<{ errors: string[] }>
+  }
+  const manifest = { sections: [{ title: 'S', pages: [{ slug: 'search', title: 'Search' }] }] }
+  const result = await validateManifest(manifest, async () => '# Search\n')
+  assert.ok(result.errors.some((message: string) => /reserved by the website/.test(message)), JSON.stringify(result))
 })

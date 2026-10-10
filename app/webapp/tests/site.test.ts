@@ -10,6 +10,7 @@ test('sitemap lists home, docs, legal, about and changelog pages', () => {
   for (const path of ['', '/docs', '/docs/introduction', '/docs/install', '/changelog', '/about', '/terms', '/acceptable-use', '/privacy', '/licenses', '/security', '/disclaimer']) assert.ok(urls.includes(`${SITE_URL}${path}`), path)
   assert.equal(new Set(urls).size, urls.length)
   assert.ok(!urls.some(u => u.includes('/admin')))
+  assert.ok(!urls.some(u => u.includes('/docs/search')), 'search result pages are noindex and stay out of the sitemap')
   assert.equal(LEGAL_LINKS.length, 6)
 })
 

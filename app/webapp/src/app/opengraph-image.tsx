@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ImageResponse } from 'next/og'
 
-export const alt = 'Proxy QA Browser: free, open-source QA browser for Windows, Linux and macOS'
+export const alt = 'Proxy QA Browser: test your forms from real locations, devices and browsers. Free and open source for Windows, Linux and macOS.'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -17,8 +17,8 @@ export default async function OpengraphImage() {
         <div style={{ display: 'flex', fontSize: 40, letterSpacing: -1 }}>Proxy QA Browser</div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <div style={{ display: 'flex', fontSize: 76, lineHeight: 1.05, letterSpacing: -3, color: '#202332' }}>Your browser. Your rules.</div>
-        <div style={{ display: 'flex', fontSize: 76, lineHeight: 1.05, letterSpacing: -3, color: '#5857dc' }}>Less friction.</div>
+        <div style={{ display: 'flex', fontSize: 64, lineHeight: 1.08, letterSpacing: -2, color: '#202332' }}>Test your forms from real</div>
+        <div style={{ display: 'flex', fontSize: 64, lineHeight: 1.08, letterSpacing: -2, color: '#5857dc' }}>locations, devices and browsers.</div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', color: '#666975', fontSize: 28 }}>
         <div style={{ display: 'flex' }}>Free &amp; open source · Apache-2.0</div>

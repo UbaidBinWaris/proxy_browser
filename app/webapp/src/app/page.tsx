@@ -1,18 +1,21 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import Downloads from '@/components/Downloads'
 import { JsonLd } from '@/components/JsonLd'
 import { LICENSE_URL, OWNER, REPO_URL, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/site'
 import { currentRelease } from '@/lib/releases'
+import { OS_LABELS, detectOs, recommendedPlatform } from '@/lib/downloads'
+import { FAQS, FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, STEPS, USE_CASES, screenshotSrcSet } from '@/lib/home'
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { alternates: { canonical: '/' } }
-const features = [
-  ['01', 'A profile for every task', 'Keep cookies, sessions, and browser settings separate. Save your setup and pick up where you left off.'],
-  ['02', 'Your proxies. Your control.', 'Use your own provider credentials, choose an exit location, and check the connection before you start.'],
-  ['03', 'Three engines, one workspace', 'Test with Chromium, Firefox, and WebKit. Choose browser and device settings for each session.'],
-  ['04', 'Repeat the test. Keep the proof.', 'Save scenarios, run test matrices, and inspect screenshots, failed requests, and traces when something breaks.'],
-]
+
+const docHref = (slug: string) => `/docs/${slug}`
+
 export default async function Home() {
-  const release = await currentRelease().catch(() => null)
+  const [release, requestHeaders] = await Promise.all([currentRelease().catch(() => null), headers()])
+  // The page is rendered per request (CSP nonce), so the download highlight comes from the request itself.
+  const visitorOs = detectOs(requestHeaders.get('user-agent'))
+  const desktop = recommendedPlatform(visitorOs) !== null
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
@@ -20,13 +23,91 @@ export default async function Home() {
     description: SITE_DESCRIPTION,
     url: SITE_URL,
     applicationCategory: 'DeveloperApplication',
-    operatingSystem: 'Windows, Linux, macOS',
+    operatingSystem: 'Windows 10, Windows 11, Linux, macOS 12+',
     isAccessibleForFree: true,
     license: LICENSE_URL,
     codeRepository: REPO_URL,
+    screenshot: `${SITE_URL}${HERO_SCREENSHOT.src}`,
+    featureList: FEATURES.map(feature => feature.title),
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     author: { '@type': 'Person', name: OWNER.name, url: OWNER.website, sameAs: [OWNER.github, OWNER.linkedin] },
     ...(release ? { softwareVersion: release.version, datePublished: release.releasedAt, downloadUrl: `${SITE_URL}/#download` } : {}),
   }
-  return <><JsonLd data={structuredData} /><section className="hero"><div className="hero-copy"><span className="pill"><span className="status-dot" /> FREE &amp; OPEN SOURCE · WINDOWS · LINUX · MACOS</span><h1>Your browser.<br />Your rules.<br /><span>Less friction.</span></h1><p className="hero-description">A calm, capable workspace for proxy browsing and quality testing. Switch profiles, test across browsers, and keep every session in its own space.</p><div className="hero-actions"><a className="button primary" href="#download">Get Proxy QA Browser <span aria-hidden="true">↗</span></a><a className="quiet-link" href="#how-it-works">See how it works <span aria-hidden="true">→</span></a></div><div className="hero-footnote"><span>✓ Free for everyone, Apache-2.0</span><span>✓ Your data stays on your device</span><span>✓ Verified release updates</span></div></div><div className="preview-wrap"><div className="floating-note"><span className="status-dot" /> Built for your next session</div><div className="app-preview" role="img" aria-label="Illustration of the browser workspace"><div className="preview-title"><img src="/brand/logo.svg" alt="" width="24" height="24"/><strong>Proxy QA Browser</strong><span aria-hidden="true">— &nbsp; □ &nbsp; ×</span></div><div className="preview-body"><aside className="preview-sidebar"><span className="selected">◈ &nbsp; Launcher</span><span>▣ &nbsp; Profiles</span><span>▤ &nbsp; Scenarios</span><span>▦ &nbsp; Test runs</span><span className="preview-settings">⚙ &nbsp; App & updates</span></aside><div className="preview-content"><span className="tiny-label">YOUR WORKSPACE</span><h3>Ready when you are.</h3><p>Start a fresh session or pick up a saved profile.</p><div className="preview-field"><label>Start URL</label><div>https://your-project.com <span>↗</span></div></div><div className="preview-chips"><span>Chromium</span><span>Desktop · 1440 × 900</span></div><div className="preview-location"><span className="location-icon">◎</span><div><strong>Your proxy connection</strong><small>Choose a location in the app</small></div><span className="mini-tag">ISOLATED</span></div><div className="preview-launch">Launch browser <span>→</span></div><div className="preview-bottom"><span className="status-dot"/> Separate profiles. A clear workspace.</div></div></div></div><div className="preview-caption"><span>DESKTOP APP</span><span>A workspace designed to stay out of your way.</span></div></div></section><div className="engine-strip"><span>ONE WORKSPACE. THREE BROWSER ENGINES.</span><div><strong>Chromium</strong><i/><strong>Firefox</strong><i/><strong>WebKit</strong></div><span>KEEP YOUR TESTING CONSISTENT</span></div><section id="features" className="section"><div className="section-heading"><div><span className="eyebrow">THOUGHTFUL BY DEFAULT</span><h2>More control.<br />Fewer moving parts.</h2></div><p>Everything you need for a focused testing session, without juggling profiles and configuration files.</p></div><div className="feature-grid">{features.map(([n, title, text]) => <article className="feature" key={n}><span className="feature-number">{n}</span><h3>{title}</h3><p>{text}</p></article>)}</div></section><section id="how-it-works" className="how section"><div><span className="eyebrow">A SIMPLE START</span><h2>From download<br />to your first session.</h2><p>Set it up once. Keep your profiles as you move to the next release.</p><a className="quiet-link" href="#download">Find your download <span aria-hidden="true">→</span></a></div><ol>{[['Download and open', 'Choose Windows or Linux (macOS downloads appear once published). Windows first-run setup downloads any missing browser engines; an internet connection is required for that step.'], ['Make it yours', 'Add your proxy credentials, choose browser settings, and save a profile for the work you do often.'], ['Start. Test. Update.', 'Launch a session. Check for signed updates in App & updates whenever a new release is available.']].map(([title, text], i) => <li key={title}><span>{String(i + 1).padStart(2, '0')}</span><div><h3>{title}</h3><p>{text}</p></div></li>)}</ol></section><Downloads initialRelease={release}/><section className="faq section"><span className="eyebrow">GOOD TO KNOW</span><h2>A few details before you start.</h2>{[['Is it really free?', 'Yes. Proxy QA Browser is free and open source under the Apache License 2.0, for personal and commercial use. The source code is on GitHub.'], ['Do I need a separate account?', 'No sign-in is required. Profiles, test scenarios, and your proxy credentials are managed on your device.'], ['Do I need to replace files for every update?', 'The app can check the server for a signed release and download it after verification. Use the computer setup option for a stable app location and shortcuts.'], ['Can I pin the browser to the taskbar?', 'On Windows, create the Start menu shortcut from App & updates, then right-click the shortcut and choose Pin to taskbar. Windows controls the final pin action.'], ['What happens to my saved profiles?', 'App data is stored separately from the executable. Updating the app keeps the existing data directory; use the app’s backup tools before major changes.'], ['Does this include a proxy subscription?', 'Bring your own proxy provider and credentials. The browser does not provide a proxy subscription.']].map(([q,a])=><details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>)}</section></>
+  const faqData = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: FAQS.map(faq => ({ '@type': 'Question', name: faq.question, acceptedAnswer: { '@type': 'Answer', text: faq.answer } })),
+  }
+  return <>
+    <JsonLd data={structuredData} />
+    <JsonLd data={faqData} />
+    <section className="home-hero" aria-labelledby="hero-title">
+      <div className="home-hero-copy">
+        <span className="pill"><span className="status-dot" /> FREE &amp; OPEN SOURCE · WINDOWS · LINUX · MACOS</span>
+        <h1 id="hero-title">Test your forms from real locations, devices and browsers.</h1>
+        <p className="hero-description">A desktop QA browser for your own sites. Launch through a verified exit IP in the US state, city or ZIP you pick, on any of 226 device presets, in Chromium, Firefox and WebKit or your installed Chrome, Edge, Brave, Opera and Vivaldi. Free and open source.</p>
+        <div className="hero-actions">
+          <a className="button primary" href="#download">{desktop ? `Download for ${OS_LABELS[visitorOs]}` : 'Download free'} <span aria-hidden="true">↓</span></a>
+          <a className="button" href="/docs/introduction">Read the docs <span aria-hidden="true">→</span></a>
+        </div>
+        <ul className="home-hero-points" aria-label="Highlights">
+          <li>Apache-2.0, free for commercial use</li>
+          <li>No account, no telemetry</li>
+          <li>Proxy keys encrypted on your device</li>
+        </ul>
+      </div>
+      <figure className="shot shot-hero">
+        <img src={HERO_SCREENSHOT.src} srcSet={screenshotSrcSet(HERO_SCREENSHOT)} sizes="(max-width: 760px) 100vw, 720px" width={HERO_SCREENSHOT.width} height={HERO_SCREENSHOT.height} alt={HERO_SCREENSHOT.alt} fetchPriority="high" decoding="async" />
+        <figcaption>{HERO_SCREENSHOT.caption}</figcaption>
+      </figure>
+    </section>
+    <div className="engine-strip home-engines">
+      <span>BUNDLED</span>
+      <div><strong>Chromium</strong><i/><strong>Firefox</strong><i/><strong>WebKit</strong></div>
+      <span>INSTALLED</span>
+      <div className="home-engines-installed"><strong>Chrome</strong><i/><strong>Edge</strong><i/><strong>Brave</strong><i/><strong>Opera</strong><i/><strong>Vivaldi</strong></div>
+    </div>
+    <section id="features" className="section" aria-labelledby="features-title">
+      <div className="section-heading"><div><span className="eyebrow">WHAT YOU GET</span><h2 id="features-title">Everything a form test needs,<br />on your own machine.</h2></div><p>Manual sessions when you want to look, automation when you want to repeat, and evidence either way.</p></div>
+      <ul className="home-features">{FEATURES.map(feature => <li key={feature.title} className="home-feature">
+        <h3>{feature.title}</h3>
+        <p>{feature.text}</p>
+        <a className="quiet-link" href={docHref(feature.docSlug)}>{feature.linkLabel}<span className="visually-hidden"> documentation</span> <span aria-hidden="true">→</span></a>
+      </li>)}</ul>
+    </section>
+    <section className="section home-gallery" aria-labelledby="gallery-title">
+      <div className="section-heading"><div><span className="eyebrow">THE APP</span><h2 id="gallery-title">Evidence you can act on.</h2></div><p>Real screenshots from a demo run against a local test form: two engines, three devices, one consent problem that only shows up on phones.</p></div>
+      <div className="home-gallery-grid">{GALLERY_SCREENSHOTS.map(shot => <figure key={shot.src} className="shot">
+        <a href={shot.src} aria-label={`Open full-size screenshot: ${shot.caption}`}><img src={shot.src} srcSet={screenshotSrcSet(shot)} sizes="(max-width: 760px) 100vw, 50vw" width={shot.width} height={shot.height} alt={shot.alt} loading="lazy" decoding="async" /></a>
+        <figcaption>{shot.caption}</figcaption>
+      </figure>)}</div>
+    </section>
+    <section id="use-cases" className="section" aria-labelledby="use-cases-title">
+      <div className="section-heading"><div><span className="eyebrow">USE CASES</span><h2 id="use-cases-title">Built for QA of<br />forms you own.</h2></div><p>For QA engineers, testers and developers checking lead forms, sign-up flows and landing pages before and after release.</p></div>
+      <div className="home-use-cases">{USE_CASES.map(useCase => <article key={useCase.title} className="home-use-case">
+        <h3>{useCase.title}</h3>
+        <p>{useCase.text}</p>
+        <ul>{useCase.points.map(point => <li key={point}>{point}</li>)}</ul>
+        <a className="quiet-link" href={docHref(useCase.docSlug)}>{useCase.linkLabel} <span aria-hidden="true">→</span></a>
+      </article>)}</div>
+    </section>
+    <section id="how-it-works" className="how section" aria-labelledby="how-title">
+      <div><span className="eyebrow">HOW IT WORKS</span><h2 id="how-title">From download<br />to your first test.</h2><p>Set it up once. Your profiles, scenarios and keys are kept across updates.</p><a className="quiet-link" href="#download">Find your download <span aria-hidden="true">→</span></a></div>
+      <ol>{STEPS.map((step, i) => <li key={step.title}><span aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div><h3>{step.title}</h3><p>{step.text}</p></div></li>)}</ol>
+    </section>
+    <Downloads initialRelease={release} visitorOs={visitorOs} />
+    <section className="faq section" aria-labelledby="faq-title">
+      <span className="eyebrow">GOOD TO KNOW</span>
+      <h2 id="faq-title">Questions before you start.</h2>
+      {FAQS.map(faq => <details key={faq.question}><summary>{faq.question}<span aria-hidden="true">+</span></summary><p>{faq.answer}{faq.link ? <> <a className="faq-link" href={faq.link.href}>{faq.link.label}</a></> : null}</p></details>)}
+    </section>
+    <section className="home-cta" aria-labelledby="cta-title">
+      <h2 id="cta-title">Test your next release where your visitors are.</h2>
+      <p>Free and open source, for Windows, Linux and macOS. Use it on sites you own or are contracted to test.</p>
+      <div className="hero-actions">
+        <a className="button primary" href="#download">Download Proxy QA Browser <span aria-hidden="true">↓</span></a>
+        <a className="button" href={REPO_URL} rel="noopener noreferrer">View source on GitHub <span aria-hidden="true">↗</span><span className="visually-hidden"> (external site)</span></a>
+      </div>
+    </section>
+  </>
 }
