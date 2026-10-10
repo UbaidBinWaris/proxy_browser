@@ -64,8 +64,9 @@ function validate(input: ProfileInput): ProfileInput {
 }
 
 export function createProfileRepository(db: DatabaseSync): ProfileRepository {
-  const selectAll = db.prepare(`SELECT ${COLUMNS} FROM profiles ORDER BY created_at ASC, name ASC`)
-  const selectVisible = db.prepare(`SELECT ${COLUMNS} FROM profiles WHERE ephemeral = 0 ORDER BY created_at ASC, name ASC`)
+  // Creation order; rowid breaks ties between profiles created in the same millisecond.
+  const selectAll = db.prepare(`SELECT ${COLUMNS} FROM profiles ORDER BY created_at ASC, rowid ASC`)
+  const selectVisible = db.prepare(`SELECT ${COLUMNS} FROM profiles WHERE ephemeral = 0 ORDER BY created_at ASC, rowid ASC`)
   const selectOne = db.prepare(`SELECT ${COLUMNS} FROM profiles WHERE id = ?`)
   const insert = db.prepare(`
     INSERT INTO profiles (${COLUMNS})

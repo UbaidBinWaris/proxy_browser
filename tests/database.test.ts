@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { GeoTarget, ProfileInput, TestRun } from '@shared/types'
 import { AppSettingsPatchSchema, DEFAULT_SETTINGS } from '@shared/types'
@@ -268,6 +268,19 @@ describe('database', () => {
       db.profiles.delete(a.id)
       expect(db.profiles.get(a.id)).toBeNull()
       expect(db.profiles.count()).toBe(1)
+    })
+
+    it('lists profiles created in the same millisecond in creation order, not by name', () => {
+      // Fast machines (the macOS CI runner) create consecutive profiles within one millisecond.
+      vi.useFakeTimers({ toFake: ['Date'] })
+      try {
+        vi.setSystemTime(new Date('2026-10-10T12:00:00.000Z'))
+        const ids = ['Zulu', 'Alpha', 'Mike'].map((name) => db.profiles.create(profileInput({ name })).id)
+        expect(db.profiles.list().map((p) => p.id)).toEqual(ids)
+        expect(db.profiles.list({ includeEphemeral: true }).map((p) => p.id)).toEqual(ids)
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('stores pool, target, TTL and ephemeral; list()/count() hide ephemeral profiles unless asked', () => {
