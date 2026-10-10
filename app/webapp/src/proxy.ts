@@ -23,8 +23,14 @@ export async function proxy(request: NextRequest) {
   const headers = new Headers(request.headers)
   headers.set('x-nonce', nonce)
   headers.set('Content-Security-Policy', policy)
+  // Next.js keeps a rewrite internal only when its origin equals the server's own (the plain-HTTP socket `next start`
+  // listens on). Behind nginx, nextUrl carries X-Forwarded-Proto (https), so an https target would be proxied to
+  // https://<host>:<port> and fail with EPROTO (HTTP 500). The site server always speaks plain HTTP.
+  const notFound = request.nextUrl.clone()
+  notFound.pathname = '/404'
+  notFound.protocol = 'http:'
   const response = await unknownPage(request.nextUrl.pathname)
-    ? NextResponse.rewrite(new URL('/404', request.url), { request: { headers } })
+    ? NextResponse.rewrite(notFound, { request: { headers } })
     : NextResponse.next({ request: { headers } })
   response.headers.set('Content-Security-Policy', policy)
   response.headers.set('Cache-Control', 'private, no-store')

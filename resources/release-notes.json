@@ -34,5 +34,8 @@
     "Site access tokens: file uploads to your listed sites now include the file's contents in Chromium and WebKit, which used to send an empty file. If a file cannot be included, for example one over 25 MB, the upload is blocked and the reason is written to the app log.",
     "Fixed QA automation runs failing to start the bundled Chromium in the Linux app; the first-run browser download in the Windows app is about 100 MB smaller.",
     "New MCP server (qa-mcp) lets AI coding assistants such as Claude Code and Cursor run geo- and device-aware QA checks on sites you allowlist. It ships with the source code and the runner Docker image, not with the desktop app."
+  ],
+  "1.5.1": [
+    "Fixes the download website showing a server error instead of a \"Page not found\" page for mistyped documentation and use-case links. The desktop app is unchanged from 1.5.0, so updating is optional."
   ]
 }

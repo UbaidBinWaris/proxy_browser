@@ -88,7 +88,8 @@ test('the proxy rewrites unknown docs and use-case slugs to the not-found route 
       const run = async (path: string) => { const response = await proxy(new NextRequest(`${SITE_URL}${path}`)); return { rewrite: response.headers.get('x-middleware-rewrite'), csp: response.headers.get('content-security-policy') ?? '', cache: response.headers.get('cache-control') } }
       for (const path of ['/docs/nope', '/docs/Introduction', '/use-cases/nope']) {
         const { rewrite, csp, cache } = await run(path)
-        assert.equal(rewrite, `${SITE_URL}/404`, path); assert.match(csp, /script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/, path); assert.equal(cache, 'private, no-store')
+        // Plain http: the site server's own protocol, so Next.js treats the rewrite as internal even behind https nginx.
+        assert.equal(rewrite, `${SITE_URL.replace(/^https:/, 'http:')}/404`, path); assert.match(csp, /script-src 'self' 'nonce-[A-Za-z0-9+/=]+' 'strict-dynamic'/, path); assert.equal(cache, 'private, no-store')
       }
       for (const path of ['/', '/docs', '/docs/introduction', '/docs/install', '/docs/search', '/use-cases', `/use-cases/${USE_CASES[0]!.slug}`, '/privacy', '/nope']) {
         const { rewrite, csp } = await run(path)
