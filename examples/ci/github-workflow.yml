@@ -29,7 +29,7 @@ jobs:
         id: qa
         # Pin to a release tag or, better, its commit SHA. The default runner image
         # matches the action's release; override `image` to pin a digest.
-        uses: UbaidBinWaris/proxy_browser/action@v1.4.0
+        uses: UbaidBinWaris/proxy_browser/action@v1.5.0
         with:
           config: qa/signup-suite.json # exported manifest, committed without real form data
           environment: Staging # environment name exported in the manifest

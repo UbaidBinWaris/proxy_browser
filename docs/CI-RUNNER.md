@@ -35,7 +35,7 @@ Installed vendor browsers (Chrome, Edge, Brave, …) are not in the image; use
 docker run --rm --init --ipc=host \
   --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD:/work" \
-  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 \
+  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 \
   --config /work/suite.json --environment Staging --output /work/qa-results
 ```
 
@@ -55,7 +55,7 @@ line or in your shell history:
 export QA_PROVIDER_USERNAME=... QA_PROVIDER_PASSWORD=...   # from your secret store
 docker run --rm --init --ipc=host -e QA_PROVIDER -e QA_PROVIDER_HOST -e QA_PROVIDER_PORT \
   -e QA_PROVIDER_USERNAME -e QA_PROVIDER_PASSWORD -v "$PWD:/work" \
-  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 --config /work/suite.json
+  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 --config /work/suite.json
 ```
 
 ### Build it locally
@@ -86,7 +86,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: UbaidBinWaris/proxy_browser/action@v1.4.0
+      - uses: UbaidBinWaris/proxy_browser/action@v1.5.0
         with:
           config: qa/signup-suite.json
           environment: Staging

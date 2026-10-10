@@ -368,7 +368,7 @@ docker run -i --rm --init --ipc=host \
   -e QA_MCP_ALLOWED_ORIGINS=https://staging.example.com \
   -e QA_PROVIDER -e QA_PROVIDER_USERNAME -e QA_PROVIDER_PASSWORD \
   -v "$PWD/qa:/work" -e QA_MCP_WORKSPACE=/work \
-  --entrypoint node ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 \
+  --entrypoint node ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 \
   /opt/proxy-qa-runner/out/main/qa-mcp.js
 ```
 
@@ -381,7 +381,7 @@ As a client configuration:
       "command": "docker",
       "args": ["run", "-i", "--rm", "--init", "--ipc=host",
                "-e", "QA_MCP_ALLOWED_ORIGINS=https://staging.example.com",
-               "--entrypoint", "node", "ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0",
+               "--entrypoint", "node", "ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0",
                "/opt/proxy-qa-runner/out/main/qa-mcp.js"]
     }
   }

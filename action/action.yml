@@ -37,7 +37,7 @@ inputs:
   image:
     description: Runner image. Pin a version tag (or a digest) that matches this action's ref.
     required: false
-    default: ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0
+    default: ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0
   docker-network:
     description: >-
       Docker network for the runner container. `host` (default) lets scenarios reach services
