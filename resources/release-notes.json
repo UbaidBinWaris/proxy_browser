@@ -21,8 +21,18 @@
     "Fixed online updates failing with \"The update is outside the managed download directory\". Install this version once by downloading it from the website; later updates work from App & updates.",
     "After an update, a copy opened straight from a downloaded file becomes the computer copy with Desktop and Start menu shortcuts, so the next launch opens the new version; opening an older file offers the newer version.",
     "Linux: the app now reopens after an update or when opening the computer copy (the restarted AppImage previously failed with \"Cannot mount AppImage, please check your FUSE setup\").",
-    "Now open source under the Apache License 2.0. Desktop and menu shortcuts are updated automatically; on Windows, unpin and re-pin a taskbar pin once if it opens a second taskbar button.",
-    "Fixed QA automation, the CI runner and the MCP server failing to start the bundled Chromium in the Linux app; first-run Chromium downloads on Windows and macOS are about 100 MB smaller.",
-    "macOS downloads for Apple silicon and Intel (unsigned DMGs: open once with System Settings → Privacy & Security → Open Anyway)."
+    "Now open source under the Apache License 2.0. Desktop and menu shortcuts are updated automatically; on Windows, unpin and re-pin a taskbar pin once if it opens a second taskbar button."
+  ],
+  "1.5.0": [
+    "macOS downloads for Apple silicon and Intel (macOS 12 or later). The DMGs are unsigned: allow each new download once with System Settings → Privacy & Security → Open Anyway. The Mac app checks for updates and opens the download page; replace the app in Applications to update, and your profiles are kept.",
+    "Consent, accessibility and performance checks for QA automation: test a consent disclosure's wording, visibility, font size, contrast and distance from the submit button; that the consent checkbox is not pre-checked; TrustedForm, Jornaya or custom lead scripts; axe-core accessibility rules; and performance budgets, optionally with network throttling (Chromium). Results and reports list every failed check.",
+    "QA automation handles more real-world forms: actions can run inside iframes, continue in pop-up windows and upload files stored with the scenario. Recording also captures actions in frames and pop-ups, and file choices (attach the file itself before saving).",
+    "QA runs now follow HTTP redirects that stay on the scenario's approved sites, such as a form that redirects to a thank-you page, instead of blocking them. Each redirect is shown in the evidence and reports; turn off Follow redirects within approved sites to block them as before.",
+    "Bright Data, Oxylabs, Decodo and IPRoyal residential proxies are now built in next to DataImpulse. They follow each provider's official documentation but have not been tested with a live account, so the app labels them community-verified.",
+    "When it starts, the app now checks for updates (at most once a day) and shows an Update badge next to the version in the sidebar; nothing is downloaded until you choose. Turn it off in Settings → General → Check for updates on startup.",
+    "After an online or USB update on Windows and Linux, a notice confirms the new version or explains why the update did not finish, with a Retry update button.",
+    "Site access tokens: file uploads to your listed sites now include the file's contents in Chromium and WebKit, which used to send an empty file. If a file cannot be included, for example one over 25 MB, the upload is blocked and the reason is written to the app log.",
+    "Fixed QA automation runs failing to start the bundled Chromium in the Linux app; the first-run browser download in the Windows app is about 100 MB smaller.",
+    "New MCP server (qa-mcp) lets AI coding assistants such as Claude Code and Cursor run geo- and device-aware QA checks on sites you allowlist. It ships with the source code and the runner Docker image, not with the desktop app."
   ]
 }

@@ -80,7 +80,7 @@ The runner image `ghcr.io/ubaidbinwaris/proxy-qa-runner` is published for `linux
 docker run --rm --init --ipc=host \
   --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -v "$PWD:/work" \
-  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 \
+  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 \
   --config /work/suite.json --environment Staging --output /work/qa-results
 ```
 
@@ -95,7 +95,7 @@ Pass proxy settings **by name**, so values never appear on the command line or i
 export QA_PROVIDER_USERNAME=... QA_PROVIDER_PASSWORD=...   # from your secret store
 docker run --rm --init --ipc=host -e QA_PROVIDER -e QA_PROVIDER_HOST -e QA_PROVIDER_PORT \
   -e QA_PROVIDER_USERNAME -e QA_PROVIDER_PASSWORD -v "$PWD:/work" \
-  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 --config /work/suite.json
+  ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 --config /work/suite.json
 ```
 
 Pin the image to a release tag or digest. To build it locally, see [docs/CI-RUNNER.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/CI-RUNNER.md#build-it-locally).
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: UbaidBinWaris/proxy_browser/action@v1.4.0
+      - uses: UbaidBinWaris/proxy_browser/action@v1.5.0
         with:
           config: qa/signup-suite.json
           environment: Staging
@@ -154,7 +154,7 @@ The repository's `examples/ci/` folder contains a static form, a direct-connecti
 ```bash
 python3 -m http.server 8080 --bind 127.0.0.1 --directory examples/ci/site &
 docker run --rm --init --ipc=host --network host --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$PWD:$PWD" -w "$PWD" ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 \
+  -v "$PWD:$PWD" -w "$PWD" ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 \
   --config examples/ci/scenario.json --output qa-results
 ```
 

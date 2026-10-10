@@ -186,7 +186,8 @@ jobs:
         run: |
           bash deploy/configure-ci-ssh.sh
           ssh proxy-browser-production "mkdir -p /var/lib/proxy-browser/staging/'$RELEASE_VERSION'"
-          rsync -av --partial "release/$ARM64_FILE" "release/$X64_FILE" "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
+          # scp, as in the Windows job: macOS runners ship Apple's openrsync, not GNU rsync.
+          scp "release/$ARM64_FILE" "release/$X64_FILE" "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
       - if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy
   linux:

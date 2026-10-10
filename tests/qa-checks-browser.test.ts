@@ -57,8 +57,9 @@ const PAGES: Record<string, string> = {
   ),
   '/a11y-missing-label': page('<form><input id="email" type="email"><button>Send</button></form>'),
   '/a11y-ok': page('<form><label for="email">Email</label><input id="email" type="email"><button>Send</button></form>'),
+  // The 120 ms long task starts after first contentful paint: total blocking time only counts tasks after FCP.
   '/perf': page(
-    `<img id="hero" src="/slow.png" width="400" height="200" alt="Hero"><p id="text">Fast page</p><script>setTimeout(function(){var end=Date.now()+120;while(Date.now()<end){}},50);setTimeout(function(){var d=document.createElement('div');d.style.height='120px';d.textContent='Late banner';document.querySelector('main').prepend(d)},200)</script>`,
+    `<img id="hero" src="/slow.png" width="400" height="200" alt="Hero"><p id="text">Fast page</p><script>(function(){function busy(){var end=Date.now()+120;while(Date.now()<end){}}try{new PerformanceObserver(function(list,observer){if(list.getEntries().some(function(e){return e.name==='first-contentful-paint'})){observer.disconnect();setTimeout(busy,0)}}).observe({type:'paint',buffered:true})}catch(e){setTimeout(busy,50)}})();setTimeout(function(){var d=document.createElement('div');d.style.height='120px';d.textContent='Late banner';document.querySelector('main').prepend(d)},200)</script>`,
   ),
 }
 // 1×1 transparent PNG.

@@ -79,7 +79,7 @@ export function resolveCiVersion({ packageVersion, refType, refName, runNumber }
 }
 
 /** Files that pin the CI runner image or action to a release; the runner-image workflow refuses a mismatch. */
-export const RUNNER_PIN_FILES = ['action/action.yml', 'docs/CI-RUNNER.md', 'docs/MCP-SERVER.md', 'examples/ci/github-workflow.yml']
+export const RUNNER_PIN_FILES = ['action/action.yml', 'docs/CI-RUNNER.md', 'docs/MCP-SERVER.md', 'docs/site/ci-runner.md', 'docs/site/mcp-server.md', 'examples/ci/github-workflow.yml']
 
 export function syncRunnerPins(root, version) {
   const changed = []

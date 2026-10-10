@@ -178,7 +178,7 @@ The [runner image](/docs/ci-runner#docker-image) contains the server. Override t
 docker run -i --rm --init --ipc=host \
   -e QA_MCP_ALLOWED_ORIGINS=https://staging.example.com \
   -v "$PWD/qa:/work" -e QA_MCP_WORKSPACE=/work \
-  --entrypoint node ghcr.io/ubaidbinwaris/proxy-qa-runner:1.4.0 \
+  --entrypoint node ghcr.io/ubaidbinwaris/proxy-qa-runner:1.5.0 \
   /opt/proxy-qa-runner/out/main/qa-mcp.js
 ```
 
