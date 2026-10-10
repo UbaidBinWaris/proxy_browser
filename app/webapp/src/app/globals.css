@@ -182,34 +182,54 @@ img {
 
 /* ---------- Home page: hero, screenshots, features, use cases, downloads, final CTA ---------- */
 
+/* --- Hero --- */
+/*
+ * Mobile first: the copy, then the screenshot in a light app-window frame.
+ * - Up to 760px: the screenshot spans the content width and the fake title bar is hidden.
+ * - 761-1100px: one centred column (at most 920px; the screenshot at most 800px), so no half of the row is empty.
+ * - From 1101px, where the shell padding becomes 72px: copy 45% and screenshot 55% of the tracks, vertically
+ *   centred. Nothing reaches past the shell's content box (1296px at most).
+ * The `sizes` attribute of the hero <img> in page.tsx is derived from these widths: the shell padding (22, 35, 72px),
+ * the frame (4px padding + 1px border per side up to 760px, 8px + 1px from 761px), the 800px cap and the 48px gap.
+ * Change them together.
+ */
+
 .home-hero {
   display: grid;
-  gap: 48px;
-  padding: 72px 0 56px;
+  gap: 32px;
+  padding: 32px 0 40px;
 }
 
 .home-hero-copy {
-  max-width: 860px;
+  min-width: 0;
+}
+
+/* Tight tracking keeps the badge on one line at 375px; if it wraps on narrower phones, the radius keeps it tidy. */
+.home-hero .pill {
+  padding: 8px 12px;
+  letter-spacing: .6px;
+  border-radius: 16px;
 }
 
 .home-hero h1 {
-  font-size: clamp(40px, 5.2vw, 72px);
-  line-height: 1.04;
-  letter-spacing: -0.045em;
+  font-size: clamp(32px, 4.8vw + 16px, 40px);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
   font-weight: 600;
-  margin: 24px 0;
+  margin: 20px 0 16px;
   text-wrap: balance;
 }
 
 .home-hero .hero-description {
-  max-width: 680px;
-  font-size: 17px;
+  max-width: 640px;
+  font-size: 16px;
+  line-height: 1.7;
 }
 
 .home-hero .hero-actions {
   flex-wrap: wrap;
   gap: 12px;
-  margin: 32px 0 24px;
+  margin: 24px 0 20px;
 }
 
 .home-hero-points {
@@ -220,6 +240,7 @@ img {
   flex-wrap: wrap;
   gap: 8px 24px;
   font-size: 13px;
+  line-height: 20px;
   color: var(--muted);
 }
 
@@ -229,6 +250,146 @@ img {
   font-weight: 700;
   margin-right: 8px;
 }
+
+/* The app window: a light frame around the dark app screenshot, with a dark title bar from 761px. Colours come from the tokens. */
+.shot-hero-window {
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 40px 80px -32px color-mix(in srgb, var(--ink) 25%, transparent), 0 16px 40px -16px color-mix(in srgb, var(--ink) 10%, transparent), 0 2px 8px color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.shot-hero-bar {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 12px 12px 0 0;
+  background: color-mix(in srgb, var(--code-bg) 55%, black);
+  border-bottom: 1px solid color-mix(in srgb, var(--code-ink) 8%, var(--code-bg));
+}
+
+.shot-hero-bar span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--code-ink) 22%, var(--code-bg));
+}
+
+.home-hero .shot-hero img {
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--code-bg) 40%, black);
+  box-shadow: none;
+}
+
+.home-hero .shot-hero figcaption {
+  margin-top: 12px;
+  padding: 0 4px;
+}
+
+@media (min-width: 481px) {
+  .home-hero .pill {
+    letter-spacing: 1px;
+  }
+}
+
+@media (min-width: 761px) {
+  .home-hero {
+    max-width: 920px;
+    margin: 0 auto;
+    gap: 48px;
+    padding: 48px 0 56px;
+    text-align: center;
+  }
+  .home-hero .pill {
+    letter-spacing: 1.4px;
+    border-radius: 50px;
+  }
+  .home-hero h1 {
+    font-size: clamp(44px, 5.2vw, 56px);
+    line-height: 1.04;
+    letter-spacing: -0.045em;
+    margin: 24px 0 20px;
+  }
+  .home-hero .hero-description {
+    margin: 0 auto;
+    font-size: 17px;
+  }
+  .home-hero .hero-actions {
+    justify-content: center;
+    margin: 32px 0 24px;
+  }
+  .home-hero-points {
+    justify-content: center;
+  }
+  .home-hero .shot-hero {
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .shot-hero-window {
+    padding: 8px;
+    border-radius: 20px;
+  }
+  .shot-hero-bar {
+    display: flex;
+  }
+  .home-hero .shot-hero img {
+    border-radius: 0 0 12px 12px;
+  }
+  .home-hero .shot-hero figcaption {
+    margin-top: 16px;
+    padding: 0 8px;
+  }
+}
+
+@media (min-width: 1101px) {
+  .home-hero {
+    max-width: none;
+    margin: 0;
+    grid-template-columns: minmax(0, 9fr) minmax(0, 11fr);
+    align-items: center;
+    column-gap: 48px;
+    padding: 48px 0 64px;
+    text-align: left;
+  }
+  .home-hero h1 {
+    font-size: clamp(40px, 3.6vw + 4px, 56px);
+  }
+  .home-hero .hero-description {
+    margin: 0;
+    font-size: 16px;
+  }
+  .home-hero .hero-actions, .home-hero-points {
+    justify-content: flex-start;
+  }
+  /* The column is too narrow for the three points on one line; a short checklist reads better than a 2 + 1 wrap. */
+  .home-hero-points {
+    flex-direction: column;
+  }
+  .home-hero .shot-hero {
+    max-width: none;
+    margin: 0;
+    position: relative;
+    isolation: isolate;
+  }
+  /* A soft glow behind the window, inside the right column and the column gap; it fades out before the container edge. */
+  .home-hero .shot-hero::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: -40px 0 -24px -40px;
+    background:
+      radial-gradient(40% 45% at 40% 40%, color-mix(in srgb, var(--purple) 18%, transparent), transparent),
+      radial-gradient(35% 40% at 65% 65%, color-mix(in srgb, var(--mint) 22%, transparent), transparent);
+    pointer-events: none;
+  }
+}
+
+/* --- End of hero --- */
 
 .shot {
   margin: 0;
@@ -259,10 +420,6 @@ img {
   line-height: 1.6;
   color: var(--muted);
   margin-top: 12px;
-}
-
-.shot-hero img {
-  box-shadow: 0 28px 70px #25245420, 0 4px 12px #25245410;
 }
 
 .engine-strip.home-engines {
@@ -323,11 +480,150 @@ img {
   padding: 4px 0;
 }
 
-.home-gallery-grid {
+/* --- Gallery: three screenshot rows, then three text cards --- */
+/*
+ * Rows stack, image first, up to 1000px; from 1001px each row is image 60% / text 40% of the tracks (content minus the
+ * 56px gap), alternating sides. Cards: one column, three from 1001px. The `sizes` attribute of the row images in
+ * page.tsx follows these widths (shell padding 22, 35, 72px; 744px at most). Change them together.
+ */
+
+.home-gallery-rows {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 40px 32px;
+  gap: 48px;
 }
+
+.home-gallery-row {
+  display: grid;
+  gap: 24px;
+}
+
+.home-gallery-row .shot {
+  order: -1;
+}
+
+.home-gallery-text {
+  min-width: 0;
+}
+
+.home-gallery-text h3 {
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -.5px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.home-gallery-text p {
+  max-width: 640px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 16px;
+}
+
+.home-gallery-text ul {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.home-gallery-text li {
+  display: flex;
+  gap: 8px;
+}
+
+.home-gallery-text li::before {
+  content: '✓';
+  color: var(--purple-text);
+  font-weight: 700;
+}
+
+.home-gallery-text .quiet-link, .home-gallery-card .quiet-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--purple-text);
+}
+
+.home-gallery-more {
+  margin: 64px 0 24px;
+}
+
+.home-gallery-cards {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+}
+
+.home-gallery-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  padding: 24px 24px 12px;
+}
+
+.home-gallery-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--purple) 10%, white);
+  color: var(--purple-text);
+}
+
+.home-gallery-card h3 {
+  font-size: 18px;
+  line-height: 1.4;
+  letter-spacing: -.3px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.home-gallery-card p {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+
+@media (min-width: 1001px) {
+  .home-gallery-rows {
+    gap: 80px;
+  }
+  .home-gallery-row {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    align-items: center;
+    gap: 56px;
+  }
+  .home-gallery-row:nth-child(even) {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+  .home-gallery-row:nth-child(even) .shot {
+    order: 1;
+  }
+  .home-gallery-more {
+    margin-top: 88px;
+  }
+  .home-gallery-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* --- End of gallery --- */
 
 .home-use-cases {
   display: grid;
@@ -594,17 +890,6 @@ img {
 }
 
 @media (max-width: 760px) {
-  .home-hero {
-    padding: 40px 0 32px;
-    gap: 32px;
-  }
-  .home-hero h1 {
-    font-size: 40px;
-    letter-spacing: -1.6px;
-  }
-  .home-hero .hero-description {
-    font-size: 16px;
-  }
   .home-hero .hero-actions .button, .home-cta .hero-actions .button {
     width: 100%;
     justify-content: space-between;
@@ -619,7 +904,7 @@ img {
   .engine-strip.home-engines > span {
     flex-basis: 100%;
   }
-  .home-features, .home-gallery-grid {
+  .home-features {
     grid-template-columns: minmax(0, 1fr);
   }
   #features h2 br, #use-cases h2 br, .downloads h2 br, .how h2 br {

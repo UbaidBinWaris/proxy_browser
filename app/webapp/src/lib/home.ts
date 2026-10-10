@@ -6,6 +6,10 @@ import { DEVICE_PRESET_COUNT } from './site.ts'
 
 export type HomeFeature = { title: string; text: string; docSlug: string; linkLabel: string }
 export type HomeScreenshot = { src: string; alt: string; caption: string; width: number; height: number }
+/** A gallery row: a screenshot without caption (the row's own text explains it), an H3, a short text, points and a docs link. */
+export type HomeGalleryShot = Omit<HomeScreenshot, 'caption'> & { title: string; text: string; points: string[]; docSlug: string; linkLabel: string }
+/** A text-only feature card under the gallery rows; `icon` picks its inline SVG in page.tsx. */
+export type HomeGalleryCard = { icon: 'devices' | 'browsers' | 'vault'; title: string; text: string; docSlug: string; linkLabel: string }
 
 /** Width of the smaller copy of every screenshot (`<name>-720.webp`), served to phones and the gallery grid. */
 export const SCREENSHOT_SMALL_WIDTH = 720
@@ -33,48 +37,68 @@ export const HERO_SCREENSHOT: HomeScreenshot = {
   height: 1000,
 }
 
-export const GALLERY_SCREENSHOTS: HomeScreenshot[] = [
+/**
+ * The "Evidence you can act on." section: three screenshots, each in a row with a heading, a short explanation, key
+ * points and a docs link. The alt text describes the image; longer detail belongs in the visible text.
+ */
+export const GALLERY_SCREENSHOTS: HomeGalleryShot[] = [
   {
-    src: '/docs-assets/images/qa-results.webp',
-    alt: 'QA automation results for a six-case matrix: Chromium and WebKit on Windows desktop, iPhone 15 Pro and Galaxy S23. The summary reports 14 of 18 checks passed; desktop cases pass while every phone case fails the consent check because the disclosure font is 9 px.',
-    caption: 'A browser × device matrix with check badges per case. Export JSON, JUnit or HTML reports.',
+    src: '/docs-assets/images/run-detail.webp',
+    alt: 'The Result tab of a finished launch: exit IP 203.0.113.24 in Austin, Texas matching the requested city, HTTP 200, lead and certificate IDs.',
     width: 1600,
     height: 1000,
+    title: 'A record of every launch',
+    text: 'Every launch records the checked exit IP, location match, HTTP status, captured IDs and a screenshot. The exit IP is looked up through the same proxy login before the window opens and compared with the location you asked for.',
+    points: ['Match, Partial, Mismatch or Unverified for requested vs. checked location', 'Lead and certificate IDs filled in from JSON form responses', 'Every request in the Network tab; response bodies are never stored'],
+    docSlug: 'launching',
+    linkLabel: 'Launching browsers',
+  },
+  {
+    src: '/docs-assets/images/qa-results.webp',
+    alt: 'QA results of a six-case matrix: Chromium and WebKit on a Windows desktop, iPhone 15 Pro and Galaxy S23, with 14 of 18 checks passed.',
+    width: 1600,
+    height: 1000,
+    title: 'One scenario, every browser and device',
+    text: 'Run a recorded scenario as a browser × device matrix, optionally across locations and dataset rows. Each case shows its status, timing and a badge per check, and the summary above the matrix lists every failed check: here, the consent font check fails on every phone case.',
+    points: ['Up to 10 engines, 20 devices and 20 locations, 100 cases by default', 'Export JSON, JUnit XML or a standalone HTML report', 'Failed cases retried up to twice, with every attempt kept'],
+    docSlug: 'automation',
+    linkLabel: 'Scenarios and matrices',
   },
   {
     src: '/docs-assets/images/check-evidence.webp',
-    alt: 'The evidence of a failed iPhone 15 Pro case, step by step: consent checkbox not pre-checked (pass), consent disclosure font 9 px below the 10 px minimum (fail), axe-core accessibility with no violations (pass), then the form submits.',
-    caption: 'Step-by-step evidence: the consent check names exactly what failed and where.',
+    alt: 'Step-by-step evidence of a failed iPhone 15 Pro case: the consent checkbox check passes, the disclosure fails at 9 px, axe-core passes.',
     width: 1600,
     height: 1000,
+    title: 'Evidence that names the problem',
+    text: 'Consent and accessibility checks record what they found at each step. In this iPhone 15 Pro case the consent disclosure fails because its font is 9 px, below the 10 px minimum, while the checkbox and axe-core checks pass.',
+    points: ['Consent wording, font size, contrast and distance to the submit button', 'Consent checkbox not pre-checked; TrustedForm or Jornaya script loaded', 'axe-core accessibility rules and performance budgets'],
+    docSlug: 'checks',
+    linkLabel: 'Checks',
+  },
+]
+
+/** The cards under the gallery rows: features shown as text instead of screenshots, each with its own icon. */
+export const GALLERY_CARDS: HomeGalleryCard[] = [
+  {
+    icon: 'devices',
+    title: `${DEVICE_PRESET_COUNT} emulated device presets`,
+    text: "Phones, tablets and desktops from Playwright's device list, plus current Android phones and desktops the project adds. The device picker filters by type, brand, operating system and orientation, and by default lists only presets the selected browser can emulate. Phone and tablet presets run in WebKit and Chromium-family browsers, not in Firefox.",
+    docSlug: 'locations-and-devices',
+    linkLabel: 'Device presets',
   },
   {
-    src: '/docs-assets/images/run-detail.webp',
-    alt: 'The result of a launch: verified exit IP 203.0.113.24 in Austin, Texas matching the requested city, HTTP status 200, lead ID and certificate ID captured from the form responses, and the final screenshot of the quote form.',
-    caption: 'Every launch records the exit IP, its location verdict, HTTP status, captured IDs and a screenshot.',
-    width: 1600,
-    height: 1000,
+    icon: 'browsers',
+    title: 'Bundled and installed browsers',
+    text: 'Chromium, Firefox and WebKit come with the app; WebKit is the engine Safari is built on, not Safari itself. It also drives the Chrome, Edge, Brave and Opera on your computer, each in a fresh temporary profile. Missing ones install in one click on Windows (with winget) and x86-64 Linux; on macOS the app opens the vendor download page.',
+    docSlug: 'browsers',
+    linkLabel: 'Browsers',
   },
   {
-    src: '/docs-assets/images/launch-device-picker.webp',
-    alt: 'The device picker: filters by device type, brand, operating system and orientation, and cards for desktop presets with their viewport, scale factor and user agent.',
-    caption: `Device picker: ${DEVICE_PRESET_COUNT} presets with filters by type, brand, OS and orientation.`,
-    width: 1600,
-    height: 1000,
-  },
-  {
-    src: '/docs-assets/images/launch-browser-picker.webp',
-    alt: 'The browser picker: bundled Chromium, Firefox and WebKit, installed Google Chrome, and one-click installs for Microsoft Edge, Brave and Opera.',
-    caption: 'Bundled Chromium, Firefox and WebKit, plus installed Chromium-family browsers such as Chrome, Edge, Brave and Opera.',
-    width: 1600,
-    height: 1000,
-  },
-  {
-    src: '/docs-assets/images/proxy-keys.webp',
-    alt: 'Settings, Proxy keys: DataImpulse Residential configured in the encrypted vault, Mobile, Bright Data, Oxylabs, Decodo and IPRoyal not set up, and security health Healthy with the OS keychain.',
-    caption: 'Proxy keys per provider, encrypted on your computer. Leave them empty to test direct.',
-    width: 1600,
-    height: 1000,
+    icon: 'vault',
+    title: 'Proxy keys encrypted on your computer',
+    text: "Keys are saved per provider in an AES-256-GCM vault whose key is protected by your operating system's keychain where one is available. Passwords are write-only: never shown again, logged or stored in plain text. Keys are optional, because direct launches need none.",
+    docSlug: 'security-and-privacy',
+    linkLabel: 'Security and privacy',
   },
 ]
 

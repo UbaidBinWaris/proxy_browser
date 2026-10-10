@@ -1,17 +1,26 @@
 import type { Metadata } from 'next'
+import type { ReactElement } from 'react'
 import { headers } from 'next/headers'
 import Downloads from '@/components/Downloads'
 import { JsonLd } from '@/components/JsonLd'
 import { REPO_URL } from '@/lib/site'
 import { currentRelease } from '@/lib/releases'
 import { OS_LABELS, detectOs, recommendedPlatform } from '@/lib/downloads'
-import { FAQS, FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, MORE_USE_CASE_LINKS, STEPS, USE_CASES, screenshotSrcSet } from '@/lib/home'
+import type { HomeGalleryCard } from '@/lib/home'
+import { FAQS, FEATURES, GALLERY_CARDS, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, MORE_USE_CASE_LINKS, STEPS, USE_CASES, screenshotSrcSet } from '@/lib/home'
 import { faqPage, homeGraph } from '@/lib/seo'
 import { findUseCase, useCasePath } from '@/lib/use-cases'
 export const dynamic = 'force-dynamic'
 export const metadata: Metadata = { alternates: { canonical: '/' } }
 
 const docHref = (slug: string) => `/docs/${slug}`
+
+/** Line icons of the gallery cards (24 px grid, drawn in currentColor); decorative, so hidden from assistive tech. */
+const CARD_ICONS: Record<HomeGalleryCard['icon'], ReactElement> = {
+  devices: <><rect x="2" y="4" width="13" height="10" rx="1.5" /><path d="M5.5 18h6M8.5 14v4" /><rect x="17" y="7" width="5" height="12" rx="1.25" /><path d="M19 16.5h1" /></>,
+  browsers: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M6.5 6.5h.01M9.5 6.5h.01M12.5 6.5h.01" /><path d="M8 14h8M8 17h5" /></>,
+  vault: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3M12 14.5v2.5" /></>,
+}
 
 export default async function Home() {
   const [release, requestHeaders] = await Promise.all([currentRelease().catch(() => null), headers()])
@@ -28,7 +37,7 @@ export default async function Home() {
       <div className="home-hero-copy">
         <span className="pill"><span className="status-dot" /> FREE &amp; OPEN SOURCE · WINDOWS · LINUX · MACOS</span>
         <h1 id="hero-title">Test your web forms by location, device and browser.</h1>
-        <p className="hero-description">A desktop QA browser for testing your own website and forms. Launch directly, or through your own proxy plan with an exit IP in the country, US state, city or ZIP you pick, checked before the window opens. Use emulated phone, tablet and desktop presets in Chromium, WebKit or your installed Chrome, Edge, Brave and Opera, and desktop presets in Firefox. Free and open source.</p>
+        <p className="hero-description">A desktop QA browser for your own site. Launch directly or through your own proxy plan from a US state, city or ZIP, then emulate phones and tablets in Chromium, WebKit, Chrome, Edge, Brave or Opera.</p>
         <div className="hero-actions">
           <a className="button primary" href="#download">{desktop ? `Download for ${OS_LABELS[visitorOs]}` : 'Download free'} <span aria-hidden="true">↓</span></a>
           <a className="button" href="/docs/introduction">Read the docs <span aria-hidden="true">→</span></a>
@@ -40,7 +49,11 @@ export default async function Home() {
         </ul>
       </div>
       <figure className="shot shot-hero">
-        <img src={HERO_SCREENSHOT.src} srcSet={screenshotSrcSet(HERO_SCREENSHOT)} sizes="(max-width: 1440px) 100vw, 1296px" width={HERO_SCREENSHOT.width} height={HERO_SCREENSHOT.height} alt={HERO_SCREENSHOT.alt} fetchPriority="high" decoding="async" />
+        <div className="shot-hero-window">
+          <div className="shot-hero-bar" aria-hidden="true"><span /><span /><span /></div>
+          {/* Rendered width (globals.css, Hero): the shell content width minus the frame (4px or 8px padding + 1px border per side); 800px column at most from 761px; 55% of the tracks (content - 48px gap) from 1101px. */}
+          <img src={HERO_SCREENSHOT.src} srcSet={screenshotSrcSet(HERO_SCREENSHOT)} sizes="(max-width: 760px) calc(100vw - 54px), (max-width: 870px) calc(100vw - 88px), (max-width: 1100px) 782px, (max-width: 1440px) calc(55vw - 124px), 668px" width={HERO_SCREENSHOT.width} height={HERO_SCREENSHOT.height} alt={HERO_SCREENSHOT.alt} fetchPriority="high" decoding="async" />
+        </div>
         <figcaption>{HERO_SCREENSHOT.caption}</figcaption>
       </figure>
     </section>
@@ -59,11 +72,26 @@ export default async function Home() {
       </li>)}</ul>
     </section>
     <section className="section home-gallery" aria-labelledby="gallery-title">
-      <div className="section-heading"><div><span className="eyebrow">THE APP</span><h2 id="gallery-title">Evidence you can act on.</h2></div><p>Real screenshots from a demo run against a local test form: two engines, three devices, one consent problem that only shows up on phones.</p></div>
-      <div className="home-gallery-grid">{GALLERY_SCREENSHOTS.map(shot => <figure key={shot.src} className="shot">
-        <a href={shot.src} aria-label={`Open full-size screenshot: ${shot.caption}`}><img src={shot.src} srcSet={screenshotSrcSet(shot)} sizes="(max-width: 760px) 100vw, 50vw" width={shot.width} height={shot.height} alt={shot.alt} loading="lazy" decoding="async" /></a>
-        <figcaption>{shot.caption}</figcaption>
-      </figure>)}</div>
+      <div className="section-heading"><div><span className="eyebrow">THE APP</span><h2 id="gallery-title">Evidence you can act on.</h2></div><p>Real screenshots from a demo run against a local test form: one launch, then two engines and three devices with a consent problem that only shows up on phones.</p></div>
+      <div className="home-gallery-rows">{GALLERY_SCREENSHOTS.map(shot => <article key={shot.src} className="home-gallery-row">
+        <div className="home-gallery-text">
+          <h3>{shot.title}</h3>
+          <p>{shot.text}</p>
+          <ul>{shot.points.map(point => <li key={point}>{point}</li>)}</ul>
+          <a className="quiet-link" href={docHref(shot.docSlug)}>{shot.linkLabel}<span className="visually-hidden"> documentation</span> <span aria-hidden="true">→</span></a>
+        </div>
+        {/* Not a link, so the visual order (image first on phones, alternating sides on desktop) never differs from the focus order. Rendered width: globals.css, Gallery. */}
+        <figure className="shot">
+          <img src={shot.src} srcSet={screenshotSrcSet(shot)} sizes="(max-width: 760px) calc(100vw - 44px), (max-width: 1000px) calc(100vw - 70px), (max-width: 1100px) calc(60vw - 76px), (max-width: 1440px) calc(60vw - 120px), 744px" width={shot.width} height={shot.height} alt={shot.alt} loading="lazy" decoding="async" />
+        </figure>
+      </article>)}</div>
+      <p className="eyebrow home-gallery-more">MORE IN THE APP</p>
+      <ul className="home-gallery-cards">{GALLERY_CARDS.map(card => <li key={card.title} className="home-gallery-card">
+        <span className="home-gallery-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{CARD_ICONS[card.icon]}</svg></span>
+        <h3>{card.title}</h3>
+        <p>{card.text}</p>
+        <a className="quiet-link" href={docHref(card.docSlug)}>{card.linkLabel}<span className="visually-hidden"> documentation</span> <span aria-hidden="true">→</span></a>
+      </li>)}</ul>
     </section>
     <section id="use-cases" className="section" aria-labelledby="use-cases-title">
       <div className="section-heading"><div><span className="eyebrow">USE CASES</span><h2 id="use-cases-title">Built for QA of{' '}<br />forms you own.</h2></div><p>For QA engineers, testers and developers checking lead forms, sign-up flows and landing pages before and after release.</p></div>
