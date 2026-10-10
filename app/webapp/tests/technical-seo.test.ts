@@ -36,7 +36,7 @@ test('release downloads are served with X-Robots-Tag: noindex', async () => {
   const root = await mkdtemp(join(tmpdir(), 'proxy-seo-release-')), keys = generateKeyPairSync('ed25519'), version = '2.0.0'
   try {
     const assets = (['win32', 'linux'] as const).map(platform => { const bytes = Buffer.from(`seo-${platform}`); return { platform, arch: 'x64', fileName: `Proxy-QA-Browser-${version}-${platform === 'win32' ? 'Windows-x64.exe' : 'x86_64.AppImage'}`, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), bytes } })
-    const data = { format: 1, appId: 'com.ubaidbinwaris.proxy-qa-browser', version, releasedAt: '2026-10-10T10:00:00.000Z', notes: ['Test release'], assets: assets.map(({ bytes, ...a }) => a) }
+    const data = { format: 1, appId: 'com.ubaidbinwaris.proxy-qa-browser', version, releasedAt: '2026-10-10T10:00:00.000Z', notes: ['Test release'], assets: assets.map(({ bytes: _bytes, ...a }) => a) }
     const online = { version, releasedAt: data.releasedAt, notes: data.notes, assets: data.assets.map(a => ({ ...a, url: `${SITE_URL}/api/download/${version}/${a.fileName}` })) }
     const envelope = (payload: unknown) => { const value = JSON.stringify(payload); return JSON.stringify({ payload: value, signature: sign(null, Buffer.from(value), keys.privateKey).toString('base64') }) }
     const folder = join(root, 'releases', version); await mkdir(folder, { recursive: true })
