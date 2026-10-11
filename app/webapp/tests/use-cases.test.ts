@@ -58,11 +58,11 @@ const OTHER_PAGE_KEYWORDS = [
   'launch a QA browser through a proxy', 'proxy for QA testing', 'verify proxy exit IP location', 'bundled and installed browsers for testing', 'allowlist QA traffic in your WAF',
   'CSV data-driven browser tests', 'automated accessibility checks', 'self-healing selectors', 'browser testing in GitHub Actions', 'MCP server for browser testing',
   'Proxy QA Browser security and privacy', 'Proxy QA Browser troubleshooting', 'Proxy QA Browser FAQ', 'Proxy QA Browser developer', 'Proxy QA Browser changelog',
-  'Proxy QA Browser use cases', 'open source visual regression testing',
+  'Proxy QA Browser use cases',
 ]
 
 test('use cases have unique slugs and primary keywords, and the lookup finds each one', () => {
-  assert.equal(USE_CASES.length, 6)
+  assert.equal(USE_CASES.length, 7)
   for (const useCase of USE_CASES) {
     assert.match(useCase.slug, SLUG)
     assert.equal(findUseCase(useCase.slug), useCase)
@@ -72,8 +72,6 @@ test('use cases have unique slugs and primary keywords, and the lookup finds eac
   assert.equal(new Set(USE_CASES.map(u => u.primaryKeyword.toLowerCase())).size, USE_CASES.length, 'duplicate primary keyword')
   assert.equal(useCasePath('location-testing'), '/use-cases/location-testing')
   assert.equal(useCaseImagePath('location-testing'), '/og/use-cases/location-testing')
-  // Visual regression testing waits for a comparison screenshot and its worked example.
-  assert.equal(findUseCase('visual-regression-testing'), null)
 })
 
 test('no use case targets a keyword that another page owns', () => {
@@ -174,6 +172,11 @@ test('every in-content link points to an existing page and heading, once per pag
 
 /** Internal links from use-case pages in the SEO plan, with their settled anchors (a docs URL may add a heading anchor). */
 const PLANNED_LINKS: Array<{ from: string; to: string; anchor: string }> = [
+  { from: 'visual-regression-testing', to: '/docs/automation#visual-comparisons', anchor: 'Compare screenshot step reference' },
+  { from: 'visual-regression-testing', to: '/use-cases/test-recorder', anchor: 'record the scenario first' },
+  { from: 'visual-regression-testing', to: '/use-cases/cross-browser-testing', anchor: 'baselines per browser' },
+  { from: 'visual-regression-testing', to: '/use-cases/device-testing', anchor: 'baselines per device preset' },
+  { from: 'test-recorder', to: '/use-cases/visual-regression-testing', anchor: 'Compare screenshot steps' },
   { from: 'location-testing', to: '/use-cases/geo-blocking-testing', anchor: 'test your own geo-blocking and redirect rules' },
   { from: 'location-testing', to: '/use-cases/device-testing', anchor: 'device presets' },
   { from: 'location-testing', to: '/docs/locations-and-devices#exit-ip-verification', anchor: 'how exit-IP verification works' },
@@ -298,7 +301,7 @@ test('the social image route renders a PNG for each use case and a 404 for unkno
     assert.equal(response.status, 200, useCase.slug)
     await response.body?.cancel()
   }
-  for (const slug of ['no-such-page', 'visual-regression-testing', '']) {
+  for (const slug of ['no-such-page', 'visual-regressions', '']) {
     const missing = await ogImage(request, { params: Promise.resolve({ slug }) })
     assert.equal(missing.status, 404, slug)
     assert.equal(await missing.text(), 'Not found')

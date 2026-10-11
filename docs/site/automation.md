@@ -126,7 +126,9 @@ To block every document redirect, turn off **Follow redirects within approved si
 
 ## Visual comparisons
 
-Add a **Compare screenshot** step with a unique baseline name and an allowed difference ratio (0–1; the default 0.01 means 1%). Screenshots use the same masks as other evidence, disable animations and wait for fonts.
+Add a **Compare screenshot** step with a unique baseline name and an allowed difference ratio (0–1; the default 0.01 means 1%). Screenshots use the same masks as other evidence, disable animations and wait for fonts. A worked example of [visual regression testing](/use-cases/visual-regression-testing) across browsers, devices and locations is on the website.
+
+![Results after a visual check: 4.49% of the screenshot changed, above the 1% allowed, with baseline, current and highlighted differences side by side.](images/automation-visual-comparison.webp "A changed run: the approved baseline, the current screenshot and the highlighted differences.")
 
 1. The first run fails with **No approved visual baseline**.
 2. In **Results**, expand the case, choose **View comparison** and review the screenshot.

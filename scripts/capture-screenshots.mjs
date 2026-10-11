@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global process, console, window, location, setTimeout, clearTimeout */
+/* global process, console, window, document, location, setTimeout, clearTimeout */
 /**
  * Captures the screenshots used by the documentation and the website from the real desktop app.
  *
@@ -80,9 +80,13 @@ button{background:#2747d6;color:#fff;border:0;border-radius:6px;padding:12px 16p
 <p id="disclosure">${DISCLOSURE}</p>
 <button id="submit" type="submit">Get my quote</button></form>
 <p id="result" role="status"></p></main></body></html>`
+// The visual-comparison capture switches to a changed page after approving a baseline of the original one.
+let formVariant = FORM
+// A layout regression: the card moves down and the button changes colour.
+const CHANGED_FORM = FORM.replace('margin:32px auto', 'margin:96px auto').replace('Get your free solar quote', 'Get your free solar quote today').replace('background:#2747d6', 'background:#0f8a5f')
 const server = createServer((_req, res) => {
   res.setHeader('content-type', 'text/html; charset=utf-8')
-  res.end(FORM)
+  res.end(formVariant)
 })
 await new Promise((done) => server.listen(0, '127.0.0.1', done))
 const origin = `http://127.0.0.1:${server.address().port}`
@@ -365,6 +369,43 @@ try {
       await page.mouse.wheel(0, -40)
       await shot('check-evidence')
     }
+  }
+  // --- Visual comparison: approve a baseline of the demo form, change the page, run again, open View comparison.
+  if (want('automation-visual-comparison')) {
+    const visual = await api((input) => window.api.qa.saveScenario(input), {
+      name: 'Quote form: visual check',
+      profileId: profiles[3].id,
+      startUrl: `${origin}/quote`,
+      allowedOrigins: [origin],
+      variables: {},
+      steps: [{ action: 'assertScreenshot', name: 'quote-form', maxDiffRatio: 0.01 }],
+    })
+    const runMatrix = async () => {
+      const batch = await api((id) => window.api.qa.start({ scenarioId: id, engines: ['chromium'], devices: ['windows-desktop'], targets: [], concurrency: 1, retries: 0 }), visual.id)
+      for (const deadline = Date.now() + 120000; ; await page.waitForTimeout(500)) {
+        const done = (await api(() => window.api.qa.snapshot())).batches.find((b) => b.id === batch.id)
+        if (done?.endedAt) return done
+        if (Date.now() > deadline) throw new Error('Visual check timed out')
+      }
+    }
+    const first = await runMatrix()
+    const firstCase = first.cases[0]
+    const step = firstCase.steps.find((s) => s.visual)
+    if (!step) throw new Error('The visual check recorded no screenshot')
+    await api(({ batchId, caseId, index }) => window.api.qa.approveBaseline(batchId, caseId, index), { batchId: first.id, caseId: firstCase.id, index: step.index })
+    formVariant = CHANGED_FORM
+    const second = await runMatrix()
+    console.log(`visual check: ${second.cases[0].status}, ${second.cases[0].steps.find((s) => s.visual)?.visual?.status}`)
+    formVariant = FORM
+    await go('#/automation', automationReady)
+    await page.getByRole('tab', { name: 'Results', exact: true }).click()
+    const batchBox = page.locator('section, article, div').filter({ has: page.getByRole('heading', { name: visual.name, exact: true }) }).first()
+    await batchBox.locator('summary').first().click()
+    await page.getByRole('button', { name: 'View comparison' }).first().click()
+    await page.getByText('Highlighted differences').first().waitFor()
+    await page.waitForFunction(() => [...document.images].filter((img) => /Approved baseline|Current screenshot|Highlighted differences/.test(img.alt)).every((img) => img.complete && img.naturalWidth > 0))
+    await page.getByText('Approved baseline').first().evaluate((el) => el.closest('figure')?.parentElement?.scrollIntoView({ block: 'center' }))
+    await shot('automation-visual-comparison', 900)
   }
   for (const [name, tab] of [['automation-suites', 'Suites & environments'], ['automation-schedules', 'Schedules'], ['automation-data', 'Data controls']]) {
     if (!want(name)) continue

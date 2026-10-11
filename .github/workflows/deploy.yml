@@ -46,10 +46,6 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     environment: production
-    outputs:
-      fileName: ${{ steps.asset.outputs.fileName }}
-      size: ${{ steps.asset.outputs.size }}
-      sha256: ${{ steps.asset.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,6 +83,14 @@ jobs:
       - run: node scripts/windows-smoke.cjs
       - id: asset
         run: node scripts/release-asset.mjs win32
+      # Name, size and SHA-256 for the publish job. An artifact, not a job output: GitHub drops outputs that contain
+      # any secret's value.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata-win32
+          path: release/metadata/win32-x64.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Transfer EXE directly over SSH
         shell: bash
         env:
@@ -135,13 +139,6 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     environment: production
-    outputs:
-      arm64File: ${{ steps.arm64.outputs.fileName }}
-      arm64Size: ${{ steps.arm64.outputs.size }}
-      arm64Sha256: ${{ steps.arm64.outputs.sha256 }}
-      x64File: ${{ steps.x64.outputs.fileName }}
-      x64Size: ${{ steps.x64.outputs.size }}
-      x64Sha256: ${{ steps.x64.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -173,6 +170,14 @@ jobs:
         run: node scripts/release-asset.mjs darwin arm64 dmg
       - id: x64
         run: node scripts/release-asset.mjs darwin x64 dmg
+      # Name, size and SHA-256 for the publish job. An artifact, not a job output: GitHub drops outputs that contain
+      # any secret's value.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata-darwin
+          path: release/metadata/darwin-*.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Transfer DMGs directly over SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -196,10 +201,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: production
-    outputs:
-      fileName: ${{ steps.asset.outputs.fileName }}
-      size: ${{ steps.asset.outputs.size }}
-      sha256: ${{ steps.asset.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -239,6 +240,14 @@ jobs:
           DEBUG: pw:browser
       - id: asset
         run: node scripts/release-asset.mjs linux
+      # Name, size and SHA-256 for the publish job. An artifact, not a job output: GitHub drops outputs that contain
+      # any secret's value.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-metadata-linux
+          path: release/metadata/linux-x64.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Transfer AppImage directly over SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -311,35 +320,20 @@ jobs:
           node-version: 24
       - id: version
         run: node scripts/ci-release-version.mjs
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-metadata-*
+          path: release/metadata
+          merge-multiple: true
       - name: Sign trusted build-job metadata with the existing publisher key
         env:
           RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.RELEASE_SIGNING_PRIVATE_KEY }}
-          WINDOWS_FILE: ${{ needs.windows.outputs.fileName }}
-          WINDOWS_SIZE: ${{ needs.windows.outputs.size }}
-          WINDOWS_SHA256: ${{ needs.windows.outputs.sha256 }}
-          LINUX_FILE: ${{ needs.linux.outputs.fileName }}
-          LINUX_SIZE: ${{ needs.linux.outputs.size }}
-          LINUX_SHA256: ${{ needs.linux.outputs.sha256 }}
-          MAC_ARM64_FILE: ${{ needs.macos.outputs.arm64File }}
-          MAC_ARM64_SIZE: ${{ needs.macos.outputs.arm64Size }}
-          MAC_ARM64_SHA256: ${{ needs.macos.outputs.arm64Sha256 }}
-          MAC_X64_FILE: ${{ needs.macos.outputs.x64File }}
-          MAC_X64_SIZE: ${{ needs.macos.outputs.x64Size }}
-          MAC_X64_SHA256: ${{ needs.macos.outputs.x64Sha256 }}
         run: |
           test -n "$RELEASE_SIGNING_PRIVATE_KEY"
-          # GitHub drops a job output that contains any secret's value (warning "Skip output ... since it may contain
-          # secret"), e.g. a checksum containing "22" when a secret is "22". Name the empty output instead of failing later.
-          for name in WINDOWS_FILE WINDOWS_SIZE WINDOWS_SHA256 LINUX_FILE LINUX_SIZE LINUX_SHA256 MAC_ARM64_FILE MAC_ARM64_SIZE MAC_ARM64_SHA256 MAC_X64_FILE MAC_X64_SIZE MAC_X64_SHA256; do
-            if [ -z "${!name}" ]; then
-              echo "::error title=Missing build output::$name is empty. GitHub drops job outputs that contain a secret's value; remove short secrets such as DEPLOY_PORT=22 (port 22 is the default) and re-run all jobs."
-              exit 1
-            fi
-          done
           umask 077
           mkdir -p .release-keys
           printf '%s\n' "$RELEASE_SIGNING_PRIVATE_KEY" > .release-keys/private-key.pem
-          node --input-type=module -e 'import {createServerReleaseFromMetadata} from "./scripts/release.mjs"; await createServerReleaseFromMetadata(process.cwd(),[{platform:"win32",arch:"x64",fileName:process.env.WINDOWS_FILE,size:Number(process.env.WINDOWS_SIZE),sha256:process.env.WINDOWS_SHA256},{platform:"linux",arch:"x64",fileName:process.env.LINUX_FILE,size:Number(process.env.LINUX_SIZE),sha256:process.env.LINUX_SHA256},{platform:"darwin",arch:"arm64",fileName:process.env.MAC_ARM64_FILE,size:Number(process.env.MAC_ARM64_SIZE),sha256:process.env.MAC_ARM64_SHA256},{platform:"darwin",arch:"x64",fileName:process.env.MAC_X64_FILE,size:Number(process.env.MAC_X64_SIZE),sha256:process.env.MAC_X64_SHA256}])'
+          node scripts/sign-release-metadata.mjs release/metadata
           rm -f .release-keys/private-key.pem
       - name: Deploy website and atomically publish the verified binaries
         env:

@@ -428,7 +428,7 @@ export const USE_CASES: UseCase[] = [
       },
       {
         heading: 'Add expected results',
-        text: 'Assertions turn a recording into a test: assertVisible, assertText, assertUrl, assertStatus for the final HTTP status, and Compare screenshot against an approved baseline. Consent, accessibility and performance checks run as steps in the same scenario.',
+        text: 'Assertions turn a recording into a test: assertVisible, assertText, assertUrl, assertStatus for the final HTTP status, and [Compare screenshot steps](/use-cases/visual-regression-testing) against approved baselines. Consent, accessibility and performance checks run as steps in the same scenario.',
       },
       {
         heading: 'Data-driven runs',
@@ -478,6 +478,72 @@ export const USE_CASES: UseCase[] = [
     ],
     primaryKeyword: 'record and playback testing tool',
     secondaryKeywords: ['codeless test automation tools open source', 'free no-code test automation', 'web test recorder', 'test form submission', 'regression testing for web forms'],
+  },
+  {
+    slug: 'visual-regression-testing',
+    navLabel: 'Visual regression',
+    title: 'Open-source visual regression testing',
+    description: 'Compare screenshots of your own pages with approved baselines per browser, device and location, review the differences and export approved baselines for CI.',
+    eyebrow: 'USE CASE · VISUAL REGRESSION',
+    h1: 'Visual regression testing against approved baselines, per browser, device and location.',
+    lead: 'Add a Compare screenshot step to a scenario and catch unintended visual changes on your own pages. Comparisons run locally in the free, open-source desktop app, and you approve every baseline yourself.',
+    screenshot: {
+      src: '/docs-assets/images/automation-visual-comparison.webp',
+      alt: 'Results after a visual check: 4.49% of the screenshot changed, above the 1% allowed, with baseline, current and highlighted differences side by side.',
+      caption: 'A changed run shows the approved baseline, the current screenshot and the highlighted differences.',
+      width: 1600,
+      height: 1000,
+    },
+    sections: [
+      {
+        heading: 'How a comparison works',
+        text: 'A Compare screenshot step has a unique baseline name and an allowed difference ratio from 0 to 1; the default 0.01 allows 1% of the pixels to change. Screenshots disable animations and wait for fonts before they are taken. See the [Compare screenshot step reference](/docs/automation#visual-comparisons).',
+        points: [
+          'Inputs, textareas, editable elements and [data-qa-sensitive] elements are masked by default',
+          'Add CSS selectors to mask other changing content, such as dates or rotating banners',
+          'A change in screenshot size always fails',
+        ],
+      },
+      {
+        heading: 'You approve every baseline',
+        text: 'The first run of a new step fails with No approved visual baseline. In Results, expand the case, choose View comparison, review the screenshot and click Approve baseline, then run again. Baselines are never approved automatically, and never by the CI runner.',
+      },
+      {
+        heading: 'Reviewing a change',
+        text: 'When a later run differs by more than the allowed ratio, the case fails with the share that changed, for example 4.49% against 1.00%. View comparison shows the approved baseline, the current screenshot and the highlighted differences, so you can decide whether it is a bug or an intended change to approve.',
+      },
+      {
+        heading: 'One baseline for each browser, device and location',
+        text: 'A baseline belongs to one combination of scenario, dataset row, screenshot name, masks, operating system, browser and version, device and viewport, locale and timezone, location and starting origin. One Compare screenshot step in a matrix of 2 browsers, 2 devices and 2 locations therefore keeps 8 separate baselines: [baselines per browser](/use-cases/cross-browser-testing) catch rendering differences between engines, and [baselines per device preset](/use-cases/device-testing) catch layouts that break at one viewport. Location cases need your own proxy plan.',
+      },
+      {
+        heading: 'Browser upgrades and other systems',
+        text: 'The browser version and the operating system are part of a baseline, so after a browser upgrade, or on another operating system, the first comparison asks for a new approved baseline instead of reporting a false difference.',
+      },
+      {
+        heading: 'Visual checks in CI',
+        text: 'Export approved baselines for CI writes a .qavb pack that the command-line runner, its Docker image and the GitHub Action can use. Approve baselines on the same operating system and browser versions the CI uses, for example in the Linux app with the same bundled engines; the runner image is published for linux/amd64. In CI, a missing or changed comparison is a test failure.',
+      },
+    ],
+    steps: [
+      { title: 'Build the scenario', text: 'Write the steps of your own page or form, or [record the scenario first](/use-cases/test-recorder) in a separate browser.' },
+      { title: 'Add a Compare screenshot step', text: 'Give it a unique baseline name and keep the default 1% allowed difference, or set your own.' },
+      { title: 'Run and approve', text: 'Run the matrix, review each new screenshot with View comparison and approve the baselines you accept.' },
+      { title: 'Run again after changes', text: 'Later runs compare against the approved baselines and fail with highlighted differences when the page changes.' },
+      { title: 'Export for CI', text: 'Export the approved baselines and the scenario, and run the same comparison in your pipeline.' },
+    ],
+    faqs: [
+      { question: 'Why does the first run of a screenshot step fail?', answer: 'There is no approved baseline yet. Review the screenshot in Results, approve it, and run again; from then on, runs compare against it. Nothing is approved automatically.', link: { href: '/docs/automation#results-and-reports', label: 'Results and reports' } },
+      { question: 'How do I stop dates or banners from failing the comparison?', answer: 'Mask them. Inputs, textareas, editable elements and [data-qa-sensitive] elements are masked by default, and you can add CSS selectors for any other content that changes on every visit.', link: { href: '/docs/automation#privacy-of-evidence', label: 'Privacy of evidence' } },
+      { question: 'Can the CI runner approve baselines?', answer: 'No. The runner only compares against an exported pack of baselines you approved in the desktop app. Missing or changed comparisons fail the run, with exit code 1.', link: { href: '/docs/ci-runner#outputs-and-exit-codes', label: 'Outputs and exit codes' } },
+    ],
+    docLinks: [
+      { slug: 'automation', label: 'Scenarios and matrices' },
+      { slug: 'ci-runner', label: 'CI runner' },
+      { slug: 'browsers', label: 'Browsers' },
+    ],
+    primaryKeyword: 'open source visual regression testing',
+    secondaryKeywords: ['free visual regression testing tools', 'screenshot comparison testing', 'approved baseline screenshots', 'visual testing in CI'],
   },
   {
     slug: 'geo-blocking-testing',

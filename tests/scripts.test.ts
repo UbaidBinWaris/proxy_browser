@@ -431,8 +431,14 @@ describe('macOS CI', () => {
     const settings = job.split('\n').filter((line) => !line.trim().startsWith('#')).join('\n')
     expect(settings).not.toMatch(/PROXY_QA_SIGNED_RELEASE|CSC_LINK|APPLE_API_KEY/)
     expect(deploy).toMatch(/needs: \[windows, update-smoke, macos, linux, website\]/)
-    expect(deploy).toContain('{platform:"darwin",arch:"arm64",fileName:process.env.MAC_ARM64_FILE')
-    expect(deploy).toContain('{platform:"darwin",arch:"x64",fileName:process.env.MAC_X64_FILE')
+    // Both DMGs reach the signed manifest through the metadata artifact (job outputs can be blanked by secret masking).
+    expect(job).toContain('node scripts/release-asset.mjs darwin arm64 dmg')
+    expect(job).toContain('node scripts/release-asset.mjs darwin x64 dmg')
+    expect(job).toMatch(/name: release-metadata-darwin\n\s+path: release\/metadata\/darwin-\*\.json/)
+    const publish = deploy.slice(deploy.indexOf('\n  publish:\n'), deploy.indexOf('\n  github-release:\n'))
+    expect(publish).toContain('pattern: release-metadata-*')
+    expect(publish).toContain('node scripts/sign-release-metadata.mjs release/metadata')
+    expect(deploy).not.toMatch(/needs\.(windows|linux|macos)\.outputs/)
   })
 
   it('finds the unpacked .app electron-builder leaves for each architecture', async () => {

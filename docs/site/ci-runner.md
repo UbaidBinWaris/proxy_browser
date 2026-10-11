@@ -10,7 +10,7 @@ In the desktop app, open **QA automation** and use:
 
 - **Export for CI** on a scenario. The manifest contains `scenario`, `profile` and optionally a `matrix` (`engines`, `devices`, `targets`, `concurrency`, `retries`).
 - **Export suite for CI** on a suite. It includes the suite's scenarios, profiles and workspace environments.
-- **Export approved baselines for CI** for visual comparisons, which writes a `.qavb` pack. Approve baselines on the same operating system and browser versions the CI uses (for example in the Linux app with the same bundled engines); otherwise comparisons fail.
+- **Export approved baselines for CI** for visual comparisons, which writes a `.qavb` pack. Approve baselines on the same operating system and browser versions the CI uses (for example in the Linux app with the same bundled engines); otherwise comparisons fail. How baselines are reviewed and kept per browser and device is described in [approved baselines in CI](/use-cases/visual-regression-testing).
 
 Manifests are executable configuration. Never commit real form data or credentials in them; URLs with embedded usernames or passwords are rejected.
 

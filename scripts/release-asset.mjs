@@ -1,6 +1,6 @@
 /* global process, URL */
 import { createHash } from 'node:crypto'
-import { createReadStream, readFileSync, writeFileSync } from 'node:fs'
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -22,4 +22,8 @@ const hash = createHash('sha256'); for await (const chunk of createReadStream(`$
 const sha256 = hash.digest('hex')
 const arch = platform === 'darwin' ? macArch : 'x64'
 if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, `fileName=${fileName}\nsize=${size}\nsha256=${sha256}\narch=${arch}\n`, { flag: 'a' })
-process.stdout.write(JSON.stringify({ version, platform, arch, fileName, size, sha256 }) + '\n')
+const metadata = { version, platform, arch, fileName, size, sha256 }
+// Handed to the publish job as a workflow artifact: job outputs are dropped when they contain any secret's value.
+mkdirSync(`${root}/release/metadata`, { recursive: true })
+writeFileSync(`${root}/release/metadata/${platform}-${arch}.json`, `${JSON.stringify(metadata)}\n`)
+process.stdout.write(JSON.stringify(metadata) + '\n')
