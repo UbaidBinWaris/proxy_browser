@@ -327,6 +327,14 @@ jobs:
           MAC_X64_SHA256: ${{ needs.macos.outputs.x64Sha256 }}
         run: |
           test -n "$RELEASE_SIGNING_PRIVATE_KEY"
+          # GitHub drops a job output that contains any secret's value (warning "Skip output ... since it may contain
+          # secret"), e.g. a checksum containing "22" when a secret is "22". Name the empty output instead of failing later.
+          for name in WINDOWS_FILE WINDOWS_SIZE WINDOWS_SHA256 LINUX_FILE LINUX_SIZE LINUX_SHA256 MAC_ARM64_FILE MAC_ARM64_SIZE MAC_ARM64_SHA256 MAC_X64_FILE MAC_X64_SIZE MAC_X64_SHA256; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing build output::$name is empty. GitHub drops job outputs that contain a secret's value; remove short secrets such as DEPLOY_PORT=22 (port 22 is the default) and re-run all jobs."
+              exit 1
+            fi
+          done
           umask 077
           mkdir -p .release-keys
           printf '%s\n' "$RELEASE_SIGNING_PRIVATE_KEY" > .release-keys/private-key.pem
