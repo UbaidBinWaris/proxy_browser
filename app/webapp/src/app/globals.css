@@ -222,7 +222,7 @@ img {
 
 .home-hero .hero-description {
   max-width: 640px;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1.7;
 }
 
@@ -288,6 +288,12 @@ img {
 .home-hero .shot-hero figcaption {
   margin-top: 12px;
   padding: 0 4px;
+}
+
+@media (max-width: 374px) {
+  .home-hero .pill {
+    letter-spacing: .3px;
+  }
 }
 
 @media (min-width: 481px) {
@@ -359,9 +365,10 @@ img {
   .home-hero h1 {
     font-size: clamp(40px, 3.6vw + 4px, 56px);
   }
+  /* 15px keeps the description to three lines from 1180px; 16px once the copy column reaches its full width. */
   .home-hero .hero-description {
     margin: 0;
-    font-size: 16px;
+    font-size: 15px;
   }
   .home-hero .hero-actions, .home-hero-points {
     justify-content: flex-start;
@@ -386,6 +393,12 @@ img {
       radial-gradient(40% 45% at 40% 40%, color-mix(in srgb, var(--purple) 18%, transparent), transparent),
       radial-gradient(35% 40% at 65% 65%, color-mix(in srgb, var(--mint) 22%, transparent), transparent);
     pointer-events: none;
+  }
+}
+
+@media (min-width: 1440px) {
+  .home-hero .hero-description {
+    font-size: 16px;
   }
 }
 
@@ -487,6 +500,10 @@ img {
  * page.tsx follows these widths (shell padding 22, 35, 72px; 744px at most). Change them together.
  */
 
+.home-gallery h2 {
+  text-wrap: balance;
+}
+
 .home-gallery-rows {
   display: grid;
   gap: 48px;
@@ -506,7 +523,7 @@ img {
 }
 
 .home-gallery-text h3 {
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1.25;
   letter-spacing: -.5px;
   font-weight: 600;
@@ -603,6 +620,9 @@ img {
 @media (min-width: 1001px) {
   .home-gallery-rows {
     gap: 80px;
+  }
+  .home-gallery-text h3 {
+    font-size: 24px;
   }
   .home-gallery-row {
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);

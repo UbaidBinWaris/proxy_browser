@@ -82,7 +82,7 @@ export const GALLERY_CARDS: HomeGalleryCard[] = [
   {
     icon: 'devices',
     title: `${DEVICE_PRESET_COUNT} emulated device presets`,
-    text: "Phones, tablets and desktops from Playwright's device list, plus current Android phones and desktops the project adds. The device picker filters by type, brand, operating system and orientation, and by default lists only presets the selected browser can emulate. Phone and tablet presets run in WebKit and Chromium-family browsers, not in Firefox.",
+    text: "Phones, tablets and desktops from Playwright's device list, plus current Android phones the project adds. The device picker filters by type, brand, operating system and orientation, and by default lists only presets the selected browser can emulate. Phone and tablet presets run in WebKit and Chromium-family browsers, not in Firefox.",
     docSlug: 'locations-and-devices',
     linkLabel: 'Device presets',
   },
