@@ -24,6 +24,7 @@
     "release:init": "node scripts/release.mjs init",
     "release:usb": "node scripts/release.mjs usb",
     "release:server": "node scripts/release.mjs server",
+    "deploy:website": "node scripts/deploy-website.mjs",
     "webapp:dev": "npm run dev --prefix app/webapp",
     "webapp:build": "npm run build --prefix app/webapp",
     "webapp:test": "npm test --prefix app/webapp",

@@ -1,0 +1,61 @@
+name: Deploy website
+# Website-only deploy: rebuilds app/webapp and swaps it in on the production server with deploy/install-webapp.sh,
+# which health-checks the new site and restores the previous one if anything fails. No desktop builds, no release,
+# no update-feed change: app users see no update notice. Start it from the Actions tab (Deploy website → Run workflow)
+# or from a terminal: `npm run deploy:website` (needs the GitHub CLI, `gh auth login`).
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # Shared with "Build and deploy browser releases" so a website deploy never overlaps a release.
+  group: proxy-browser-production
+  cancel-in-progress: false
+jobs:
+  website:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history: scripts/sync-docs.mjs dates each docs page by its last commit for the sitemap.
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/webapp/package-lock.json
+      - run: npm ci --prefix app/webapp
+      - run: npm audit --prefix app/webapp --omit=dev
+      - run: node scripts/sync-brand.mjs
+      # Strict: fails when a page in docs/site/manifest.json is missing or its title does not match.
+      - run: node scripts/sync-docs.mjs
+      - run: npm test --prefix app/webapp
+      - run: npm run typecheck --prefix app/webapp
+      - run: npm run build --prefix app/webapp
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - run: bash deploy/package-webapp.sh
+      - name: Install the website on the server
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          bash deploy/configure-ci-ssh.sh
+          [[ "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]
+          remote="/var/tmp/proxy-browser-site-${COMMIT_SHA}-${RUN_ID}"
+          ssh proxy-browser-production "mkdir -p '$remote'"
+          scp .deploy/webapp.tar.gz deploy/install-webapp.sh "proxy-browser-production:$remote/"
+          ssh proxy-browser-production "bash '$remote/install-webapp.sh' '$remote/webapp.tar.gz' '$COMMIT_SHA' && install -d -m 755 /opt/proxy-browser/deploy && install -m 755 '$remote/install-webapp.sh' /opt/proxy-browser/deploy/ && rm -rf '$remote'" \
+            || { echo '::error title=Website deploy::Installing the website failed; the server kept or restored the previous version. Check DEPLOY_* secrets and the server service.'; exit 1; }
+          curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/health
+          echo "Website deployed from ${COMMIT_SHA}"
+      - if: always()
+        run: rm -f ~/.ssh/proxy-browser-deploy
