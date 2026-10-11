@@ -110,6 +110,7 @@ Pushes to `main` run the verification workflows but never publish. A `v*` tag ru
 1. Verifies the signing and deployment secrets in a preflight job.
 2. Builds and tests the Windows EXE, the Linux AppImage and the website, runs the native Windows smoke test, and performs a real update on Windows (old build, signed update, restart, new build finishes). Publishing waits for all of them.
 3. Hashes each artifact in its build job, signs the manifests in the publishing job, transfers the files to the server's staging area and publishes both platforms atomically after the server re-verifies sizes, hashes and signatures.
+4. Creates or updates the matching GitHub release (notes, download links and SHA-256 checksums), built from the signed manifest the website now serves. No binaries are uploaded to GitHub.
 
 Published versions cannot be overwritten or downgraded; tag a new version instead. The same tag also builds and publishes the runner image (`runner-image.yml`) after a smoke test. One-time GitHub environment and secret setup is described in [docs/SERVER-DEPLOYMENT.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/SERVER-DEPLOYMENT.md#github-actions-setup--required-once).
 

@@ -364,3 +364,32 @@ jobs:
       - name: Clear ephemeral keys
         if: always()
         run: rm -f .release-keys/private-key.pem ~/.ssh/proxy-browser-deploy
+  github-release:
+    # After a tagged release is live, mirror it as a GitHub release (notes, download links, SHA-256) built from the
+    # signed manifest the website now serves. No binaries are uploaded: downloads stay on the website.
+    needs: publish
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/updates/stable -o published-update.json
+          node scripts/github-release-notes.mjs published-update.json "${TAG#v}" > github-release.md
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --title "Proxy QA Browser $TAG" --notes-file github-release.md --latest
+          else
+            gh release create "$TAG" --verify-tag --title "Proxy QA Browser $TAG" --notes-file github-release.md --latest
+          fi
