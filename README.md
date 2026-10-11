@@ -1,13 +1,18 @@
 # Proxy QA Browser
 
-**New: desktop QA automation.** Record and save scenarios, import test datasets, group suites, select environments,
-compare approved screenshots, check consent disclosures, lead-certificate scripts,
-accessibility (axe-core) and performance budgets, and run browser/device/location matrices,
-schedule local regression checks, export CI reports, configure custom proxy gateways,
-and manage encrypted configuration backups under **QA automation**.
-See [Desktop automation and distribution](docs/ENTERPRISE-DESKTOP.md) for usage,
-verification commands, privacy limits, and publisher setup. This edition stays
-desktop-only and requires no sign-in.
+[![Linux verification](https://github.com/UbaidBinWaris/proxy_browser/actions/workflows/linux.yml/badge.svg)](https://github.com/UbaidBinWaris/proxy_browser/actions/workflows/linux.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-555.svg)](https://proxybrowser.ubaidbinwaris.com/#download)
+
+**Free, open-source desktop QA browser for testing your own website forms by location, device and browser.**
+Launch a real browser directly or through your own proxy plan from a US state, city or ZIP, emulate phone,
+tablet and desktop presets, and keep the evidence of every run. QA automation adds recorded scenarios,
+browser × device × location matrices, consent, accessibility and performance checks, and CI reports.
+
+**[Download](https://proxybrowser.ubaidbinwaris.com/#download)** ·
+**[Documentation](https://proxybrowser.ubaidbinwaris.com/docs)** ·
+**[Use cases](https://proxybrowser.ubaidbinwaris.com/use-cases)** ·
+**[Changelog](https://proxybrowser.ubaidbinwaris.com/changelog)**
 
 Proxy QA Browser is a desktop app (Windows, Linux and macOS) for **authorized QA
 testing of your own web forms**. It opens a real browser window — bundled
