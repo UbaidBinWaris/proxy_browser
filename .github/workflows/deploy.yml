@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   preflight:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: production
     steps:
@@ -192,7 +192,8 @@ jobs:
         run: rm -f ~/.ssh/proxy-browser-deploy
   linux:
     needs: preflight
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest (Ubuntu 26 from 2026-10-19): the AppImage bundles libraries from this image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: production
     outputs:
@@ -255,7 +256,7 @@ jobs:
         run: rm -f ~/.ssh/proxy-browser-deploy
   website:
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
     steps:
@@ -298,7 +299,7 @@ jobs:
         run: rm -f ~/.ssh/proxy-browser-deploy
   publish:
     needs: [windows, update-smoke, macos, linux, website]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
     steps:
