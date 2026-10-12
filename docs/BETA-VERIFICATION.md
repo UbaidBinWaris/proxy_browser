@@ -7,7 +7,7 @@ The working tree includes the bundled demo, repeat-run comparisons and an option
 | Check | Result | Evidence |
 | --- | --- | --- |
 | Combined verification | Passed | `QA_REQUIRE_BROWSER_TESTS=1 QA_REQUIRE_DEMO_BROWSERS=chromium,firefox,webkit npm run verify` |
-| Desktop tests | 1,574 passed across 94 files | Full suite, including required Chromium, Firefox and WebKit demo integrations |
+| Desktop tests | 1,577 passed across 95 files | Full suite, including required Chromium, Firefox and WebKit demo integrations and smoke-helper path regression tests |
 | Website tests | 101 passed | Documentation, release signatures/storage, channel isolation and existing website behavior |
 | Types and lint | Passed | Desktop and website TypeScript; repository ESLint |
 | Production builds | Passed | Electron main/preload/renderer, headless-entry dependency checks and Next.js website |
@@ -40,9 +40,11 @@ For commit `d75feec`, [Windows verification](https://github.com/UbaidBinWaris/pr
 
 The failure screenshot showed that completing setup through IPC and reloading preserved the `#/setup` route. It also showed an invalid browser cache directory inside Chromium's macOS `.app` bundle. The demo smoke test now waits for the initial setup screen, completes setup and clicks the available Launch sidebar link after reload. Both desktop smoke scripts find the browser cache above Chromium's revision directory instead of assuming a fixed executable depth. Regression tests cover Apple silicon/Intel bundle paths, Windows, Linux and unknown layouts. Native macOS verification of these fixes remains pending.
 
+The next commit, `e5b854b`, failed typechecking on all three platforms because the new TypeScript regression test imported `smoke-helpers.mjs` without a declaration. Added `scripts/smoke-helpers.d.mts` with the executable-path, optional Node `PlatformPath` and string return types. Full local verification passes with this declaration: desktop and website typechecking, repository lint, 1,577 desktop tests, 101 website tests, Electron builds, headless-entry checks and the Next.js production build. All three native jobs must be rerun after it is pushed.
+
 ## Remaining release gates
 
-- Rerun native macOS build/smoke CI after the demo smoke fixes are pushed. Windows CI passed for `d75feec`; macOS packaging and platform smoke passed, but the corrected demo smoke still needs native execution. Intel macOS still requires a native device for launch testing.
+- Rerun Windows, Linux and macOS CI after the smoke-helper declaration fix is pushed. Windows CI passed for `d75feec`; macOS packaging and platform smoke passed, but the corrected demo smoke still needs native execution. Intel macOS still requires a native device for launch testing.
 - Test a real previous-version upgrade and fresh download on beta devices. This local environment has no `/dev/fuse`, so an actual FUSE-mounted Linux AppImage upgrade was not exercised. Unit/update UI checks and unpacked Linux package checks passed.
 - Publish a stable release containing the switch and the updated website API, then publish a fresh signed beta version. No public release or server deployment was performed in this session.
 - Collect the first 5–10 willing beta users' feedback and measure the five-minute first-success goal. Human beta sessions remain pending.
