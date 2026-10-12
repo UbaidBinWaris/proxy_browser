@@ -44,6 +44,20 @@ A scenario has 1–100 steps and a per-step timeout of 1–60 seconds (15 second
 
 Each case and each retry runs in a fresh browser context with a temporary profile, without modifying the saved base profile. Arbitrary JavaScript steps are not supported.
 
+## Strict form execution
+
+Enable **Strict form execution** in the scenario editor for forms where continuing after an error could create an incorrect submission. It is off for existing scenarios. Exports and the headless CLI preserve the `strict` setting.
+
+- Page JavaScript exceptions, console errors, failed network requests and HTTP responses of 400 or higher fail the case and stop subsequent actions. This includes third-party resources; a missing analytics resource can therefore fail a strict run. A blocked document, frame or pop-up stops subsequent actions in every mode.
+- After `fill`, `select`, `check` and `uncheck`, the runner reads the control's state and refuses to continue if it does not match the requested value. Text inputs, textareas and contenteditable fields are supported. Filled native controls must pass browser validation, and native submit buttons are checked for invalid form controls before clicking. These checks observe state immediately after the action; custom validation, asynchronous validation and later changes need their own form-specific assertions. Masked inputs that rewrite a value can fail an exact comparison.
+- Selector healing is disabled, and a failing check stops even when its **Continue on failure** option is enabled.
+- A text, visibility, URL or screenshot assertion must follow the final action. HTTP status alone is insufficient. Choose a confirmation that uniquely identifies successful acceptance; the runner cannot infer what your site's success message means.
+- Set matrix **Retries** to **0**. A matrix or suite containing a strict scenario rejects automatic retries before starting. Manual reruns, other matrix cases and scheduled runs remain separate executions and can repeat submissions; this mode does not provide server-side idempotency.
+
+Keep the page's third-party scripts enabled. Use **Check script loaded** to verify each required vendor's script and initialization or populated hidden field; loading a script alone does not prove that its provider accepted a submission. End the scenario with an assertion for the actual success confirmation, rather than assuming a successful click or HTTP 200 means the form was accepted. Add scenarios for required-field validation, expired sessions, delayed initialization, rejected responses and submission timeouts using synthetic test data.
+
+If a submission was sent but its confirmation did not arrive, treat the outcome as unknown and reconcile it with the site's records before running again. Strict execution cannot undo a sent request or guarantee that later asynchronous scripts have finished. For sites whose protection blocks approved automation, arrange owner-approved access through [Site access tokens](/docs/site-access-tokens) or the site's supported testing integration. This option does not promise an undetectable browser or bypass protection.
+
 ## Record actions
 
 In the scenario editor, enter a starting URL and choose **Record actions**. A separate visible browser opens with a temporary profile. For an overview, see [record-and-playback testing](/use-cases/test-recorder).

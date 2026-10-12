@@ -27,6 +27,7 @@ export interface ScenarioFormFields {
   healing: QaHealingMode
   timeout: number
   followRedirects: boolean
+  strict: boolean
   fixtures: QaFixture[]
   /** '' = no throttling. */
   networkProfile: QaNetworkProfile | ''
@@ -48,6 +49,7 @@ export function scenarioFormFields(scenario: QaScenario | null, defaultProfileId
     healing: scenario?.healing ?? 'warn',
     timeout: scenario?.timeoutMs ?? 15000,
     followRedirects: scenario?.followRedirects ?? true,
+    strict: scenario?.strict ?? false,
     fixtures: scenario?.fixtures ?? [],
     networkProfile: scenario?.networkProfile ?? '',
   }
@@ -83,6 +85,7 @@ export function scenarioDraft(base: QaScenario | null, workspaceId: string, fiel
     timeoutMs: fields.timeout,
     visualKey: base?.visualKey,
     followRedirects: fields.followRedirects,
+    strict: fields.strict,
     fixtures: fields.fixtures.length ? fields.fixtures : undefined,
     networkProfile: fields.networkProfile || undefined,
   })

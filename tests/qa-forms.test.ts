@@ -488,7 +488,7 @@ describe('scenario editor form logic', () => {
     const draft = scenarioDraft(saved, saved.workspaceId, fields)
     expect(draft.followRedirects).toBe(false)
     // The editor always writes variables and datasets; every other saved field comes back as it was.
-    expect(draft).toEqual({ ...savedInput, variables: {}, datasets: [] })
+    expect(draft).toEqual({ ...savedInput, variables: {}, datasets: [], strict: false })
     expect(scenarioDraft(saved, saved.workspaceId, { ...fields, followRedirects: true }).followRedirects).toBe(true)
   })
 
@@ -496,6 +496,22 @@ describe('scenario editor form logic', () => {
     expect(scenarioFormFields(null, 'p1')).toMatchObject({ followRedirects: true, profileId: 'p1', fixtures: [] })
     const legacy = { ...ScenarioInputSchema.parse(legacyScenario), id: 'old', createdAt: '', updatedAt: '' }
     expect(scenarioDraft(legacy, 'default', scenarioFormFields(legacy)).followRedirects).toBe(true)
+  })
+  it('keeps strict execution on through editor and export/import round trips', () => {
+    const strict = { ...saved, strict: true }
+    expect(scenarioFormFields(null).strict).toBe(false)
+    const draft = scenarioDraft(strict, strict.workspaceId, scenarioFormFields(strict))
+    expect(draft.strict).toBe(true)
+    expect(ScenarioInputSchema.parse(JSON.parse(JSON.stringify(draft))).strict).toBe(true)
+    expect(scenarioDraft(strict, strict.workspaceId, { ...scenarioFormFields(strict), strict: false }).strict).toBe(false)
+  })
+  it('requires strict forms to verify confirmation after their final action', () => {
+    expect(ScenarioInputSchema.safeParse({ ...legacyScenario, strict: true }).success).toBe(true)
+    for (const steps of [
+      [{ action: 'click', selector: '#send' }],
+      [{ action: 'click', selector: '#send' }, { action: 'assertStatus', value: 200 }],
+      [{ action: 'assertText', selector: '#done', value: 'Thanks' }, { action: 'click', selector: '#send' }],
+    ]) expect(ScenarioInputSchema.safeParse({ ...legacyScenario, strict: true, steps }).success).toBe(false)
   })
 
   it('keeps fixtures and upload steps through a round trip', () => {

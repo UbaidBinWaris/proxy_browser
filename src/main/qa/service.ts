@@ -98,6 +98,8 @@ export function createQaService(options: QaServiceOptions) {
       const input = MatrixInputSchema.parse(raw)
       const suite = input.suiteId ? store.suite(input.suiteId) : null
       const sourceScenarios = (suite ? suite.scenarioIds : [input.scenarioId]).map((id) => store.scenario(id))
+      if (input.retries > 0 && sourceScenarios.some((source) => source.strict))
+        throw new AppException('INVALID_INPUT', 'Strict form execution requires zero retries to avoid repeating submissions.')
       const scenario = sourceScenarios[0]!
       const environment = input.environmentId ? store.environment(input.environmentId) : undefined
       if (environment && environment.workspaceId !== scenario.workspaceId)

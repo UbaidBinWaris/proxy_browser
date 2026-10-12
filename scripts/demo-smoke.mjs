@@ -47,6 +47,10 @@ try {
     assert.equal(result.ok, true, result.error?.message)
     return result.data
   }
+  const expectedVersion = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version
+  const info = await api(() => window.api.app.getInfo())
+  assert.equal(info.version, expectedVersion, 'The smoke test must run the current project version.')
+  summary.version = info.version
   // Wait for the first-run guard before completing setup, so this also exercises the /setup route.
   await page.getByRole('heading', { name: 'Set up Proxy QA Browser', exact: true }).waitFor()
   await api(() => window.api.setup.complete())
@@ -106,6 +110,17 @@ try {
   summary.checks.push('Changed expectation produces a new failure; restoring it produces a recovery')
   await page.getByRole('tab', { name: 'Scenarios', exact: true }).click()
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.getByRole('switch', { name: 'Strict form execution', exact: true }).click()
+  assert.equal(await page.getByLabel('Self-healing', { exact: true }).isDisabled(), true)
+  await page.getByRole('switch', { name: 'Strict form execution', exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: join(output, 'qa-strict-editor.png') })
+  await page.getByRole('button', { name: 'Save scenario', exact: true }).click()
+  batch = await runDemo(5)
+  assert.equal(batch.status, 'passed', JSON.stringify(batch))
+  assert.equal((await api(() => window.api.qa.snapshot())).scenarios[0].strict, true)
+  summary.checks.push('Strict form execution persists through the editor and verifies a passing demo run')
+  await page.getByRole('tab', { name: 'Scenarios', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
   await page.getByRole('button', { name: 'Record actions', exact: true }).click()
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click()
   await page.getByText('stopped · 0 captured actions', { exact: true }).waitFor()
@@ -122,7 +137,7 @@ try {
   await page.reload()
   await page.getByRole('heading', { name: 'QA automation', exact: true }).waitFor()
   snapshot = await api(() => window.api.qa.snapshot())
-  assert.equal(snapshot.batches.length, 4)
+  assert.equal(snapshot.batches.length, 5)
   assert.equal(snapshot.scenarios.length, 1)
   assert.equal((await api(() => window.api.setup.status())).firstRun, false)
   assert.deepEqual(errors, [])

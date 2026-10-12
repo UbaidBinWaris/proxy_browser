@@ -100,6 +100,8 @@ export const ScenarioInputSchema = z
     maskSelectors: z.array(selector).max(30).default([]),
     captureTrace: z.boolean().default(false),
     healing: QaHealingModeSchema.default('warn'),
+    /** Fail on page/network errors, verify field changes, disable healing and refuse batch retries. */
+    strict: z.boolean().optional(),
     /**
      * Follow HTTP document redirects whose every hop stays within `allowedOrigins` (absent = true, so
      * scenarios saved before this option keep parsing unchanged). false restores strict blocking of
@@ -112,6 +114,13 @@ export const ScenarioInputSchema = z
     networkProfile: QaNetworkProfileSchema.optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.strict) {
+      const changes = new Set(['fill', 'click', 'select', 'check', 'uncheck', 'upload', 'goto', 'switchPage'])
+      const confirmation = new Set(['assertText', 'assertVisible', 'assertUrl', 'assertScreenshot'])
+      const lastChange = input.steps.reduce((last, step, index) => changes.has(step.action) ? index : last, -1)
+      if (!input.steps.some((step, index) => index > lastChange && confirmation.has(step.action)))
+        ctx.addIssue({ code: 'custom', message: 'Strict form execution needs a confirmation assertion after the last action (text, visibility, URL or screenshot). HTTP status alone is insufficient.', path: ['steps'] })
+    }
     for (const url of [
       input.startUrl,
       ...input.steps.filter((step) => step.action === 'goto').map((step) => step.value),

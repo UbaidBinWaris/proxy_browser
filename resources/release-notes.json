@@ -40,5 +40,13 @@
   ],
   "1.5.2": [
     "Redesigned home page on the download website: a clearer first screen and a shorter tour of the app. The desktop app is unchanged from 1.5.0, so updating is optional."
+  ],
+  "2.0.0": [
+    "Strict form execution: stop on script, console and network errors, verify field changes and native browser validation, disable selector healing, require a confirmation assertion and refuse automatic retries. Enable it per scenario; strict mode remains off for existing scenarios unless you enable it.",
+    "Try demo creates a bundled signup form and sample scenario so you can practice recording, replay and report exports without proxy keys or an external website.",
+    "Run comparisons highlight new failures, repeated failures and recoveries against an earlier completed run, including matching case counts and timing changes.",
+    "Receive beta updates is an optional switch beside the update controls. It saves your preference and checks a separate signed beta feed; macOS opens the exact verified download for the selected channel.",
+    "QA execution now stops subsequent actions after a blocked document, frame or pop-up instead of continuing a failed run. Smoke tests correctly handle macOS browser cache paths and setup navigation.",
+    "Strict mode improves failure handling; it does not guarantee undetectability, third-party acceptance or an error-free submission. Configure and verify each form's approved automation access, required scripts and success confirmation."
   ]
 }

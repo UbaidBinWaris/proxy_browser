@@ -33,7 +33,7 @@ export async function executeScenario(
   const sanitize = (text: string): string => redactString(externalSanitize(text), testValues)
   const started = Date.now()
   // Scenarios saved before self-healing existed have no mode; the schema default is 'warn'.
-  const healing = scenario.healing ?? 'warn'
+  const healing = scenario.strict ? 'off' : scenario.healing ?? 'warn'
   const result: QaExecution = {
     status: 'passed',
     steps: [],
@@ -47,6 +47,7 @@ export async function executeScenario(
   // The page steps run on: the main page, or a pop-up a switchPage step selected.
   let page = main
   let tracing = false
+  let blockedNavigation: string | null = null
   // Redirect evidence: every hop of the case, and the hops seen while the current step ran.
   const redirects: QaRedirectHop[] = []
   let stepRedirects: QaRedirectHop[] | null = null
@@ -85,7 +86,7 @@ export async function executeScenario(
   }
   const onResponse = (response: Response): void => {
     if (response.status() >= 400 && result.failedRequests.length < 100)
-      result.failedRequests.push(`HTTP ${response.status()} ${redactUrl(response.url())}`)
+      result.failedRequests.push(sanitize(`HTTP ${response.status()} ${redactUrl(response.url())}`))
   }
   const onConsole = (message: ConsoleMessage): void => {
     if (message.type() === 'error' && result.errors.length < 100)
@@ -96,7 +97,7 @@ export async function executeScenario(
   }
   const onFailed = (request: Request): void => {
     if (result.failedRequests.length < 100)
-      result.failedRequests.push(`${request.method()} ${redactUrl(request.url())}`)
+      result.failedRequests.push(sanitize(`${request.method()} ${redactUrl(request.url())}`))
   }
   /** Evidence listeners and navigation tracking for the main page and every pop-up of the context. */
   function watch(target: Page): PageTracker {
@@ -136,8 +137,9 @@ export async function executeScenario(
     scenario.allowedOrigins,
     scenario.timeoutMs,
     (message) => {
+      blockedNavigation = sanitize(message)
       result.status = 'failed'
-      result.errors.push(message)
+      result.errors.push(blockedNavigation)
     },
     { followRedirects: scenario.followRedirects ?? true, onRedirect, ...(uploadBytes.size ? { requestBody: restoreUploads } : {}) },
   )
@@ -147,6 +149,13 @@ export async function executeScenario(
   const assertOrigin = (): void => {
     if (!scenario.allowedOrigins.includes(new URL(page.url()).origin))
       throw new Error('Navigation left the approved origins.')
+  }
+  const assertHealthy = (): void => {
+    signal.throwIfAborted()
+    if (blockedNavigation) throw new Error(blockedNavigation)
+    if (!scenario.strict) return
+    if (result.errors.length) throw new Error('Strict form execution stopped after a page script or console error.')
+    if (result.failedRequests.length) throw new Error('Strict form execution stopped after a failed request or HTTP error.')
   }
   const screenshot = async (index: number): Promise<string | undefined> => {
     if (page.isClosed()) return undefined
@@ -209,6 +218,7 @@ export async function executeScenario(
     await page.goto(scenario.startUrl, { waitUntil: 'domcontentloaded' })
     await settleRedirects()
     assertOrigin()
+    assertHealthy()
     for (const [index, step] of scenario.steps.entries()) {
       signal.throwIfAborted()
       const began = Date.now()
@@ -216,6 +226,7 @@ export async function executeScenario(
       const hops: QaRedirectHop[] = []
       stepRedirects = hops
       try {
+        assertHealthy()
         assertOrigin()
         switch (step.action) {
           case 'goto':
@@ -224,26 +235,52 @@ export async function executeScenario(
           case 'fill': {
             const { locator, timeout } = await target(step, entry)
             await locator.fill(step.value, { timeout })
+            if (scenario.strict) {
+              const state = await locator.evaluate((element, expected) => {
+                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)
+                  return { matches: element.value === expected, valid: !element.willValidate || element.validity.valid }
+                return { matches: element instanceof HTMLElement && element.isContentEditable && element.textContent === expected, valid: true }
+              }, step.value)
+              if (!state.matches) throw new Error('The field did not retain the expected value.')
+              if (!state.valid) throw new Error('The filled field has browser validation errors.')
+            }
             break
           }
           case 'click': {
             const { locator, timeout } = await target(step, entry)
+            if (scenario.strict) {
+              const invalidForm = await locator.evaluate((element) => {
+                const submit = element instanceof HTMLButtonElement && element.type === 'submit'
+                  || element instanceof HTMLInputElement && ['submit', 'image'].includes(element.type)
+                const form = submit && (element as HTMLButtonElement | HTMLInputElement).form
+                return form && Array.from(form.elements).some((field) =>
+                  (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement)
+                  && field.willValidate && !field.validity.valid)
+              })
+              if (invalidForm) throw new Error('The form has browser validation errors; submission was stopped.')
+            }
             await locator.click({ timeout })
             break
           }
           case 'select': {
             const { locator, timeout } = await target(step, entry)
             await locator.selectOption(step.value, { timeout })
+            if (scenario.strict && await locator.inputValue({ timeout }) !== step.value)
+              throw new Error('The selected option did not retain the expected value.')
             break
           }
           case 'check': {
             const { locator, timeout } = await target(step, entry)
             await locator.check({ timeout })
+            if (scenario.strict && !await locator.isChecked({ timeout }))
+              throw new Error('The checkbox did not remain checked.')
             break
           }
           case 'uncheck': {
             const { locator, timeout } = await target(step, entry)
             await locator.uncheck({ timeout })
+            if (scenario.strict && await locator.isChecked({ timeout }))
+              throw new Error('The checkbox did not remain unchecked.')
             break
           }
           case 'upload': {
@@ -297,6 +334,7 @@ export async function executeScenario(
         await settleRedirects()
         if (isHealableStep(step)) tracker(page).markAction()
         assertOrigin()
+        assertHealthy()
       } catch (err) {
         entry.status = 'failed'
         // Playwright call logs can echo filled test data. Keep an action-specific summary.
@@ -309,11 +347,19 @@ export async function executeScenario(
       }
       entry.durationMs = Date.now() - began
       entry.screenshot ??= await screenshot(index)
+      // A page error or blocked pop-up during evidence capture must stop the next action too.
+      if (entry.status === 'passed') {
+        try { assertHealthy() } catch (err) {
+          entry.status = 'failed'
+          entry.error = signal.aborted ? 'Cancelled.' : sanitize(err instanceof Error ? err.message : 'Execution failed.').slice(0, 500)
+          result.status = signal.aborted ? 'cancelled' : 'failed'
+        }
+      }
       // Hops that start while the step's screenshot is taken (e.g. a click that navigates from a timer) are its own.
       stepRedirects = null
       if (hops.length > 0) entry.redirects = hops
       result.steps.push(entry)
-      if (entry.status === 'failed' && (signal.aborted || !continuesAfterFailure(step))) break
+      if (entry.status === 'failed' && (signal.aborted || blockedNavigation || scenario.strict || !continuesAfterFailure(step))) break
     }
   } catch (err) {
     result.status = signal.aborted ? 'cancelled' : 'failed'
@@ -332,6 +378,8 @@ export async function executeScenario(
         result.errors.push('Trace could not be saved.')
       }
     }
+    if (result.status === 'passed' && scenario.strict && (result.errors.length || result.failedRequests.length))
+      result.status = 'failed'
     signal.removeEventListener('abort', abort)
     context.off('page', onNewPage)
     for (const watched of trackers.keys()) unwatch(watched)

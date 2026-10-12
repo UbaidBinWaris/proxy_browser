@@ -4,6 +4,10 @@ Users opt in under **Settings → App & updates → Receive beta updates**, then
 
 ## Release process
 
+The next desktop release is **2.0.0**, including strict form execution, the bundled demo, run comparisons and the beta switch. Changing the package version prepares that release; it does not publish a beta. The strict mode works in either channel when the installed build includes it. Configure it per scenario as described in [Critical form automation](CRITICAL-FORM-AUTOMATION.md).
+
+Use tag `v2.0.0` to publish exactly 2.0.0 to stable through the existing tagged-release workflow. A manual run on this source with `channel: beta` publishes a distinct **2.0.x** version using the run-number scheme below. Verify native checks first and keep stable and beta version directories distinct.
+
 1. Publish a stable build that contains the switch, and deploy the website code containing `/api/updates/beta`. Existing installed versions must update to that stable build before they can see the switch.
 2. Add release notes and ensure native build/smoke workflows pass. Open **Build and deploy browser releases → Run workflow**, choose **beta** for `channel` and the intended source branch.
 3. The normal jobs build every platform, run the same checks, sign both manifests with `channel: "beta"`, deploy the website and publish the beta pointer. Read-back verification checks the signature, version and channel.

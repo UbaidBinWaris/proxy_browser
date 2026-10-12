@@ -93,6 +93,7 @@ export function ScenarioEditor({
   const [healing, setHealing] = useState<QaHealingMode>(scenario?.healing ?? 'warn')
   const [timeout, setTimeout] = useState(scenario?.timeoutMs ?? 15000)
   const [followRedirects, setFollowRedirects] = useState(() => scenarioFormFields(scenario).followRedirects)
+  const [strict, setStrict] = useState(scenario?.strict ?? false)
   const [fixtures, setFixtures] = useState<QaFixture[]>(() => scenarioFormFields(scenario).fixtures)
   const [networkProfile, setNetworkProfile] = useState<QaNetworkProfile | ''>(scenario?.networkProfile ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -138,6 +139,7 @@ export function ScenarioEditor({
       healing,
       timeout,
       followRedirects,
+      strict,
       fixtures,
       networkProfile,
     })
@@ -252,7 +254,8 @@ export function ScenarioEditor({
         >
           <Select
             id="qa-healing"
-            value={healing}
+            value={strict ? 'off' : healing}
+            disabled={strict}
             onChange={(event) => setHealing(event.target.value as QaHealingMode)}
             options={[
               { value: 'off', label: 'Off — fail when the selector matches nothing' },
@@ -261,6 +264,14 @@ export function ScenarioEditor({
             ]}
           />
         </Field>
+        <Switch
+          id="qa-strict"
+          className="md:col-span-2"
+          checked={strict}
+          onChange={setStrict}
+          label="Strict form execution"
+          description="Stop on script, console or network errors and unexpected field values. Disable selector healing and require zero retries. Add a final assertion for the submission confirmation."
+        />
         <Switch
           id="qa-follow-redirects"
           className="md:col-span-2"
