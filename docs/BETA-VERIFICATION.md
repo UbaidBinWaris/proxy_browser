@@ -34,9 +34,15 @@ Beta publication uses its own signed pointer and leaves stable publication uncha
 
 The original five documentation-sync failures were caused by sandboxed subprocess creation returning `EPERM`, with empty stderr. They passed when subprocess access was available. The helper now checks subprocess errors explicitly, so an execution restriction is reported directly rather than appearing to be a documentation validation defect.
 
+## Native CI follow-up
+
+For commit `d75feec`, [Windows verification](https://github.com/UbaidBinWaris/proxy_browser/actions/runs/38288000892) and [Linux verification](https://github.com/UbaidBinWaris/proxy_browser/actions/runs/38288001233) passed. The [macOS job](https://github.com/UbaidBinWaris/proxy_browser/actions/runs/38288000898) passed tests, arm64/x64 packaging, bundle inspection and the platform smoke test, then timed out in the demo smoke test waiting for Launch.
+
+The failure screenshot showed that completing setup through IPC and reloading preserved the `#/setup` route. It also showed an invalid browser cache directory inside Chromium's macOS `.app` bundle. The demo smoke test now waits for the initial setup screen, completes setup and clicks the available Launch sidebar link after reload. Both desktop smoke scripts find the browser cache above Chromium's revision directory instead of assuming a fixed executable depth. Regression tests cover Apple silicon/Intel bundle paths, Windows, Linux and unknown layouts. Native macOS verification of these fixes remains pending.
+
 ## Remaining release gates
 
-- Run native Windows and macOS build/smoke jobs after these changes are pushed. Windows UI fixtures and macOS platform unit tests do not replace native execution; Intel macOS still requires a native device for launch testing.
+- Rerun native macOS build/smoke CI after the demo smoke fixes are pushed. Windows CI passed for `d75feec`; macOS packaging and platform smoke passed, but the corrected demo smoke still needs native execution. Intel macOS still requires a native device for launch testing.
 - Test a real previous-version upgrade and fresh download on beta devices. This local environment has no `/dev/fuse`, so an actual FUSE-mounted Linux AppImage upgrade was not exercised. Unit/update UI checks and unpacked Linux package checks passed.
 - Publish a stable release containing the switch and the updated website API, then publish a fresh signed beta version. No public release or server deployment was performed in this session.
 - Collect the first 5–10 willing beta users' feedback and measure the five-minute first-success goal. Human beta sessions remain pending.

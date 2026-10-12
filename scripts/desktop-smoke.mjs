@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { chromiumCacheDir } from './smoke-helpers.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const output = join(root, 'smoke-output')
@@ -25,7 +26,7 @@ const env = {
   PROXY_QA_TEST_DATA_DIR: join(state, 'app'),
   XDG_DATA_HOME: state,
   LOCALAPPDATA: state,
-  PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? resolve(chromium.executablePath(), '../../..'),
+  PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH ?? chromiumCacheDir(chromium.executablePath()),
 }
 delete env.ELECTRON_RUN_AS_NODE
 // An isolated OS user-data directory keeps this smoke test away from personal profiles and keys.

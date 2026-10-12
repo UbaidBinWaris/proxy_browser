@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { chromiumCacheDir } from './smoke-helpers.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const state = await mkdtemp(join(tmpdir(), 'qa-demo-smoke-'))
@@ -26,7 +27,7 @@ const bundled = packaged && process.platform === 'linux' && executable
 const env = {
   ...process.env, PROXY_QA_TEST_DATA_DIR: join(state, 'app'), XDG_DATA_HOME: state, LOCALAPPDATA: state,
   PLAYWRIGHT_BROWSERS_PATH: bundled && existsSync(bundled) ? bundled
-    : process.env.PLAYWRIGHT_BROWSERS_PATH ?? resolve(chromium.executablePath(), '../../..'),
+    : process.env.PLAYWRIGHT_BROWSERS_PATH ?? chromiumCacheDir(chromium.executablePath()),
 }
 delete env.ELECTRON_RUN_AS_NODE
 for (const key of Object.keys(env)) if (key.startsWith('DATAIMPULSE_') || key.startsWith('QA_PROVIDER') || key.startsWith('QA_PROXY_')) delete env[key]
@@ -46,8 +47,12 @@ try {
     assert.equal(result.ok, true, result.error?.message)
     return result.data
   }
+  // Wait for the first-run guard before completing setup, so this also exercises the /setup route.
+  await page.getByRole('heading', { name: 'Set up Proxy QA Browser', exact: true }).waitFor()
   await api(() => window.api.setup.complete())
   await page.reload()
+  // Reload preserves #/setup. Wait for the completed setup state, then navigate through the sidebar.
+  await page.getByRole('link', { name: 'Launch', exact: true }).click()
   await page.getByRole('heading', { name: 'Launch', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Try demo', exact: true }).click()
   await page.getByRole('heading', { name: 'QA automation', exact: true }).waitFor()
