@@ -4,6 +4,8 @@ import type { BrowserEngineInfo } from '@shared/types'
 import { Bandage } from 'lucide-react'
 import type { MatrixInput, QaBatch, QaHealedSelector, QaScenario, QaSnapshot, QaSuite } from '@shared/qa'
 import { countHealedSteps } from '@shared/qa'
+import { compareQaRun } from '@shared/qa-history'
+import { DEMO_URL } from '@shared/demo'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -11,6 +13,8 @@ import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Tabs, tabPanelProps } from '@/components/ui/Tabs'
 import { VisualEvidence } from '@/components/qa/VisualEvidence'
+import { DemoStarter } from '@/components/qa/DemoStarter'
+import { CaseChangeBadge, RunComparison } from '@/components/qa/RunComparison'
 import { ScenarioEditor } from '@/components/qa/ScenarioEditor'
 import { SuitesEnvironments } from '@/components/qa/SuitesEnvironments'
 import { MatrixEditor } from '@/components/qa/MatrixEditor'
@@ -70,15 +74,18 @@ function HealedStep({
 }
 function Results({
   batch,
+  history,
   busy,
   perform,
 }: {
   batch: QaBatch
+  history: QaBatch[]
   busy: boolean
   perform: (fn: () => Promise<void>) => Promise<void>
 }): React.JSX.Element {
   const active = batch.status === 'queued' || batch.status === 'running'
   const healedSteps = batch.healedSteps ?? countHealedSteps(batch.cases)
+  const comparison = compareQaRun(batch, history)
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -128,6 +135,7 @@ function Results({
         <progress aria-label="Matrix progress" value={batch.completed} max={batch.total} className="mt-3 w-full" />
       ) : null}
       <CheckMatrixSummary batch={batch} />
+      {batch.status === 'passed' || batch.status === 'failed' ? <RunComparison comparison={comparison} /> : null}
       {!active && batch.cases.some((item) => item.steps.some((step) => step.visual)) ? (
         <div className="mt-3 flex items-center gap-3">
           <Button
@@ -181,6 +189,7 @@ function Results({
                     {item.status}
                     {item.status === 'passed' && item.attempt > 1 ? ' after retry' : ''}
                   </span>
+                  <CaseChangeBadge change={comparison.changes[item.id]} />
                   {item.status === 'passed' && item.steps.some((step) => step.healed) ? (
                     <Badge variant="warning" className="ml-2">
                       <Bandage className="h-3 w-3" aria-hidden="true" />
@@ -435,9 +444,16 @@ export function AutomationPage(): React.JSX.Element {
                   }}
                 />
               ) : (
-                <Button className="self-start" disabled={!profiles.length} onClick={() => setEditing('new')}>
-                  New scenario
-                </Button>
+                <>
+                  <DemoStarter workspaceId={workspaceId} disabled={busy} onReady={async (scenario) => {
+                    await refresh()
+                    setRunning(scenario)
+                    setRunningSuite(undefined)
+                  }} />
+                  <Button className="self-start" disabled={!profiles.length || busy} onClick={() => setEditing('new')}>
+                    New scenario
+                  </Button>
+                </>
               )}
               {!profiles.length ? (
                 <p className="text-sm text-muted-foreground">Create a saved browser profile first under Profiles.</p>
@@ -481,6 +497,7 @@ export function AutomationPage(): React.JSX.Element {
                       <p className="max-w-md truncate text-xs text-muted-foreground">
                         {scenario.startUrl} · {scenario.steps.length} steps
                       </p>
+                      {scenario.startUrl === DEMO_URL ? <p className="mt-1 max-w-md text-xs text-muted-foreground">Run the sample, export a report, or choose Edit → Record actions to practice on the bundled form.</p> : null}
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -548,7 +565,7 @@ export function AutomationPage(): React.JSX.Element {
               {!batches.length ? (
                 <p className="py-8 text-center text-muted-foreground">Run a scenario to see matrix results here.</p>
               ) : (
-                batches.map((batch) => <Results key={batch.id} batch={batch} busy={busy} perform={perform} />)
+                batches.map((batch) => <Results key={batch.id} batch={batch} history={batches} busy={busy} perform={perform} />)
               )}
             </div>
           ) : null}

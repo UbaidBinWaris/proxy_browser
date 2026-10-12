@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
-  try { authorize(request); return Response.json({ release: await currentRelease() }, { headers: { 'Cache-Control': 'no-store' } }) } catch (e) { return errorResponse(e) }
+  try { authorize(request); return Response.json({ release: await currentRelease(), betaRelease: await currentRelease('beta') }, { headers: { 'Cache-Control': 'no-store' } }) } catch (e) { return errorResponse(e) }
 }
 export async function POST(request: Request) {
   try {

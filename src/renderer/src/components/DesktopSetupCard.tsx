@@ -8,6 +8,8 @@ import { getApi, unwrap } from '@/lib/api'
 import { toast } from '@/stores/toasts'
 import { useUpdatesStore } from '@/stores/updates'
 import { updateBadge } from '@/lib/updates'
+import { Switch } from '@/components/ui/Switch'
+import { useSettingsStore } from '@/stores/settings'
 
 export function DesktopSetupCard({ compact = false }: { compact?: boolean }): React.JSX.Element | null {
   const [status, setStatus] = useState<DesktopStatus | null>(null)
@@ -18,6 +20,8 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   const [preview, setPreview] = useState<UsbUpdatePreview | null>(null)
   const [online, setOnline] = useState<UpdateStatus | null>(null)
   const [pinHelp, setPinHelp] = useState(false)
+  const settings = useSettingsStore((state) => state.settings)
+  const channel = settings?.updateChannel ?? 'stable'
   // The startup check's result (sidebar badge) until this card's own check answers.
   const known = updateBadge(useUpdatesStore((s) => s.availability), status?.currentVersion)
   const applyCheck = useUpdatesStore((s) => s.applyCheck)
@@ -43,9 +47,10 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   useEffect(() => {
     if (compact) return
     let active = true
+    setOnline(null)
     checkOnline().then(value => { if (active) setOnline(value) }).catch(() => undefined)
     return () => { active = false }
-  }, [compact])
+  }, [compact, channel])
 
   const action = async (name: string, run: () => Promise<void>): Promise<void> => {
     if (busy) return
@@ -65,6 +70,12 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
   const viaDownloadPage = status?.updateDelivery === 'download-page'
   const installed = !!status?.installedPath
   const currentInstalled = installed && status?.installedVersion === status?.currentVersion
+  const channelSwitch = <Switch id="settings-updateChannel" checked={channel === 'beta'} disabled={!!busy || !settings}
+    label="Receive beta updates" description="Opt in to early releases, then use the update button to install. Turn off for future stable releases; the app does not downgrade."
+    onChange={(enabled) => void action('channel', async () => {
+      await useSettingsStore.getState().update({ updateChannel: enabled ? 'beta' : 'stable' })
+      setOnline(null)
+    })} />
   return (
     <Card>
       <CardHeader
@@ -200,13 +211,15 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                 ))}
                 {!compact && <div className="space-y-3 border-t border-border pt-5">
                   <p className="text-sm font-medium">Online updates</p>
+                  {channelSwitch}
+                  <p className="text-xs font-medium">Update channel: {channel === 'beta' ? 'Beta' : 'Stable'}</p>
                   <p className="text-xs text-muted-foreground">Check the publisher’s server for a signed release. Close browser sessions before restarting; your local data and shortcuts are kept.</p>
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" disabled={!!busy} loading={busy === 'check-online'} onClick={() => void action('check-online', async () => setOnline(await checkOnline()))}>Check for updates</Button>
                     {online?.available && <Button size="sm" disabled={!!busy} loading={busy === 'apply-online'} onClick={() => void action('apply-online', async () => { await unwrap(getApi().desktop.applyOnline()) })}>Download v{online.version} and restart</Button>}
                   </div>
                   {!online && known && <p role="status" className="text-xs text-muted-foreground">{`${known.label}. Checking the signed release…`}</p>}
-                  {online && <p role="status" className="text-xs text-muted-foreground">{!online.configured ? 'Online updates are not configured in this build.' : online.available ? `Verified release v${online.version} is available.` : `You are running v${online.currentVersion}; no newer compatible release is available.`}</p>}
+                  {online && <p role="status" className="text-xs text-muted-foreground">{online.message ?? (!online.configured ? 'Online updates are not configured in this build.' : online.available ? `Verified ${channel === 'beta' ? 'beta ' : ''}release v${online.version} is available.` : `You are running v${online.currentVersion}; no newer compatible release is available.`)}</p>}
                   {busy === 'apply-online' && <p role="status" className="text-xs text-muted-foreground">Downloading and verifying the update. Large files can take several minutes. The app will restart when verification finishes.</p>}
                 </div>}
                 {!compact && (
@@ -278,6 +291,8 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                 {!compact && (
                   <div className="space-y-3 border-t border-border pt-5">
                     <p className="text-sm font-medium">Updates</p>
+                    {channelSwitch}
+                    <p className="text-xs font-medium">Update channel: {channel === 'beta' ? 'Beta' : 'Stable'}</p>
                     <div className="flex flex-wrap gap-2">
                       <Button
                         size="sm"
@@ -308,11 +323,11 @@ export function DesktopSetupCard({ compact = false }: { compact?: boolean }): Re
                     )}
                     {online && (
                       <p role="status" className="text-xs text-muted-foreground">
-                        {!online.configured
+                        {online.message ?? (!online.configured
                           ? 'Online updates are not configured in this build.'
                           : online.available
                             ? `Verified release v${online.version} is available. It opens on the website; replace the app in Applications after downloading.`
-                            : `You are running v${online.currentVersion}; no newer release for this Mac is available.`}
+                            : `You are running v${online.currentVersion}; no newer release for this Mac is available.`)}
                       </p>
                     )}
                   </div>

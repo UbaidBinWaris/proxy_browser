@@ -22,6 +22,8 @@ body:
       options:
         - Windows (portable EXE)
         - Linux (AppImage)
+        - macOS (Apple silicon)
+        - macOS (Intel)
         - Built from source
     validations:
       required: true
@@ -35,6 +37,8 @@ body:
         - Browser detection or installs
         - Devices
         - QA automation (scenarios, matrix, schedules)
+        - Bundled demo / first-run setup
+        - Run comparisons / reports
         - CI command-line runner
         - Credential vault / settings
         - Other

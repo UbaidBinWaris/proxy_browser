@@ -8,6 +8,8 @@ Everything runs locally in the desktop app: no sign-in, shared server, cloud acc
 
 ## Run your first regression check
 
+To practice first, choose **Try demo → Start matrix**. It creates a direct profile and a bundled signup scenario, so you need neither a proxy plan nor a website. See [Try a form test without proxy keys](/docs/first-run#try-a-form-test-without-proxy-keys).
+
 1. Create a saved browser profile in **Profiles** with Direct routing or a configured proxy provider. See [Launching browsers](/docs/launching#profiles).
 2. Open **QA automation**, choose or create a workspace, and click **New scenario**.
 3. Choose a base profile, enter the starting URL, and add actions and assertions, or record them (see [Record actions](#record-actions)). The starting URL's origin is approved automatically; add other approved origins explicitly when steps navigate elsewhere.
@@ -137,6 +139,10 @@ Add a **Compare screenshot** step with a unique baseline name and an allowed dif
 Changed runs show the approved screenshot, the current one and the highlighted differences; size changes fail. A baseline's identity includes the scenario, dataset ID, screenshot name, masks, operating system, browser and version, device and viewport, locale and timezone, location and starting origin, so browser upgrades or another CI platform may need new baselines. **Export approved baselines for CI** writes a `.qavb` pack for the [CI runner](/docs/ci-runner). Baselines are never approved automatically.
 
 ## Results and reports
+
+Completed results also show **Run comparison** against the most recent earlier completed run of the same scenario or suite, workspace and environment. Cases are matched by scenario, browser, device, requested location and dataset. The summary shows **new failures**, **still failing**, **recovered**, and **passed after retry**, with a change badge beside each affected case. Execution-time changes sum all available attempt durations for matched cases, including retries; this is not wall-clock time when workers run concurrently.
+
+Cancelled, interrupted, partial and internal-error runs are excluded from comparison. Unmatched or duplicate combinations are not counted as new failures. Timing changes are omitted if an older retry record lacks the durations of its earlier attempts. Comparisons use the most recent 100 retained batches available to the desktop view; pruning can remove the earlier result. Saved case identities do not capture every scenario or profile edit, so review those changes when interpreting a difference. **Passed after retry** is an observed outcome, not a diagnosis of flakiness. Comparisons are a desktop view; report exports retain their existing case and attempt evidence.
 
 **Results** lists each batch with every case's status, attempts, failed steps, console errors, failed requests, step screenshots, healed selectors and check outcomes. Exports:
 

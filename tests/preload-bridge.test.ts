@@ -170,6 +170,7 @@ describe('preload bridge', () => {
       [() => api.siteAccess.setEnabled('t1', false), IPC.siteAccess.setEnabled, ['t1', false]],
       [() => api.siteAccess.delete('t1'), IPC.siteAccess.delete, ['t1']],
       [() => api.qa.chooseFixture(), IPC.qa.chooseFixture, []],
+      [() => api.qa.prepareDemo('default'), IPC.qa.prepareDemo, ['default']],
     ]
     for (const [call, channel, args] of cases) {
       invoke.mockClear()

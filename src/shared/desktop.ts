@@ -10,6 +10,8 @@ export const AppIdSchema = z.string().regex(/^[a-z0-9]+(\.[a-z0-9-]+)+$/).max(20
 export const DESKTOP_APP_NAME = 'Proxy QA Browser'
 export const USB_MANIFEST_NAME = 'Proxy-QA-Browser-Update.json'
 export const RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+export const UpdateChannelSchema = z.enum(['stable', 'beta'])
+export type UpdateChannel = z.infer<typeof UpdateChannelSchema>
 
 /** True when `candidate` is a strictly higher x.y.z release than `current`; false for anything malformed. */
 export function newerVersion(candidate: string, current: string): boolean {
@@ -39,6 +41,7 @@ export type UpdateOutcome = z.infer<typeof UpdateOutcomeSchema>
 
 /** Result of the latest signed-feed check (the startup check or a remembered one); never a download. */
 export interface UpdateAvailability {
+  channel?: UpdateChannel
   available: boolean
   /** The newer release, when the feed offered one. */
   version: string | null
@@ -141,5 +144,6 @@ export const UsbReleaseSchema = z.object({
     .max(2),
   /** Optional macOS downloads (see MacReleaseAssetSchema); absent in manifests before macOS builds. */
   macAssets: MacReleaseAssetsSchema.optional(),
+  channel: UpdateChannelSchema.optional(),
 })
 export type UsbRelease = z.infer<typeof UsbReleaseSchema>

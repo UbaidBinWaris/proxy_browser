@@ -17,6 +17,23 @@ function fixture(version = '1.3.0') {
   return { data, online, usb: envelope(data), feed: envelope(online) }
 }
 function upload(bytes: string) { return new Request(`${origin}/api/admin/uploads`, { method: 'PUT', body: bytes, headers: { 'Content-Length': String(Buffer.byteLength(bytes)) } }) }
+test('beta publication has a separate signed pointer and cannot change the stable release', async () => {
+  const before = await currentRelease()
+  const f = fixture('1.9.0')
+  const usb = envelope({ ...f.data, channel: 'beta' }), online = envelope({ ...f.online, channel: 'beta' })
+  const key = keys.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+  assert.throws(() => verifyPair(usb, f.feed, key, origin), /disagree/)
+  for (const asset of f.data.assets) await uploadAsset('1.9.0', asset.fileName, upload(`fixture-${asset.platform}-1.9.0`))
+  await publishRelease(usb, online)
+  assert.equal((await currentRelease('beta'))?.version, '1.9.0')
+  assert.equal((await currentRelease())?.version, before?.version)
+  // A tampered channel pointer cannot make a beta release appear on the stable feed.
+  const stablePointer = join(root, 'current.json')
+  const existed = await readFile(stablePointer, 'utf8').catch(() => null)
+  await writeFile(stablePointer, JSON.stringify({ version: '1.9.0' }))
+  await assert.rejects(currentRelease(), /signed channel/)
+  if (existed) await writeFile(stablePointer, existed); else await rm(stablePointer)
+})
 test('admin is closed without token, rejects wrong tokens and foreign origins', () => {
   assert.throws(() => authorize(new Request(origin)), (e: unknown) => e instanceof ReleaseError && e.status === 401)
   assert.throws(() => authorize(new Request(origin, { headers: { authorization: 'Bearer bad' } })))

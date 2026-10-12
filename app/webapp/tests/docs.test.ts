@@ -31,7 +31,9 @@ async function fixtureRepo(name: string, pages: Record<string, string>, data: un
   return { root, out }
 }
 function sync(root: string, out: string, ...flags: string[]) {
-  return spawnSync(process.execPath, [script, '--root', root, '--out', out, ...flags], { encoding: 'utf8' })
+  const result = spawnSync(process.execPath, [script, '--root', root, '--out', out, ...flags], { encoding: 'utf8' })
+  assert.ifError(result.error)
+  return result
 }
 
 test('sync copies docs, images, release notes and NOTICE when the manifest is valid', async () => {

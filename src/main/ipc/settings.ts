@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'node:path'
 
 import { z } from 'zod'
 
-import { IPC } from '@shared/ipc'
+import { EVENTS, IPC } from '@shared/ipc'
 import { AppSettingsPatchSchema } from '@shared/types'
 import type { AppSettingsPatch } from '@shared/types'
 
@@ -52,7 +52,13 @@ export function settingsHandlers(deps: IpcDeps): HandlerSpec[] {
       if (next.screenshotDir !== undefined && next.screenshotDir !== current.screenshotDir) {
         next.screenshotDir = ensureScreenshotDir(next.screenshotDir)
       }
+      const channelChanged = next.updateChannel !== undefined && next.updateChannel !== current.updateChannel
+      if (channelChanged) deps.updates?.invalidate()
       const updated = deps.db.settings.update(next)
+      if (channelChanged) {
+        deps.onUpdateChannelChanged?.()
+        deps.broadcast(EVENTS.updateAvailable, { available: false, version: null, checkedAt: new Date().toISOString(), channel: updated.updateChannel })
+      }
       deps.logger.info('settings', 'Settings updated', { keys: Object.keys(next) })
       return updated
     }),

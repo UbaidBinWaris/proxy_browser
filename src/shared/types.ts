@@ -7,6 +7,7 @@
  * Zod v4 API is in use (e.g. `z.enum`, `z.url()`, `z.int()`, `schema.safeParse`).
  */
 import { z } from 'zod'
+import { UpdateChannelSchema } from './desktop'
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -1037,6 +1038,8 @@ export const AppSettingsSchema = z.object({
    * builds without a feed skip it. Databases created before this key existed load as `true`.
    */
   checkUpdatesOnStartup: z.boolean().default(true),
+  /** Beta releases are offered only after an explicit opt-in. */
+  updateChannel: UpdateChannelSchema.default('stable'),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 export type BrowserExecutableOverrides = AppSettings['browserExecutables']
@@ -1075,6 +1078,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'screenshotDir'> = {
   locationMatchPolicy: 'state',
   locationMatchAttempts: 3,
   checkUpdatesOnStartup: true,
+  updateChannel: 'stable',
 }
 
 // ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ import { Select } from '@/components/ui/Select'
 import { TargetingStrip } from '@/components/TargetingStrip'
 import { EngineInstallHint } from '@/components/EngineInstallHint'
 import { StartUrlInput } from '@/components/StartUrlInput'
+import { DemoStarter } from '@/components/qa/DemoStarter'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { toAppError } from '@/lib/api'
 import {
@@ -328,6 +329,11 @@ export function LaunchPage(): React.JSX.Element {
           </Button>
         }
       />
+
+      <DemoStarter workspaceId="default" onReady={async () => {
+        await useProfilesStore.getState().load()
+        navigate('/automation')
+      }} />
 
       {presetsError ? (
         <ErrorAlert

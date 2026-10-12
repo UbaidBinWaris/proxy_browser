@@ -90,6 +90,8 @@ import { mapLaunchError, mapNavigationError, sanitizeErrorText, shortErrorText }
 import { attachNetworkInspector } from './network-inspector'
 import { DEFAULT_MASK_SELECTORS, redactUrl } from '../security/data-privacy'
 import type { SiteAccessAttacher } from '../site-access'
+import { isDemoUrl } from '@shared/demo'
+import { attachDemoPage } from '../qa/demo-page'
 
 const SCOPE = 'browser'
 /** Per-session budget for `closeAll()` (app shutdown). */
@@ -483,8 +485,9 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         warning: verification.warning,
       }
     }
-    // No proxy: report the machine's own exit IP so the run record is truthful.
+    // The bundled demo has no network exit; avoid an external IP lookup for offline practice.
     const direct = { proxySessionId: null, targetMatch: null, attempts: 1, maxAttempts: 1, warning: null }
+    if (isDemoUrl(ls.formUrl)) return { ...direct, ip: null }
     try {
       return { ...direct, ip: await ipChecker.lookup(null) }
     } catch (err) {
@@ -614,6 +617,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     }
     const context = await ls.browser.newContext(buildContextOptions(ls.profile, preset))
     ls.context = context
+    if (isDemoUrl(ls.formUrl)) await attachDemoPage(context)
     await opts.siteAccess?.attach(context, (note) => logger.info(SCOPE, `${label(ls)}: ${note}`, { sessionId: ls.session.id, runId: ls.runId }))
     context.on('close', () => finalize(ls, 'window closed'))
     // Tabs the user opens are watched too: the session ends when the last one closes.

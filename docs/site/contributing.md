@@ -6,6 +6,8 @@ The canonical guide is [CONTRIBUTING.md](https://github.com/UbaidBinWaris/proxy_
 
 ## Project scope
 
+For the beta tester session, supported-platform checklist and feedback process, see [Beta release plan](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/BETA-PLAN.md).
+
 Proxy QA Browser is a desktop app for **authorized QA of web forms you own or are contracted to test**. Please check a feature against this scope before proposing it.
 
 In scope:
@@ -58,7 +60,9 @@ env -u ELECTRON_RUN_AS_NODE npm run dev
 | `npm test` | The Vitest suite |
 | `npm run typecheck` | TypeScript for the main and renderer projects |
 | `npm run lint` | ESLint |
-| `npm run verify` | Typecheck, lint, tests and build |
+| `npm run verify` | Desktop and website types, lint, tests, documentation sync and builds |
+| `npm run verify:webapp` | Documentation sync, website types, tests and production build |
+| `npm run smoke:demo` | Built desktop demo, reports, recording startup, comparison and persistence checks |
 | `npm run build` | Build `out/` and check that the headless entries load no Electron |
 | `npm run qa -- --config …` | Run the [CI runner](/docs/ci-runner) from the build |
 
@@ -67,7 +71,8 @@ Packaging scripts are in [Building and releasing](/docs/building-and-releasing).
 ## Before opening a pull request
 
 ```bash
-npm run verify   # typecheck + lint + tests + build
+npm ci --prefix app/webapp
+npm run verify   # desktop and website verification; Node 24 via .nvmrc
 ```
 
 - Add or update tests for behaviour you change. Pure logic belongs in testable modules (`src/main/**` helpers, `src/renderer/src/lib`) with injected filesystem, process and time.

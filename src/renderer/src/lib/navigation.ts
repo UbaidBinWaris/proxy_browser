@@ -79,6 +79,7 @@ export type SettingsField =
   | 'locationMatchPolicy'
   | 'locationMatchAttempts'
   | 'checkUpdatesOnStartup'
+  | 'updateChannel'
 
 export interface SettingsFieldLocation {
   tab: SettingsTab
@@ -102,6 +103,7 @@ export const SETTINGS_FIELD_LOCATIONS: Record<SettingsField, SettingsFieldLocati
   ipCheckRetries: { tab: 'advanced', section: 'ip-verification' },
   networkInspectorEnabled: { tab: 'advanced', section: 'network-inspector' },
   navigationTimeoutMs: { tab: 'advanced', section: 'network-inspector' },
+  updateChannel: { tab: 'about', section: null },
 }
 
 /** The first field (in display order) that has an error, with where it lives; null when there is none. */

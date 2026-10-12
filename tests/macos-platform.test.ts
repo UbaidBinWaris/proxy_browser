@@ -291,7 +291,7 @@ describe('macOS updates', () => {
       ['x64', 'Proxy-QA-Browser-1.5.0-macOS-x64.zip'],
     ] as const) {
       const updates = createUpdateManager({ config: { feedUrl: `${origin}/api/updates/stable`, publicKey: feed.publicKey }, currentVersion: '1.4.0', platform: 'darwin', arch, directory: await tempDir('mac-updates-'), fetchImpl })
-      expect(await updates.check()).toEqual({ configured: true, available: true, currentVersion: '1.4.0', version: '1.5.0', fileName })
+      expect(await updates.check()).toEqual({ configured: true, available: true, currentVersion: '1.4.0', version: '1.5.0', fileName, channel: 'stable' })
       await expect(updates.downloadRelease()).rejects.toThrow(DOWNLOAD_PAGE_UPDATE_MESSAGE)
     }
     // Only the feed was fetched: no macOS file was downloaded.

@@ -52,5 +52,5 @@ export function updateBadge(availability: UpdateAvailability | null, currentVers
 /** Keep the badge in step with a manual "Check for updates" in App & updates. */
 export function availabilityFromCheck(status: UpdateStatus, now: Date = new Date()): UpdateAvailability {
   const available = status.configured && status.available && !!status.version
-  return { available, version: available ? (status.version ?? null) : null, checkedAt: now.toISOString() }
+  return { available, version: available ? (status.version ?? null) : null, checkedAt: now.toISOString(), ...(status.channel ? { channel: status.channel } : {}) }
 }

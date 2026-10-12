@@ -28,7 +28,10 @@ export function desktopHandlers(deps: IpcDeps): HandlerSpec[] {
     spec(IPC.desktop.applyUsb, NoArgs, () => desktop().applyUsb()),
     spec(IPC.desktop.retryPendingUpdate, NoArgs, () => desktop().retryPendingUpdate()),
     spec(IPC.desktop.dismissUpdateNotice, NoArgs, () => desktop().dismissUpdateNotice()),
-    spec(IPC.desktop.openDownloadPage, NoArgs, () => desktop().openDownloadPage()),
+    spec(IPC.desktop.openDownloadPage, NoArgs, () => {
+      const url = deps.updates?.downloadPageUrl?.()
+      return url ? deps.shell.openExternal(url) : desktop().openDownloadPage()
+    }),
     // Answers without the integration too: builds without one simply have no known update.
     spec(IPC.desktop.updateAvailability, NoArgs, () => deps.updateAvailability?.() ?? null),
   ]

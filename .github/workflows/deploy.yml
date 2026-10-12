@@ -6,11 +6,20 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel (beta is available only to users who opt in)
+        required: true
+        default: stable
+        type: choice
+        options: [stable, beta]
 permissions:
   contents: read
 concurrency:
   group: proxy-browser-production
   cancel-in-progress: false
+env:
+  PROXY_QA_RELEASE_CHANNEL: ${{ inputs.channel || 'stable' }}
 jobs:
   preflight:
     runs-on: ubuntu-24.04
@@ -81,6 +90,10 @@ jobs:
           if [ -n "$PROXY_QA_AZURE_SIGN_ENDPOINT" ]; then export PROXY_QA_SIGNED_RELEASE=1; echo "Signing with Azure Trusted Signing"; else echo "No signing secrets configured: building an unsigned EXE"; fi
           npm run build:windows
       - run: node scripts/windows-smoke.cjs
+      - name: Verify the packaged demo workflow before publishing
+        run: |
+          npx playwright-core install chromium
+          node scripts/demo-smoke.mjs --packaged
       - id: asset
         run: node scripts/release-asset.mjs win32
       # Name, size and SHA-256 for the publish job. An artifact, not a job output: GitHub drops outputs that contain
@@ -166,6 +179,10 @@ jobs:
           npx electron-builder --mac dmg --x64 --config electron-builder.config.mjs
       - name: Smoke test the packaged Apple silicon app
         run: node scripts/macos-smoke.mjs
+      - name: Verify the packaged demo workflow before publishing
+        run: |
+          npx playwright-core install chromium
+          node scripts/demo-smoke.mjs --packaged
       - id: arm64
         run: node scripts/release-asset.mjs darwin arm64 dmg
       - id: x64
@@ -216,10 +233,11 @@ jobs:
       - run: npm audit --omit=dev
       - run: npm run typecheck
       - run: npm run lint
-      - run: npx playwright-core install --with-deps chromium
+      - run: npx playwright-core install --with-deps chromium firefox webkit
       - run: npm test
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
+          QA_REQUIRE_DEMO_BROWSERS: 'chromium,firefox,webkit'
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
@@ -232,6 +250,7 @@ jobs:
       - run: npm run build:linux
       # Headless QA runs must work with the browsers the AppImage ships (no Chromium headless shell).
       - run: node scripts/bundled-qa-smoke.mjs build/browsers/linux
+      - run: xvfb-run -a node scripts/demo-smoke.mjs --packaged
       - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/computer-setup-smoke.mjs
         env:
@@ -353,8 +372,8 @@ jobs:
           rsync -av release/Proxy-QA-Browser-Update.json release/update.json "proxy-browser-production:/var/lib/proxy-browser/staging/$RELEASE_VERSION/"
           ssh proxy-browser-production "bash '$remote/install-webapp.sh' '$remote/webapp.tar.gz' '$COMMIT_SHA' && bash '$remote/publish-release.sh' '$RELEASE_VERSION' && install -d -m 755 /opt/proxy-browser/deploy && install -m 755 '$remote/install-webapp.sh' '$remote/publish-release.sh' /opt/proxy-browser/deploy/ && rm -rf '$remote'"
           curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/health
-          curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/updates/stable -o published-update.json
-          node --input-type=module -e 'import {readFileSync} from "node:fs"; import {verify} from "node:crypto"; const envelope=JSON.parse(readFileSync("published-update.json")); if (!verify(null,Buffer.from(envelope.payload),readFileSync("resources/updates/public-key.pem"),Buffer.from(envelope.signature,"base64")) || JSON.parse(envelope.payload).version !== process.env.RELEASE_VERSION) process.exit(1)'
+          curl --fail --silent --show-error --max-time 30 "https://proxybrowser.ubaidbinwaris.com/api/updates/$PROXY_QA_RELEASE_CHANNEL" -o published-update.json
+          node --input-type=module -e 'import {readFileSync} from "node:fs"; import {verify} from "node:crypto"; const envelope=JSON.parse(readFileSync("published-update.json")); const payload=JSON.parse(envelope.payload); if (!verify(null,Buffer.from(envelope.payload),readFileSync("resources/updates/public-key.pem"),Buffer.from(envelope.signature,"base64")) || payload.version !== process.env.RELEASE_VERSION || (payload.channel || "stable") !== process.env.PROXY_QA_RELEASE_CHANNEL) process.exit(1)'
       - name: Clear ephemeral keys
         if: always()
         run: rm -f .release-keys/private-key.pem ~/.ssh/proxy-browser-deploy

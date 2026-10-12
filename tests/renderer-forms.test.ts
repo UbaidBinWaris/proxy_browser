@@ -255,6 +255,7 @@ describe('settings form validation', () => {
     locationMatchAttempts: 3,
     // Off on purpose: saving the form must keep an opt-out instead of restoring the schema default.
     checkUpdatesOnStartup: false,
+    updateChannel: 'beta' as const,
   }
 
   it('round-trips valid settings and passes executable overrides through untouched', () => {

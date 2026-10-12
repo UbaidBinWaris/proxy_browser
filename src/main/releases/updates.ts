@@ -6,7 +6,8 @@ import { AppException } from '../contracts'
 import { downloadToFile } from '../browser/installers/download'
 import type { FetchFn } from '../browser/installers/download'
 import type { UpdateStatus } from '@shared/qa'
-import { MacReleaseAssetSchema, macAssetFor, newerVersion } from '@shared/desktop'
+import { MacReleaseAssetSchema, macAssetFor, newerVersion, UpdateChannelSchema } from '@shared/desktop'
+import type { UpdateChannel } from '@shared/desktop'
 
 /** Kept here for existing importers; the comparison itself is shared with the renderer. */
 export { newerVersion }
@@ -16,6 +17,7 @@ const https = z.url({ protocol: /^https$/ }).refine((raw) => {
   return !url.username && !url.password
 })
 export const UpdatePayloadSchema = z.object({
+  channel: UpdateChannelSchema.optional(),
   version: z.string().regex(/^\d+\.\d+\.\d+$/),
   assets: z
     .array(
@@ -42,7 +44,19 @@ export const UpdatePayloadSchema = z.object({
     .max(4)
     .optional(),
 })
-export type UpdateConfig = { feedUrl: string; publicKey: string }
+export type UpdateConfig = { feedUrl: string; publicKey: string; betaFeedUrl?: string }
+
+export function updateFeedUrl(config: UpdateConfig, channel: UpdateChannel): string | null {
+  const stable = https.parse(config.feedUrl)
+  if (channel === 'stable') return stable
+  const fallback = new URL(stable)
+  if (fallback.pathname === '/api/updates/stable') fallback.pathname = '/api/updates/beta'
+  else if (!config.betaFeedUrl) return null
+  const beta = https.parse(config.betaFeedUrl ?? fallback.href)
+  if (new URL(beta).origin !== new URL(stable).origin)
+    throw new AppException('INVALID_INPUT', 'The beta feed must use the publisher’s server.')
+  return beta
+}
 
 /** Message shown when an in-app download is requested where updates go through the website (macOS). */
 export const DOWNLOAD_PAGE_UPDATE_MESSAGE = 'On macOS, download the new version from the website and replace the app in Applications.'
@@ -70,6 +84,7 @@ export function createUpdateManager({
   arch,
   directory,
   fetchImpl = fetch,
+  getChannel = () => 'stable',
 }: {
   config: UpdateConfig | null
   currentVersion: string
@@ -77,21 +92,50 @@ export function createUpdateManager({
   arch: string
   directory: string
   fetchImpl?: FetchFn
+  getChannel?: () => UpdateChannel
 }) {
   let selected: z.infer<typeof UpdatePayloadSchema>['assets'][number] | null = null
   /** macOS: the matching download, reported as available but never downloaded by the app. */
   let selectedMac: NonNullable<z.infer<typeof UpdatePayloadSchema>['macAssets']>[number] | null = null
   let downloading = false
   let selectedVersion: string | null = null
+  let selectedChannel: UpdateChannel | null = null
+  let revision = 0
+  let activeCheck: AbortController | null = null
   const manager = {
+    invalidate(): void {
+      if (downloading) throw new AppException('SESSION_LIMIT', 'Wait for the update download before changing channels.')
+      revision++
+      activeCheck?.abort()
+      selected = null
+      selectedMac = null
+      selectedVersion = null
+      selectedChannel = null
+    },
+    /** macOS uses the exact signed asset URL so beta downloads don't open the stable download page. */
+    downloadPageUrl(): string | null {
+      return selectedMac && selectedChannel === getChannel() ? selectedMac.url : downloadPageUrl(config)
+    },
     async check(): Promise<UpdateStatus> {
       if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')
       selected = null
       selectedMac = null
       selectedVersion = null
-      if (!config) return { configured: false, available: false, currentVersion }
-      https.parse(config.feedUrl)
-      const response = await fetchImpl(config.feedUrl, { signal: AbortSignal.timeout(15000), redirect: 'error' })
+      selectedChannel = null
+      const channel = getChannel(), startedRevision = revision
+      const status = { configured: !!config, available: false, currentVersion, channel }
+      if (!config) return status
+      const feedUrl = updateFeedUrl(config, channel)
+      if (!feedUrl) return { ...status, configured: false, message: 'Beta updates are not configured in this build.' }
+      const controller = new AbortController()
+      activeCheck = controller
+      const response = await fetchImpl(feedUrl, { signal: AbortSignal.any([AbortSignal.timeout(15000), controller.signal]), redirect: 'error' })
+      if (startedRevision !== revision || channel !== getChannel())
+        throw new AppException('SESSION_LIMIT', 'The update channel changed. Check for updates again.')
+      if (response.status === 404 && channel === 'beta') {
+        await response.body?.cancel().catch(() => undefined)
+        return { ...status, message: 'No beta release is published yet.' }
+      }
       if (!response.ok || !response.body)
         throw new AppException('INTERNAL', 'The signed update feed could not be loaded.')
       const reader = response.body.getReader()
@@ -109,15 +153,23 @@ export function createUpdateManager({
         await reader.cancel().catch(() => undefined)
       }
       const payload = verifyUpdateEnvelope(JSON.parse(Buffer.concat(chunks).toString('utf8')), config.publicKey)
-      if (!newerVersion(payload.version, currentVersion)) return { configured: true, available: false, currentVersion }
+      if (startedRevision !== revision || channel !== getChannel())
+        throw new AppException('SESSION_LIMIT', 'The update channel changed. Check for updates again.')
+      if ((payload.channel ?? 'stable') !== channel)
+        throw new AppException('INVALID_INPUT', 'The signed release does not match the selected update channel.')
+      if (!newerVersion(payload.version, currentVersion)) return status
       selectedVersion = payload.version
       if (platform === 'darwin') selectedMac = macAssetFor(payload.macAssets, arch)
       else selected = payload.assets.find((asset) => asset.platform === platform && asset.arch === arch) ?? null
       const offered = selected ?? selectedMac
+      if (selectedMac && new URL(selectedMac.url).origin !== new URL(feedUrl).origin)
+        throw new AppException('INVALID_INPUT', 'The update must be downloaded from the publisher’s server.')
+      selectedChannel = channel
       return {
         configured: true,
         available: !!offered,
         currentVersion,
+        channel,
         version: payload.version,
         ...(offered ? { fileName: offered.fileName } : {}),
       }
@@ -126,6 +178,7 @@ export function createUpdateManager({
       return (await manager.downloadRelease()).path
     },
     async downloadRelease() {
+      if ((selected || selectedMac) && selectedChannel !== getChannel()) throw new AppException('INVALID_INPUT', 'The update channel changed. Check for updates again.')
       if (!selected && selectedMac) throw new AppException('INVALID_INPUT', DOWNLOAD_PAGE_UPDATE_MESSAGE)
       if (!selected) throw new AppException('INVALID_INPUT', 'Check for a verified update first.')
       if (downloading) throw new AppException('SESSION_LIMIT', 'An update download is already running.')

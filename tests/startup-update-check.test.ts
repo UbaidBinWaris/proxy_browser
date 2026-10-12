@@ -18,6 +18,13 @@ const DAY = UPDATE_CHECK_INTERVAL_MS
 const NOW = Date.parse('2026-10-09T12:00:00.000Z')
 
 describe('24-hour throttle', () => {
+  it('does not reuse a remembered stable release for the beta channel', async () => {
+    const h = await harness({ channel: 'beta' }, { configured: true, available: false, currentVersion: '1.4.0', channel: 'beta' })
+    await h.store.write({ checkedAt: new Date(NOW).toISOString(), available: true, version: '1.5.0', channel: 'stable' })
+    await runStartupUpdateCheck(h.options)
+    expect(h.check).toHaveBeenCalledOnce()
+    expect(h.published).toEqual([{ available: false, version: null, checkedAt: new Date(NOW).toISOString(), channel: 'beta' }])
+  })
   it('is due without a remembered check, after a day, and when the clock moved back', () => {
     expect(isUpdateCheckDue(null, NOW)).toBe(true)
     expect(isUpdateCheckDue('not a date', NOW)).toBe(true)

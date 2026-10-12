@@ -1,0 +1,61 @@
+name: Beta feedback
+description: Share the outcome of the demo and first QA workflow.
+body:
+  - type: markdown
+    attributes:
+      value: Use synthetic data. Never include credentials, cookies, personal form data or unreviewed traces.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows x64
+        - Linux x86-64
+        - macOS Apple silicon
+        - macOS Intel
+    validations:
+      required: true
+  - type: input
+    id: timing
+    attributes:
+      label: Time to first passed demo
+      description: Measure from browser readiness; record download time separately. Say whether help was needed.
+      placeholder: 3 minutes after browser ready; 2 minutes downloading; no help
+  - type: checkboxes
+    id: completed
+    attributes:
+      label: Completed tasks
+      options:
+        - label: Finished setup without proxy credentials
+        - label: Ran the bundled demo successfully
+        - label: Recorded actions and replayed them
+        - label: Exported and understood a report
+        - label: Found a new failure and a recovery in run comparisons
+        - label: Reopened the app with saved scenario and history intact
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where did you get stuck?
+      description: Include the exact action, expected/actual result, and reproducible steps. Review screenshots before attaching them.
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Impact
+      options:
+        - Confusing but completed
+        - Needed help to continue
+        - Could not complete the task
+        - Crash or data loss
+  - type: textarea
+    id: next
+    attributes:
+      label: Most useful next improvement
+      description: Which single change would help your regular QA workflow most?

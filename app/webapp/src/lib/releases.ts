@@ -23,8 +23,9 @@ const APP_ID = 'com.ubaidbinwaris.proxy-qa-browser'
 /** SHA-256 of identities used by releases before 1.4.0; their signed manifests remain publishable. */
 const LEGACY_APP_ID_SHA256 = new Set(['75d9a5c16dc6183903353723cf75ce6289ee562066cf3aaa07ca63180d44d8be'])
 const appIdSchema = z.string().max(200).refine(id => id === APP_ID || LEGACY_APP_ID_SHA256.has(createHash('sha256').update(id).digest('hex')), 'Unknown application identity.')
-const manifestSchema = z.object({ format: z.literal(1), appId: appIdSchema, version: versionSchema, releasedAt: z.iso.datetime(), notes: z.array(z.string().min(1).max(500)).min(1).max(30), assets: assetsSchema, macAssets: macAssetsSchema.optional() })
-const onlineSchema = manifestSchema.pick({ version: true, releasedAt: true, notes: true }).extend({ assets: z.array(assetSchema.extend({ url: z.url() })).length(2), macAssets: z.array(macAssetSchema.extend({ url: z.url() })).max(4).optional() })
+export const channelSchema = z.enum(['stable', 'beta'])
+const manifestSchema = z.object({ format: z.literal(1), appId: appIdSchema, version: versionSchema, channel: channelSchema.optional(), releasedAt: z.iso.datetime(), notes: z.array(z.string().min(1).max(500)).min(1).max(30), assets: assetsSchema, macAssets: macAssetsSchema.optional() })
+const onlineSchema = manifestSchema.pick({ version: true, releasedAt: true, notes: true, channel: true }).extend({ assets: z.array(assetSchema.extend({ url: z.url() })).length(2), macAssets: z.array(macAssetSchema.extend({ url: z.url() })).max(4).optional() })
 type Asset = z.infer<typeof assetSchema> | z.infer<typeof macAssetSchema>
 /** Every downloadable file of a release: the Windows/Linux pair plus any macOS downloads. */
 export function releaseFiles(release: Release): Asset[] { return [...release.assets, ...(release.macAssets ?? [])] }
@@ -53,7 +54,7 @@ export function decodeSigned(raw: unknown, key: string) {
 }
 export function verifyPair(usbRaw: unknown, onlineRaw: unknown, key: string, origin: string): Release {
   const usb = manifestSchema.parse(decodeSigned(usbRaw, key)), online = onlineSchema.parse(decodeSigned(onlineRaw, key))
-  if (usb.version !== online.version || usb.releasedAt !== online.releasedAt || JSON.stringify(usb.notes) !== JSON.stringify(online.notes)) throw new ReleaseError(422, 'Signed manifests disagree.')
+  if (usb.version !== online.version || (usb.channel ?? 'stable') !== (online.channel ?? 'stable') || usb.releasedAt !== online.releasedAt || JSON.stringify(usb.notes) !== JSON.stringify(online.notes)) throw new ReleaseError(422, 'Signed manifests disagree.')
   for (const asset of usb.assets) {
     const counterpart = online.assets.find(a => a.platform === asset.platform)
     if (!counterpart || ['arch', 'fileName', 'size', 'sha256'].some(k => counterpart[k as keyof typeof counterpart] !== asset[k as keyof typeof asset]) || counterpart.url !== `${origin}/api/download/${usb.version}/${asset.fileName}` || !asset.fileName.includes(`-${usb.version}-`) || !asset.fileName.endsWith(asset.platform === 'win32' ? '.exe' : '.AppImage')) throw new ReleaseError(422, 'Release assets or URLs disagree.')
@@ -83,11 +84,14 @@ export function authorize(request: Request) {
   if (origin && origin !== siteUrl()) throw new ReleaseError(403, 'Origin is not allowed.')
   if (process.env.NODE_ENV === 'production' && request.headers.get('x-forwarded-proto') !== 'https') throw new ReleaseError(403, 'Administration requires HTTPS through the reverse proxy.')
 }
-export async function currentRelease(): Promise<Release | null> {
+export async function currentRelease(channel: 'stable' | 'beta' = 'stable'): Promise<Release | null> {
+  channelSchema.parse(channel)
   let version: string
-  try { version = versionSchema.parse(JSON.parse(await readFile(join(storeRoot(), 'current.json'), 'utf8')).version) }
+  try { version = versionSchema.parse(JSON.parse(await readFile(join(storeRoot(), channel === 'beta' ? 'current-beta.json' : 'current.json'), 'utf8')).version) }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e }
-  return releaseByVersion(version)
+  const release = await releaseByVersion(version)
+  if ((release.channel ?? 'stable') !== channel) throw new ReleaseError(422, 'Release pointer does not match its signed channel.')
+  return release
 }
 export async function releaseByVersion(version: string): Promise<Release> {
   versionSchema.parse(version)
@@ -135,12 +139,13 @@ async function hashAsset(path: string, expected: Asset) {
 }
 export async function publishRelease(usb: unknown, online: unknown) {
   const release = verifyPair(usb, online, await publicKey(), siteUrl()), root = storeRoot()
+  const channel = release.channel ?? 'stable'
   // A global lease serializes pointer updates across all versions.
   const unlock = await lease('publish'), unlockVersion = await lease(release.version).catch(async e => { await unlock(); throw e })
   const pointer = join(root, `current.${randomUUID()}.tmp`)
   try {
     await immutable(release.version)
-    const current = await currentRelease(); if (current && !newer(release.version, current.version)) throw new ReleaseError(409, 'The new version must increase.')
+    const current = await currentRelease(channel); if (current && !newer(release.version, current.version)) throw new ReleaseError(409, 'The new version must increase.')
     const folder = join(root, 'staging', release.version)
     for (const asset of releaseFiles(release)) await hashAsset(join(folder, asset.fileName), asset)
     for (const [file, value] of [['Proxy-QA-Browser-Update.json', usb], ['update.json', online]] as const) {
@@ -149,8 +154,8 @@ export async function publishRelease(usb: unknown, online: unknown) {
     await mkdir(join(root, 'releases'), { recursive: true, mode: 0o700 })
     await rename(folder, join(root, 'releases', release.version))
     const handle = await open(pointer, 'wx', 0o600); try { await handle.writeFile(JSON.stringify({ version: release.version })); await handle.sync() } finally { await handle.close() }
-    await rename(pointer, join(root, 'current.json'))
-    console.info(JSON.stringify({ event: 'release-published', version: release.version, time: new Date().toISOString() }))
+    await rename(pointer, join(root, channel === 'beta' ? 'current-beta.json' : 'current.json'))
+    console.info(JSON.stringify({ event: 'release-published', version: release.version, channel, time: new Date().toISOString() }))
     return release
   } finally { await rm(pointer, { force: true }); await unlockVersion(); await unlock() }
 }

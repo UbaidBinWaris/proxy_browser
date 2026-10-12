@@ -20,6 +20,7 @@ import { redactEvidence } from '../security/data-privacy'
 import { approveBatchBaseline, batchVisualEvidence } from '../qa/visual'
 import { applyHealedSelector } from '../qa/healing'
 import { readFixtureFile } from '../qa/fixtures'
+import { prepareDemo } from '../qa/demo'
 import type { IpcDeps } from './deps'
 import { IdArg, IdSchema, NoArgs, spec } from './handle'
 import type { HandlerSpec } from './handle'
@@ -43,6 +44,15 @@ export function qaHandlers(deps: IpcDeps): HandlerSpec[] {
   }
   const passphrase = z.string().min(12).max(1024)
   return [
+    spec(IPC.qa.prepareDemo, IdArg, async ([workspaceId]) => {
+      const engines = await deps.provisioner.engines()
+      const engine = engines.find((item) => item.available && item.id === 'chromium') ??
+        engines.find((item) => item.available && item.family === 'chromium') ??
+        engines.find((item) => item.available && item.id === 'firefox') ??
+        engines.find((item) => item.available && item.id === 'webkit')
+      if (!engine) throw new AppException('BROWSER_MISSING', 'Install Chromium under Settings → Browsers, then try the demo again.')
+      return prepareDemo(store(), deps.profiles, workspaceId, engine.id)
+    }),
     spec(
       IPC.qa.visualImages,
       z.tuple([IdSchema, z.string().regex(/^\d+$/), z.int().min(0).max(99)]),

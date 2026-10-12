@@ -154,7 +154,8 @@ async function hash(path) {
   return digest.digest('hex')
 }
 
-export async function createUsbRelease(root) {
+export async function createUsbRelease(root, channel = process.env.PROXY_QA_RELEASE_CHANNEL ?? 'stable') {
+  if (!['stable', 'beta'].includes(channel)) throw new Error('Release channel must be stable or beta.')
   initializeKeys(root)
   const { version } = json(join(root, 'package.json'))
   if (!VERSION.test(version)) throw new Error('Only stable major.minor.patch releases are supported.')
@@ -197,6 +198,7 @@ export async function createUsbRelease(root) {
     releasedAt: new Date().toISOString(),
     notes,
     assets,
+    ...(channel === 'beta' ? { channel } : {}),
     ...(macAssets.length ? { macAssets } : {}),
   })
   const signature = sign(
@@ -214,7 +216,8 @@ export async function createUsbRelease(root) {
   return [...assets, ...macAssets].map((asset) => asset.fileName)
 }
 
-export async function createServerReleaseFromMetadata(root, assets, origin = 'https://proxybrowser.ubaidbinwaris.com') {
+export async function createServerReleaseFromMetadata(root, assets, origin = 'https://proxybrowser.ubaidbinwaris.com', channel = process.env.PROXY_QA_RELEASE_CHANNEL ?? 'stable') {
+  if (!['stable', 'beta'].includes(channel)) throw new Error('Release channel must be stable or beta.')
   const url = new URL(origin)
   if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash)
     throw new Error('Release origin must be a plain HTTPS origin.')
@@ -236,10 +239,11 @@ export async function createServerReleaseFromMetadata(root, assets, origin = 'ht
   initializeKeys(root)
   const directory = join(root, 'release'); mkdirSync(directory, { recursive: true })
   const withUrl = asset => ({ ...asset, url: `${url.origin}/api/download/${version}/${asset.fileName}` })
-  const data = { format: 1, appId: APP_ID, version, releasedAt: new Date().toISOString(), notes, assets, ...(macAssets.length ? { macAssets } : {}) }
+  const channelField = channel === 'beta' ? { channel } : {}
+  const data = { format: 1, appId: APP_ID, version, releasedAt: new Date().toISOString(), notes, assets, ...channelField, ...(macAssets.length ? { macAssets } : {}) }
   for (const [file, value] of [
     ['Proxy-QA-Browser-Update.json', data],
-    ['update.json', { version, releasedAt: data.releasedAt, notes, assets: assets.map(withUrl), ...(macAssets.length ? { macAssets: macAssets.map(withUrl) } : {}) }],
+    ['update.json', { version, releasedAt: data.releasedAt, notes, ...channelField, assets: assets.map(withUrl), ...(macAssets.length ? { macAssets: macAssets.map(withUrl) } : {}) }],
   ]) {
     const payload = JSON.stringify(value)
     const signature = sign(null, Buffer.from(payload), readFileSync(join(root, '.release-keys', 'private-key.pem'))).toString('base64')

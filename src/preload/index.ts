@@ -48,6 +48,7 @@ const api: ProxyQaApi = {
     openDownloadPage: () => invoke(IPC.desktop.openDownloadPage),
   },
   qa: {
+    prepareDemo: (workspaceId) => invoke(IPC.qa.prepareDemo, workspaceId),
     visualImages: (batchId, caseId, stepIndex) => invoke(IPC.qa.visualImages, batchId, caseId, stepIndex),
     saveEnvironment: (input, id) =>
       id === undefined ? invoke(IPC.qa.saveEnvironment, input) : invoke(IPC.qa.saveEnvironment, input, id),

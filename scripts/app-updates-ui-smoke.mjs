@@ -44,7 +44,12 @@ try {
       if (state.cancelUsb) { state.cancelUsb = false; return ok(null) }
       return ok({ version: '1.3.0', fileName: 'Proxy-QA-Browser-1.3.0-Windows-x64.exe', notes: ['Example verified release'], size: 100 * 1024 * 1024 })
     })
-    replace('qa:check-updates', () => ok({ configured: true, available: true, currentVersion: '1.2.0', version: '1.3.0', fileName: 'Proxy-QA-Browser-1.3.0-Windows-x64.exe' }))
+    replace('qa:check-updates', async () => {
+      const saved = await browserWindow.webContents.executeJavaScript('window.api.settings.get()')
+      const channel = saved.data.updateChannel ?? 'stable'
+      const version = channel === 'beta' ? '1.4.0' : '1.3.0'
+      return ok({ configured: true, available: true, currentVersion: '1.2.0', version, channel, fileName: `Proxy-QA-Browser-${version}-Windows-x64.exe` })
+    })
     replace('desktop:apply-online', () => { state.online++; return ok(undefined) })
     replace('desktop:apply-usb', () => { state.apply++; return ok(undefined) })
     // The simulated install runs v1.2.0 everywhere (sidebar version, badge comparison, About facts).
@@ -85,6 +90,19 @@ try {
   await badge.click()
   await page.getByRole('heading', { name: 'App & updates', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Download v1.3.0 and restart' }).click()
+  const betaSwitch = page.getByRole('switch', { name: 'Receive beta updates', exact: true })
+  assert.equal(await betaSwitch.getAttribute('aria-checked'), 'false')
+  await betaSwitch.click()
+  await page.getByRole('button', { name: 'Download v1.4.0 and restart' }).waitFor()
+  assert.equal((await page.evaluate(() => window.api.settings.get())).data.updateChannel, 'beta')
+  await page.reload()
+  await page.getByRole('button', { name: 'Download v1.4.0 and restart' }).waitFor()
+  assert.equal(await betaSwitch.getAttribute('aria-checked'), 'true')
+  await page.getByRole('button', { name: 'Download v1.4.0 and restart' }).click()
+  await page.screenshot({ path: join(output, 'beta-updates.png') })
+  await betaSwitch.click()
+  await page.getByRole('button', { name: 'Download v1.3.0 and restart' }).waitFor()
+  assert.equal((await page.evaluate(() => window.api.settings.get())).data.updateChannel, 'stable')
   await page.getByRole('checkbox', { name: 'Desktop shortcut' }).uncheck()
   await page.getByRole('button', { name: 'Set up on this computer', exact: true }).click()
   await page.getByText(/Setup copy failed; please retry/).waitFor()
@@ -108,7 +126,7 @@ try {
   await page.getByRole('button', { name: 'Choose USB update' }).waitFor({ state: 'visible' })
   await page.waitForFunction(() => !document.body.textContent.includes('Verified update · v1.3.0'))
   const calls = await app.evaluate(() => { const state = globalThis.qaDesktopUi; return { pins: state.pins, launches: state.launches, apply: state.apply, online: state.online } })
-  assert.deepEqual(calls, { pins: 1, launches: 1, apply: 1, online: 1 })
+  assert.deepEqual(calls, { pins: 1, launches: 1, apply: 1, online: 2 })
   await app.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setMinimumSize(720, 650); win.setSize(760, 1050) })
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'App screen should not overflow horizontally')
   // A later startup-check event moves the badge to the newer release.
@@ -119,7 +137,7 @@ try {
   await startupSwitch.waitFor()
   assert.equal(await startupSwitch.getAttribute('aria-checked'), 'true')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['startup update badge', 'update failure notice', 'retry failure and success', 'dismiss notice', 'update-available event', 'startup check setting', 'online update discovery and restart', 'setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png', notice: 'smoke-output/update-notice.png' }, null, 2))
+  console.log(JSON.stringify({ result: 'APP UPDATES UI SMOKE PASSED', checks: ['beta opt-in beside update button', 'beta preference persists after reload', 'beta update restart action', 'return to stable channel', 'startup update badge', 'update failure notice', 'retry failure and success', 'dismiss notice', 'update-available event', 'startup check setting', 'online update discovery and restart', 'setup and retry', 'shortcut choices', 'pin guidance', 'computer-copy launch', 'invalid signature', 'verified release preview', 'restart action', 'cancel chooser', 'narrow layout'], screenshot: 'smoke-output/app-updates.png', notice: 'smoke-output/update-notice.png', beta: 'smoke-output/beta-updates.png' }, null, 2))
 } finally {
   if (app) await app.close().catch(() => {})
   await rm(stateDir, { recursive: true, force: true })

@@ -19,15 +19,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm ci --prefix app/webapp
+      - run: node scripts/sync-docs.mjs
+      - run: npm run typecheck --prefix app/webapp
+      - run: npm run webapp:test
+      - run: npm run webapp:build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
       - run: npm run typecheck
       - run: npm run lint
-      - run: npx playwright-core install --with-deps chromium
+      - run: npx playwright-core install --with-deps chromium firefox webkit
       - run: npm test
         env:
           QA_REQUIRE_BROWSER_TESTS: '1'
+          QA_REQUIRE_DEMO_BROWSERS: 'chromium,firefox,webkit'
       - run: npm run build
       - run: xvfb-run -a node scripts/runtime-copy-smoke.mjs
       - run: xvfb-run -a node scripts/desktop-smoke.mjs
+      - run: xvfb-run -a node scripts/demo-smoke.mjs
       - run: xvfb-run -a node scripts/first-run-smoke.mjs
       - run: xvfb-run -a node scripts/launcher-ui-smoke.mjs
       - run: xvfb-run -a node scripts/app-updates-ui-smoke.mjs

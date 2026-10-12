@@ -22,6 +22,7 @@ const settings = {
   locationMatchPolicy: 'exact' as const,
   locationMatchAttempts: 4,
   checkUpdatesOnStartup: true,
+  updateChannel: 'stable' as const,
 }
 
 describe('Chromium flag parsing', () => {

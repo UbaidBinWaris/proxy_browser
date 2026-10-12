@@ -57,6 +57,7 @@ export interface IpcDeps {
   updates?: UpdateManager
   /** Latest startup update-check result of this run (src/main/releases/startup-check.ts). */
   updateAvailability?: () => UpdateAvailability | null
+  onUpdateChannelChanged?: () => void
   files?: { chooseBackup(): Promise<string | null>; chooseUsb?(): Promise<string | null>; chooseFixture?(): Promise<string | null> }
   app: IpcAppInfoSource
   shell: IpcShell

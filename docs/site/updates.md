@@ -40,9 +40,15 @@ In **Settings → App & updates**, click **Check for updates**. When a newer rel
 
 ![Settings, App & updates: the installed version, platform and Playwright version, the data, key and vault locations, and the attribution notes.](images/settings-about.webp "Settings → App & updates shows the version, where your data lives and the update controls.")
 
+### Optional beta updates
+
+Anyone can opt in under **Settings → App & updates → Receive beta updates**. The switch is off by default. Turning it on saves **Beta** as your update channel and checks the separate signed beta feed. When a newer compatible beta is available, use the existing **Download v… and restart** button to install it. The switch itself does not download or restart the app. On macOS, **Download v…** opens the exact signed beta download rather than the stable download page.
+
+If no beta has been published, the app says so. Turn the switch off to receive future stable releases. The app keeps the installed version and never downgrades; if your beta is newer than the current stable release, wait for a newer stable release. Switching channels clears the previous update selection and badge. The setting persists across reloads, restarts and updates.
+
 ### Startup update check
 
-With **Settings → General → Check for updates on startup** on (the default), the app checks the signed feed once after the window opens, at most once every 24 hours.
+With **Settings → General → Check for updates on startup** on (the default), the app checks the selected channel's signed feed once after the window opens, at most once every 24 hours. Stable and beta checks are remembered separately.
 
 - It only verifies the feed; **nothing is downloaded** until you click **Download v… and restart**.
 - A newer release shows an **Update** badge next to the version in the sidebar.

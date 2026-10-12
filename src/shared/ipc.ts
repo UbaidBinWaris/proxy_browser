@@ -83,6 +83,7 @@ export const IPC = {
     openDownloadPage: 'desktop:open-download-page',
   },
   qa: {
+    prepareDemo: 'qa:prepare-demo',
     visualImages: 'qa:visual-images',
     saveEnvironment: 'qa:save-environment',
     deleteEnvironment: 'qa:delete-environment',
@@ -266,6 +267,8 @@ export interface ProxyQaApi {
     openDownloadPage(): Promise<IpcResult<void>>
   }
   qa: {
+    /** Create or reuse the bundled practice scenario and its direct browser profile. */
+    prepareDemo(workspaceId: string): Promise<IpcResult<QaScenario>>
     visualImages(
       batchId: string,
       caseId: string,

@@ -5,7 +5,9 @@
   "main": "out/main/index.js",
   "scripts": {
     "qa": "node out/main/qa-cli.js",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build && npm run verify:webapp",
+    "verify:webapp": "node scripts/sync-docs.mjs && npm run typecheck --prefix app/webapp && npm run webapp:test && npm run webapp:build",
+    "smoke:demo": "node scripts/demo-smoke.mjs",
     "test": "vitest run",
     "dev": "electron-vite dev",
     "build": "electron-vite build && node scripts/check-headless-entries.mjs",

@@ -1,5 +1,6 @@
 import type { Request, Route } from 'playwright-core'
 import { decideDocumentRedirect, isRedirectStatus, redirectKey, trampolineResponse } from '../security/redirects'
+import { fulfillDemoRequest } from './demo-page'
 
 /** One document redirect the guard saw. URLs are raw: redact them before storing as evidence. */
 export interface NavigationRedirectEvent {
@@ -57,6 +58,7 @@ export function navigationGuard(
   return async (route: Route): Promise<void> => {
     const request = route.request()
     if (!request.isNavigationRequest()) {
+      if (await fulfillDemoRequest(route)) return
       // fallback (not continue): with no other route this continues the request unchanged, and it lets an
       // earlier-registered handler (site access tokens, src/main/site-access/attach.ts) perform it safely.
       await route.fallback()
@@ -68,6 +70,8 @@ export function navigationGuard(
       await route.abort('blockedbyclient')
       return
     }
+    // Bundled sample documents still pass the same approved-origin check as any other site.
+    if (await fulfillDemoRequest(route)) return
     const key = redirectKey(request.url())
     const method = request.method()
     let hops = 0

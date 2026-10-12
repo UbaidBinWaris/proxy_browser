@@ -356,6 +356,8 @@ export interface QaExport {
   fileName: string
 }
 export interface UpdateStatus {
+  channel?: 'stable' | 'beta'
+  message?: string
   configured: boolean
   available: boolean
   currentVersion: string

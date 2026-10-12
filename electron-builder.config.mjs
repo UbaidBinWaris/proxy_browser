@@ -217,7 +217,7 @@ const config = {
     qaReleaseNotes: notes,
     ...(existsSync(publicKeyPath) ? { qaOfflineUpdates: { publicKey: readFileSync(publicKeyPath, 'utf8') } } : {}),
     ...(existsSync(publicKeyPath)
-      ? { qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED || 'https://proxybrowser.ubaidbinwaris.com/api/updates/stable', publicKey: readFileSync(publicKeyPath, 'utf8') } }
+      ? { qaUpdates: { feedUrl: process.env.PROXY_QA_UPDATE_FEED || 'https://proxybrowser.ubaidbinwaris.com/api/updates/stable', ...(process.env.PROXY_QA_BETA_UPDATE_FEED ? { betaFeedUrl: process.env.PROXY_QA_BETA_UPDATE_FEED } : {}), publicKey: readFileSync(publicKeyPath, 'utf8') } }
       : {}),
   },
 }

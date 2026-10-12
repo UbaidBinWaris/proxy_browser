@@ -68,6 +68,11 @@ jobs:
       - name: Smoke test the packaged arm64 app
         run: node scripts/macos-smoke.mjs
 
+      - name: Demo, recording, reports and run comparisons in the packaged app
+        run: |
+          npx playwright-core install chromium
+          node scripts/demo-smoke.mjs --packaged
+
       - name: Upload smoke results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

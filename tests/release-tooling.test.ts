@@ -19,6 +19,19 @@ async function fixture() {
   await writeFile(join(root, 'resources', 'release-notes.json'), JSON.stringify({ '1.2.0': ['New release'] }))
   return root
 }
+it('signs the beta channel into both manifests and leaves stable legacy metadata unchanged', async () => {
+  const root = await fixture()
+  const assets = [{ platform: 'win32', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-Windows-x64.exe', size: 1, sha256: 'a'.repeat(64) },
+    { platform: 'linux', arch: 'x64', fileName: 'Proxy-QA-Browser-1.2.0-x86_64.AppImage', size: 1, sha256: 'b'.repeat(64) }]
+  await createServerReleaseFromMetadata(root, assets, 'https://publisher.test', 'beta')
+  const key = createPublicKey(await readFile(join(root, 'resources', 'updates', 'public-key.pem')))
+  for (const file of ['Proxy-QA-Browser-Update.json', 'update.json']) {
+    const signed = JSON.parse(await readFile(join(root, 'release', file), 'utf8'))
+    expect(verify(null, Buffer.from(signed.payload), key, Buffer.from(signed.signature, 'base64'))).toBe(true)
+    expect(JSON.parse(signed.payload).channel).toBe('beta')
+  }
+  await expect(createServerReleaseFromMetadata(root, assets, 'https://publisher.test', 'nightly')).rejects.toThrow(/channel/)
+})
 
 it('increments semantic versions and synchronizes the package and lockfile', async () => {
   expect(nextVersion('1.2.9', 'patch')).toBe('1.2.10')

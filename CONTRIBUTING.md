@@ -56,7 +56,10 @@ fixtures, screenshots or issue reports.
 ## Before opening a pull request
 
 ```bash
-npm run verify   # typecheck + lint + tests + build
+npm ci --prefix app/webapp
+npm run verify   # desktop + website: typecheck, lint, tests, documentation sync and builds
+QA_REQUIRE_DEMO_BROWSERS=chromium,firefox,webkit npm test # require all three demo browser integrations
+npm run smoke:demo # built desktop demo, reports, recording and run comparisons; isolated app data
 ```
 
 - Add or update tests for behavior you change. Pure logic belongs in testable

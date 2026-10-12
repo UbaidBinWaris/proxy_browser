@@ -3,7 +3,7 @@ import * as nodeFileSystem from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { RELEASE_VERSION, newerVersion } from '@shared/desktop'
-import type { UpdateAvailability } from '@shared/desktop'
+import type { UpdateAvailability, UpdateChannel } from '@shared/desktop'
 import type { UpdateStatus } from '@shared/qa'
 import type { Logger } from '../contracts'
 
@@ -16,6 +16,7 @@ const UpdateCheckStateSchema = z.object({
   checkedAt: z.string().datetime(),
   available: z.boolean(),
   version: z.string().regex(RELEASE_VERSION).nullable(),
+  channel: z.enum(['stable', 'beta']).optional(),
 })
 export type UpdateCheckState = z.infer<typeof UpdateCheckStateSchema>
 
@@ -33,7 +34,7 @@ export function isUpdateCheckDue(lastCheckedAt: string | null, now: number, inte
 /** A remembered check that still names a release newer than the running version; null otherwise. */
 export function rememberedUpdate(state: UpdateCheckState | null, currentVersion: string): UpdateAvailability | null {
   if (!state?.available || !state.version || !newerVersion(state.version, currentVersion)) return null
-  return { available: true, version: state.version, checkedAt: state.checkedAt }
+  return { available: true, version: state.version, checkedAt: state.checkedAt, ...(state.channel ? { channel: state.channel } : {}) }
 }
 
 export function createUpdateCheckStore(opts: {
@@ -67,6 +68,7 @@ export function createUpdateCheckStore(opts: {
 export type UpdateCheckStore = ReturnType<typeof createUpdateCheckStore>
 
 export interface StartupUpdateCheckOptions {
+  channel?: UpdateChannel
   /** settings.checkUpdatesOnStartup */
   enabled: boolean
   /** False for builds without a signed feed: nothing is checked or remembered. */
@@ -90,7 +92,8 @@ const SCOPE = 'updates'
  */
 export async function runStartupUpdateCheck(opts: StartupUpdateCheckOptions): Promise<UpdateAvailability | null> {
   if (!opts.configured || !opts.enabled) return null
-  const state = await opts.store.read()
+  const saved = await opts.store.read()
+  const state = saved && (saved.channel ?? 'stable') === (opts.channel ?? 'stable') ? saved : null
   const now = opts.now()
   if (!isUpdateCheckDue(state?.checkedAt ?? null, now.getTime(), opts.intervalMs)) {
     const remembered = rememberedUpdate(state, opts.currentVersion)
@@ -100,13 +103,15 @@ export async function runStartupUpdateCheck(opts: StartupUpdateCheckOptions): Pr
   const checkedAt = now.toISOString()
   try {
     const result = await opts.check()
+    if ((result.channel ?? 'stable') !== (opts.channel ?? 'stable')) return null
     const availability: UpdateAvailability = {
       available: result.available,
       version: result.available ? (result.version ?? null) : null,
       checkedAt,
+      ...(opts.channel ? { channel: opts.channel } : {}),
     }
     await opts.store
-      .write({ checkedAt, available: availability.available, version: availability.version })
+      .write({ checkedAt, available: availability.available, version: availability.version, ...(opts.channel ? { channel: opts.channel } : {}) })
       .catch((error: unknown) => opts.logger.warn(SCOPE, 'Could not remember the update check', { error }))
     opts.logger.info(
       SCOPE,
@@ -117,7 +122,7 @@ export async function runStartupUpdateCheck(opts: StartupUpdateCheckOptions): Pr
   } catch (error) {
     // Count the attempt so an unreachable feed is not asked again on every start; keep what was known.
     await opts.store
-      .write({ checkedAt, available: state?.available ?? false, version: state?.version ?? null })
+      .write({ checkedAt, available: state?.available ?? false, version: state?.version ?? null, ...(opts.channel ? { channel: opts.channel } : {}) })
       .catch(() => undefined)
     opts.logger.warn(SCOPE, 'Startup update check failed; try again from App & updates', { error })
     const remembered = rememberedUpdate(state, opts.currentVersion)

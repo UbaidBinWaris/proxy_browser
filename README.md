@@ -1687,6 +1687,12 @@ No column ever holds a login or password.
 
 ### Testing
 
+Use Node 24 (`.nvmrc`) to match CI, install both dependency trees (`npm ci` and `npm ci --prefix app/webapp`), and run `npm run verify` for desktop and website checks. After building, `npm run smoke:demo` verifies the bundled practice workflow with isolated data. See the [beta release plan](docs/BETA-PLAN.md) for native-platform gates and the tester session.
+
+The app provides **Try demo** on Launch and under QA automation. It creates a direct profile and a bundled signup scenario that works offline once a browser is installed. Completed automation runs show comparisons with earlier matching results: new failures, cases still failing, recoveries, retry passes and execution-time changes. See [First run](docs/site/first-run.md#try-a-form-test-without-proxy-keys) and [Results and reports](docs/site/automation.md#results-and-reports).
+
+Anyone can opt in to **Receive beta updates** beside the update controls in **Settings → App & updates**. See [Publishing beta updates](docs/BETA-UPDATES.md) and the [verification record](docs/BETA-VERIFICATION.md) for rollout steps and current release gates.
+
 ```bash
 npm test                    # unit and integration tests, incl. real-browser recording and visual comparisons
 npx vitest run tests/dataimpulse.test.ts

@@ -669,6 +669,7 @@ async function bootstrap(): Promise<Runtime> {
   }
   const updateDirs = updateDirectories(paths.data)
   const updates = createUpdateManager({
+    getChannel: () => db.settings.get().updateChannel,
     config: metadata.qaUpdates ?? null,
     currentVersion: app.getVersion(),
     platform: process.platform,
@@ -781,6 +782,7 @@ async function bootstrap(): Promise<Runtime> {
       siteAccess: siteAccess.store,
       updates,
       updateAvailability: () => latestUpdate,
+      onUpdateChannelChanged: () => { latestUpdate = null },
       desktop,
       files: {
         chooseUsb: async () => {
@@ -822,12 +824,14 @@ async function bootstrap(): Promise<Runtime> {
   void runStartupUpdateCheck({
     enabled: db.settings.get().checkUpdatesOnStartup,
     configured: !!metadata.qaUpdates,
+    channel: db.settings.get().updateChannel,
     currentVersion: app.getVersion(),
-    store: createUpdateCheckStore({ path: join(paths.data, UPDATE_CHECK_FILE) }),
+    store: createUpdateCheckStore({ path: join(paths.data, db.settings.get().updateChannel === 'beta' ? 'update-check-beta.json' : UPDATE_CHECK_FILE) }),
     check: () => updates.check(),
     now: () => new Date(),
     logger,
     publish: (availability) => {
+      if ((availability.channel ?? 'stable') !== db.settings.get().updateChannel) return
       latestUpdate = availability
       broadcast(EVENTS.updateAvailable, availability)
     },

@@ -21,6 +21,14 @@ Platform differences:
 
 Until you click **Open launcher**, each start reopens the wizard at the first step that still needs attention: **Browsers** while engines are still missing (Windows and macOS), **Proxy credentials** while no product has keys, otherwise **Done**. After that the app always opens on **Launch**.
 
+## Try a form test without proxy keys
+
+After setup, click **Try demo** on **Launch** or under **QA automation → Scenarios**. The app creates a direct browser profile and a seven-step **Demo signup** scenario with synthetic values. Click **Try demo** in Scenarios, then **Start matrix**. Inspect **Results** and export a JSON, JUnit or HTML report.
+
+The practice page is bundled inside the app at `http://demo.proxyqa.test/`. That address is fulfilled locally by the app, recorder and CI runner; it is not a public website. Once a compatible browser is installed, it works offline and creates no real account. Reusing the demo preserves edits to your sample. To practice recording, choose **Edit → Record actions**, fill the form with the displayed sample values, stop recording, use the recorded steps and add an assertion for `#result` containing `Demo account ready.`.
+
+Run the same scenario twice to see a run comparison. To practice diagnosing a failure, change the final expected text, run again, then restore the text and rerun. Results distinguishes a new failure from a recovered case.
+
 ## Proxy keys
 
 You can skip proxy keys entirely. Direct launches, which use this computer's own connection, need no keys. Add keys at any time with **Manage keys** on the Launch page, or under **Settings → Advanced → Proxy keys → Manage keys…**.
