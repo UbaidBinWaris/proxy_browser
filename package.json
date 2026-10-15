@@ -52,7 +52,7 @@
     "pixelmatch": "7.1.0",
     "playwright-core": "1.63.0",
     "pngjs": "7.0.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "overrides": {
     "http-cache-semantics": "4.3.0",
