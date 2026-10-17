@@ -14,6 +14,7 @@ import { downloadResponse } from '../src/lib/releases.ts'
 import { SITE_URL } from '../src/lib/site.ts'
 import { USE_CASES } from '../src/lib/use-cases.ts'
 import { proxy } from '../src/proxy.ts'
+import { GET as llmsTxt } from '../src/app/llms.txt/route.ts'
 
 const app = resolve(import.meta.dirname, '../src/app')
 
@@ -30,6 +31,13 @@ test('robots.txt allows the site, keeps crawlers out of /api/ and lists the site
   assert.equal(result.sitemap, `${SITE_URL}/sitemap.xml`)
   assert.equal(result.host, undefined, 'host is not a standard robots.txt directive')
   assert.ok(!JSON.stringify(result.rules).includes('/admin'), '/admin must stay crawlable so its noindex meta is seen')
+})
+
+test('llms.txt says what the app is and is not for, and lists every use case', async () => {
+  const text = await (await llmsTxt()).text()
+  assert.match(text, /## A good fit for\n/)
+  assert.match(text, /## Not a fit for\n[\s\S]*Physical phones and tablets[\s\S]*Bypassing bot detection/)
+  for (const useCase of USE_CASES) assert.ok(text.includes(`${SITE_URL}/use-cases/${useCase.slug}`), useCase.slug)
 })
 
 test('release downloads are served with X-Robots-Tag: noindex', async () => {

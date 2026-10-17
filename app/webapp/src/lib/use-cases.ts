@@ -218,6 +218,7 @@ export const USE_CASES: UseCase[] = [
       { title: 'Fix and export', text: 'Fix each failing combination, run again, and export the HTML report for the record or JUnit for CI.' },
     ],
     faqs: [
+      { question: 'How do I test a TCPA consent checkbox and disclosure across devices?', answer: 'In Proxy QA Browser, build or record a scenario for your own lead form, add a Check consent checkbox step before the box is ticked and a Check consent disclosure step with your approved wording, then run it as a matrix of phone, tablet and desktop presets. Each case reports whether the box was pre-checked and the disclosure\'s wording, visibility, font size, contrast and distance to the submit button.' },
       { question: 'Is this legal advice?', answer: 'No. The checks automate repeatable parts of consent QA and cannot prove that a page complies with any law. Your counsel decides the approved wording, placement rules and consent requirements; the checks test the page against the wording and thresholds you set.', link: { href: '/disclaimer', label: 'Disclaimer' } },
       { question: 'Which font-size and contrast thresholds does the check use?', answer: 'Configurable defaults, not legal minimums: 10 px font and a 4.5:1 WCAG AA contrast ratio, with no large-text exception (set 3 for disclosures that are WCAG large text). Your counsel decides the actual requirement; the check tests the page against the thresholds you set.', link: { href: '/docs/checks#consent-disclosure-checkconsent', label: 'Disclosure check reference' } },
       { question: 'Does the check contact TrustedForm or Jornaya?', answer: 'No. The runner never calls these services. Your page\'s own script contacts its vendor exactly as it would for a visitor, so use the vendor\'s test or staging configuration where it offers one. The token or certificate value is never recorded.', link: { href: '/docs/checks#lead-certificate-scripts-checkscriptloaded', label: 'Lead-certificate script check reference' } },
@@ -383,6 +384,7 @@ export const USE_CASES: UseCase[] = [
       { title: 'Automate the matrix', text: 'Record the flow once in QA automation, run it across engines and devices, then export the report.' },
     ],
     faqs: [
+      { question: 'Is there a free, open-source tool for cross-browser testing of web forms?', answer: 'Yes. Proxy QA Browser is free and open source under the Apache License 2.0. It opens your own forms in bundled Chromium, Firefox and WebKit and in installed Chrome, Edge, Brave and Opera, by hand or as a recorded matrix, on Windows, Linux and macOS with no account.' },
       { question: 'Is WebKit the same as Safari?', answer: 'No. WebKit is the open-source engine Safari is built on, driven by Playwright and labelled "WebKit / Safari-compatible QA" in the app. It catches WebKit-specific layout and behaviour issues, but it does not replace testing in Apple Safari when that matters.' },
       { question: 'Can I test WebKit on Windows?', answer: 'Yes. The app downloads a native Windows build of WebKit, the engine Safari is built on, during first-run setup or later from Settings. It is not Safari itself.', link: { href: '/docs/faq#does-it-work-the-same-on-windows-linux-and-macos', label: 'Platform differences' } },
       { question: 'Which browsers run in CI?', answer: 'The runner Docker image, which the GitHub Action uses, contains Chromium, Firefox and WebKit. Installed vendor browsers such as Chrome, Edge and Brave are not included. The image is published for linux/amd64.', link: { href: '/docs/ci-runner#docker-image', label: 'Docker image' } },
@@ -604,6 +606,7 @@ export const USE_CASES: UseCase[] = [
       { title: 'Export the evidence', text: 'Export the HTML report, which lists redirect hops, for the record, or JUnit for CI.' },
     ],
     faqs: [
+      { question: 'How do I test geo-blocking on my own site from different US cities?', answer: 'In Proxy QA Browser, write a scenario with assertStatus, assertText or assertUrl for what each market should get, then run it as a matrix with one country, US state or city per market from your own proxy plan. Each case checks its exit IP before the browser opens and records the HTTP status and every redirect hop.' },
       { question: 'How do I assert that a region is blocked?', answer: 'Run the scenario from a location in that region and add assertStatus with the status your block returns, such as 403 or 451, plus assertText for the block notice. assertStatus checks the final document after any redirects.', link: { href: '/docs/automation#steps', label: 'Steps reference' } },
       { question: 'Why was my redirect blocked?', answer: 'Redirects are followed only while every hop stays on an approved origin, so add the regional origin to the scenario\'s approved origins. A 307 or 308 redirect of a form POST to another origin is always blocked.', link: { href: '/docs/automation#origin-isolation', label: 'How redirects are handled' } },
       { question: 'Can I test geo rules outside the US?', answer: 'Yes, for country rules: Country targeting accepts any two-letter code. State, city and ZIP rules can be tested only for US targets.', link: { href: '/docs/locations-and-devices#choosing-a-location', label: 'Choosing a location' }, ownedBy: '/use-cases/location-testing' },
@@ -615,6 +618,80 @@ export const USE_CASES: UseCase[] = [
     ],
     primaryKeyword: 'geo-blocking test',
     secondaryKeywords: ['geo block tester', 'test country blocking', 'test geoip blocking', 'geo block test website', 'geo redirect test'],
+  },
+  {
+    slug: 'cloud-testing-alternative',
+    navLabel: 'Cloud testing alternative',
+    title: 'Open-source alternative to cloud testing',
+    description: 'Test your own forms by browser, emulated device and location on your own computer: free, open source, no account. What it covers and what it does not.',
+    eyebrow: 'COMPARISON · LOCAL VS CLOUD',
+    h1: 'A free, local alternative to cloud browser testing for your own forms.',
+    lead: 'Proxy QA Browser runs bundled Chromium, Firefox and WebKit and your installed Chromium-family browsers on your own computer, with emulated phones, tablets and desktops and, with your own proxy plan, an exit location checked before the window opens. It is free and open source, needs no account, and keeps scenarios, evidence and keys on your machine. It is not a cloud of physical devices.',
+    screenshot: {
+      src: '/docs-assets/images/history.webp',
+      alt: 'The History page: profile, run and success-rate totals above a table of runs with time, profile, engine, device, pool, requested location and exit IP.',
+      caption: 'Every launch and its evidence stay on your computer, listed with browser, device, location and exit IP.',
+      width: 1600,
+      height: 1000,
+    },
+    sections: [
+      {
+        heading: 'Is there an open-source BrowserStack alternative for manual form testing?',
+        text: 'For manual and recorded testing of your own forms, Proxy QA Browser is one: free under the Apache License 2.0, for Windows, Linux and macOS. Cloud services such as BrowserStack and LambdaTest run browsers and physical devices in their data centres and sell access by subscription. Proxy QA Browser runs the browsers on your computer instead, so there is no account, subscription or session to book.',
+        note: 'BrowserStack and LambdaTest are trademarks of their owners; this project is not affiliated with them.',
+      },
+      {
+        heading: 'What runs on your own computer',
+        text: 'Everything below is part of the free app, documented in the guides linked on this page.',
+        points: [
+          'Bundled Chromium, Firefox and WebKit, plus installed Chrome, Edge, Brave and Opera',
+          `${DEVICE_PRESET_COUNT} phone, tablet and desktop presets with viewport, scale factor, touch and user agent`,
+          'A country, US state, city or ZIP exit location through your own proxy plan, checked before the browser opens',
+          'A recorder, CSV datasets, matrices of 1 to 4 concurrent browsers, visual comparisons, and consent, accessibility and performance checks',
+          'JSON, JUnit and HTML reports, plus a command-line runner, Docker image and GitHub Action for CI',
+        ],
+      },
+      {
+        heading: 'What a cloud service gives you that this app does not',
+        text: 'Stated plainly, choose a cloud service when you need any of these:',
+        points: [
+          'Physical phones and tablets: the app emulates presets inside desktop browsers',
+          'Apple Safari itself: WebKit is the engine Safari is built on, not Safari',
+          'Many browser versions: bundled engine versions follow the bundled Playwright release',
+          'A hosted grid: matrices run on your computer, and the CI runner on machines you provide',
+          'Locations without a plan: location tests need your own proxy plan; the app does not sell or include proxies',
+        ],
+      },
+      {
+        heading: 'Privacy by default',
+        text: 'There is no sign-in and no telemetry, and nothing is uploaded. Scenarios, screenshots and run evidence stay on your computer, and proxy keys are kept in an AES-256-GCM vault protected by the operating system keychain. See [every network connection the app makes](/docs/security-and-privacy#network-connections).',
+      },
+      {
+        heading: 'Use both where it helps',
+        text: 'Run quick checks of your own forms locally while you build and before each release, and keep a cloud subscription for the physical devices your traffic depends on. Exported JUnit and HTML reports fit the same CI pipeline either way.',
+      },
+    ],
+    steps: [
+      { title: 'Download the app', text: 'Get the portable EXE, AppImage or DMG for your system. There is no account or sign-up.' },
+      { title: 'Add browsers and devices', text: 'Install any missing browser from the browser list, then choose a [phone, tablet or desktop preset](/use-cases/device-testing).' },
+      { title: 'Launch or record', text: 'Open your own site by hand, or [record a scenario once](/use-cases/test-recorder) and replay it across browsers and devices.' },
+      { title: 'Add locations if you need them', text: 'Save the keys of your own proxy plan to [test from a US state, city or ZIP](/use-cases/location-testing), with the exit IP checked first.' },
+      { title: 'Export the results', text: 'Export JSON, JUnit or HTML, or run the same scenario headless in CI.' },
+    ],
+    faqs: [
+      { question: 'Is Proxy QA Browser really free?', answer: 'Yes. It is free and open source under the Apache License 2.0, with no account, trial or paid tier. Only location targeting costs money: it needs your own plan with a supported proxy provider, billed by that provider.', link: { href: '/docs/faq', label: 'FAQ' } },
+      { question: 'Can it replace testing on physical iPhones?', answer: 'Not entirely. iPhone presets apply the viewport, scale factor, touch support and user agent in WebKit or a Chromium-family browser, which catches most layout problems on your own pages, but they are not a physical iPhone, and WebKit is not Apple Safari.', link: { href: '/docs/locations-and-devices#browser-compatibility', label: 'Browser compatibility' } },
+      { question: 'How many browsers run at once?', answer: 'A QA automation matrix runs 1 to 4 browsers concurrently on your computer (2 by default), up to 100 cases per matrix by default and 500 at most. For more capacity, run exported scenarios with the command-line runner on your own CI machines.', link: { href: '/docs/automation#matrices-retries-and-limits', label: 'Matrices, retries and limits' } },
+      { question: 'Can it run in CI like a hosted grid?', answer: 'The command-line runner, its Docker image for linux/amd64 and the GitHub Action run exported scenarios headless in Chromium, Firefox and WebKit on CI machines you provide, with JSON, JUnit and HTML reports. Installed vendor browsers are not in the image.', link: { href: '/docs/ci-runner#docker-image', label: 'Docker image' } },
+    ],
+    docLinks: [
+      { slug: 'install', label: 'Install' },
+      { slug: 'browsers', label: 'Browsers' },
+      { slug: 'ci-runner', label: 'CI runner' },
+      { slug: 'security-and-privacy', label: 'Security and privacy' },
+    ],
+    primaryKeyword: 'open-source alternative to cloud testing',
+    secondaryKeywords: ['BrowserStack alternative', 'LambdaTest alternative', 'local browser testing', 'browser testing without a subscription'],
   },
 ]
 

@@ -150,6 +150,7 @@ export const MORE_USE_CASE_LINKS: { slug: string; label: string }[] = [
   { slug: 'geo-blocking-testing', label: 'Geo-blocking checks' },
   { slug: 'test-recorder', label: 'Test recorder' },
   { slug: 'visual-regression-testing', label: 'Visual regression' },
+  { slug: 'cloud-testing-alternative', label: 'Local vs cloud testing' },
 ]
 
 export const STEPS: HomeStep[] = [

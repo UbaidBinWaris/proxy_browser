@@ -62,7 +62,7 @@ const OTHER_PAGE_KEYWORDS = [
 ]
 
 test('use cases have unique slugs and primary keywords, and the lookup finds each one', () => {
-  assert.equal(USE_CASES.length, 7)
+  assert.equal(USE_CASES.length, 8)
   for (const useCase of USE_CASES) {
     assert.match(useCase.slug, SLUG)
     assert.equal(findUseCase(useCase.slug), useCase)
