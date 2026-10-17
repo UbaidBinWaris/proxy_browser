@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path'
 import { GET as ogImage } from '../src/app/og/use-cases/[slug]/route.tsx'
 import { generateMetadata } from '../src/app/use-cases/[slug]/page.tsx'
 import { metadata as indexMetadata } from '../src/app/use-cases/page.tsx'
-import { SCREENSHOT_MAX_BYTES, SCREENSHOT_SMALL_WIDTH, USE_CASES as HOME_USE_CASES, screenshotSrcSet } from '../src/lib/home.ts'
+import { SCREENSHOT_MAX_BYTES, SCREENSHOT_SMALL_WIDTH, screenshotSrcSet } from '../src/lib/home.ts'
+import { faqItems } from '../src/lib/faq.ts'
 import { renderMarkdown } from '../src/lib/markdown.ts'
 import { faqPage, sitemapEntries, useCaseWebPage } from '../src/lib/seo.ts'
 import { DEVICE_PRESET_COUNT, SITE_NAME, SITE_URL, STATIC_PAGES } from '../src/lib/site.ts'
@@ -161,7 +162,9 @@ test('every in-content link points to an existing page and heading, once per pag
         assert.ok(slugs.has(slug!), `${useCase.slug}: link to missing docs page ${href}`)
         if (anchor) assert.ok((await docAnchors(slug!)).has(anchor), `${useCase.slug}: link to missing heading ${href}`)
       } else {
-        assert.ok(staticPaths.has(href), `${useCase.slug}: link to unknown page ${href}`)
+        const [path, anchor] = href.split('#') as [string, string | undefined]
+        assert.ok(staticPaths.has(path), `${useCase.slug}: link to unknown page ${href}`)
+        if (path === '/faq' && anchor) assert.ok(faqItems().some(item => item.id === anchor), `${useCase.slug}: link to missing FAQ question ${href}`)
         assert.notEqual(href, useCasePath(useCase.slug), `${useCase.slug}: links to its own page`)
       }
     }
@@ -190,7 +193,7 @@ const PLANNED_LINKS: Array<{ from: string; to: string; anchor: string }> = [
   { from: 'device-testing', to: '/docs/locations-and-devices#devices', anchor: 'device preset types and examples' },
   { from: 'cross-browser-testing', to: '/use-cases/device-testing', anchor: 'device presets per engine' },
   { from: 'cross-browser-testing', to: '/docs/browsers#known-limitations', anchor: 'known browser limitations' },
-  { from: 'cross-browser-testing', to: '/docs/faq', anchor: 'how profile isolation works' },
+  { from: 'cross-browser-testing', to: '/faq', anchor: 'how profile isolation works' },
   { from: 'test-recorder', to: '/docs/self-healing', anchor: 'self-healing selectors' },
   { from: 'test-recorder', to: '/docs/ci-runner', anchor: 'run recorded tests in CI' },
   { from: 'geo-blocking-testing', to: '/docs/automation#origin-isolation', anchor: 'how redirects are handled' },
@@ -201,16 +204,10 @@ test('the planned internal links are present with their anchors', () => {
   for (const { from, to, anchor } of PLANNED_LINKS) {
     const useCase = findUseCase(from)
     assert.ok(useCase, from)
-    const link = contentLinks(useCase).find(l => l.href === to || (!to.includes('#') && to.startsWith('/docs/') && l.href.startsWith(`${to}#`)))
+    const link = contentLinks(useCase).find(l => l.href === to || (!to.includes('#') && l.href.startsWith(`${to}#`)))
     assert.ok(link, `${from}: no link to ${to}`)
     assert.equal(link.label.toLowerCase(), anchor.toLowerCase(), `${from} → ${to}`)
   }
-})
-
-test('home page use-case cards link to existing landing pages', () => {
-  const linked = HOME_USE_CASES.flatMap(card => card.useCaseSlug ? [card.useCaseSlug] : [])
-  assert.ok(linked.length >= 2)
-  for (const slug of linked) assert.ok(findUseCase(slug), `missing use case: ${slug}`)
 })
 
 // Screenshots live in docs/site/images (published with the docs under /docs-assets/images).

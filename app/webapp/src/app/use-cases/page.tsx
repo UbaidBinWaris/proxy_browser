@@ -5,7 +5,7 @@ import { breadcrumbList, pageMetadata } from '@/lib/seo'
 import { SITE_URL } from '@/lib/site'
 import { USE_CASES, USE_CASES_PATH, useCasePath } from '@/lib/use-cases'
 
-export const metadata: Metadata = pageMetadata({ title: 'Use cases: test your own sites and forms', description: 'Guides to testing your own sites and forms: location and geo-blocking tests, TCPA consent checks, device and cross-browser testing, and test recording.', path: USE_CASES_PATH })
+export const metadata: Metadata = pageMetadata({ title: 'Use cases: test your own sites and forms', description: 'Guides to testing your own sites and forms: location and geo-blocking, TCPA consent, devices, cross-browser, recording, visual regression, local vs cloud.', path: USE_CASES_PATH })
 
 export default function UseCasesIndex() {
   const itemList = {

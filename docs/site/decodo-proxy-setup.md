@@ -6,7 +6,7 @@ To test your own site through a Decodo (formerly Smartproxy) residential plan, s
 
 - A Decodo **Residential** proxy plan of your own.
 - The proxy username and password from your Decodo dashboard. The `user-` prefix the parameter syntax needs is added for you when the saved username lacks it.
-- Proxy QA Browser for [Windows, Linux or macOS](/#download).
+- Proxy QA Browser for [Windows, Linux or macOS](/download).
 
 ## Set up Decodo in the app
 

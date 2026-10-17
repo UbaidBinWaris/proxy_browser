@@ -6,7 +6,7 @@ To test your own site through an Oxylabs Residential Proxies plan, save the plan
 
 - An Oxylabs **Residential Proxies** plan of your own.
 - The proxy username and password from your Oxylabs dashboard. The mandatory `customer-` prefix is added for you when the saved username lacks it.
-- Proxy QA Browser for [Windows, Linux or macOS](/#download).
+- Proxy QA Browser for [Windows, Linux or macOS](/download).
 
 ## Set up Oxylabs in the app
 

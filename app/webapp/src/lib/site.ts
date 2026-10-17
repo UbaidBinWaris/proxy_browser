@@ -18,6 +18,14 @@ export const OWNER = {
   linkedin: 'https://www.linkedin.com/in/ubaidbinwaris',
   location: 'Islamabad, Pakistan',
 } as const
+/** Public contact addresses, shown on /faq#contact and /about. */
+export const CONTACT_EMAILS: { address: string; label: string; purpose: string }[] = [
+  { address: 'support@ubaidbinwaris.com', label: 'Support', purpose: 'Help with installing or using the app' },
+  { address: 'ubaid@ubaidbinwaris.com', label: 'Developer', purpose: 'Questions, feedback and collaboration' },
+  { address: 'ubaidwaris34@gmail.com', label: 'Alternative', purpose: 'If the other addresses do not reach me' },
+]
+export const DOWNLOAD_PATH = '/download'
+export const FAQ_PATH = '/faq'
 export const REPO_URL = 'https://github.com/UbaidBinWaris/proxy_browser'
 export const REPO_BLOB_URL = `${REPO_URL}/blob/main`
 export const DOCS_EDIT_URL = `${REPO_URL}/edit/main/docs/site`
@@ -40,8 +48,10 @@ export const LEGAL_LINKS: SiteLink[] = [
 /** Static (non-docs) pages listed in the sitemap, with their relative priority. */
 export const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: '/', priority: 1 },
+  { path: '/download', priority: 0.9 },
   { path: '/docs', priority: 0.9 },
   { path: '/use-cases', priority: 0.8 },
+  { path: '/faq', priority: 0.7 },
   { path: '/changelog', priority: 0.6 },
   { path: '/about', priority: 0.5 },
   ...LEGAL_LINKS.map(link => ({ path: link.href, priority: 0.3 })),

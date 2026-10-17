@@ -24,6 +24,8 @@ export type UseCase = {
   slug: string
   /** Short name for navigation, breadcrumbs and cards. */
   navLabel: string
+  /** One sentence for the home page card (at most 90 characters). */
+  summary: string
   /** Search-result title; the layout appends " | Proxy QA Browser", and the whole must stay within 60 characters. */
   title: string
   /** Meta description, 120-158 characters. */
@@ -44,6 +46,20 @@ export type UseCase = {
 
 export const USE_CASES_PATH = '/use-cases'
 export const useCasePath = (slug: string): string => `${USE_CASES_PATH}/${slug}`
+/**
+ * Other use cases to suggest at the end of a page: those sharing the most related docs pages first, then in page
+ * order. Every page gets `count` suggestions, so each use case is linked from several others.
+ */
+export function relatedUseCases(useCase: UseCase, count = 3): UseCase[] {
+  const docs = new Set(useCase.docLinks.map(link => link.slug))
+  const shared = (other: UseCase) => other.docLinks.filter(link => docs.has(link.slug)).length
+  return USE_CASES
+    .map((other, index) => ({ other, index, score: shared(other) }))
+    .filter(({ other }) => other.slug !== useCase.slug)
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, count)
+    .map(({ other }) => other)
+}
 /** The use cases that list a docs page among their `docLinks`, linked back from that page. */
 export const useCasesForDoc = (docSlug: string): UseCase[] => USE_CASES.filter(useCase => useCase.docLinks.some(link => link.slug === docSlug))
 /** The page's social preview image (src/app/og/use-cases/[slug]/route.tsx). */
@@ -52,6 +68,7 @@ export const useCaseImagePath = (slug: string): string => `/og${USE_CASES_PATH}/
 export const USE_CASES: UseCase[] = [
   {
     slug: 'location-testing',
+    summary: 'See what visitors in a US state, city or ZIP get, with the exit IP checked first.',
     navLabel: 'Location testing',
     title: 'Test a website from different locations',
     description: 'See what visitors in a US state, city or ZIP get on your own site, with the exit IP checked before launch. Free, open-source app; bring your own proxy plan.',
@@ -152,6 +169,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'tcpa-consent-testing',
+    summary: 'Check consent wording, legibility, placement and the checkbox on every device.',
     navLabel: 'TCPA consent testing',
     title: 'TCPA consent testing for lead forms',
     description: 'Automated consent QA for your own lead forms: disclosure wording, font size, contrast and placement, the consent checkbox and lead-certificate scripts.',
@@ -238,6 +256,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'device-testing',
+    summary: 'Open your own site on emulated phone, tablet and desktop presets.',
     navLabel: 'Device testing',
     title: 'Test a website on different devices',
     description: 'Open your own site on emulated phone, tablet and desktop presets, each with its own viewport, scale factor and touch support. Free, open-source desktop app.',
@@ -326,12 +345,13 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'cross-browser-testing',
+    summary: 'Chromium, Firefox and WebKit plus your installed Chrome, Edge, Brave and Opera.',
     navLabel: 'Cross-browser testing',
     title: 'Free, open-source cross-browser testing',
     description: 'Test your own site in bundled Chromium, Firefox and WebKit and your installed Chrome, Edge, Brave and Opera, by hand or as a matrix. No account, no sign-up.',
     eyebrow: 'USE CASE · CROSS-BROWSER TESTING',
     h1: 'Cross-browser testing in three bundled engines and your installed Chromium-family browsers.',
-    lead: 'Proxy QA Browser opens your own site in bundled engines and in the Chromium-family browsers installed on your computer. It is free and open source, runs on your computer and needs no account or sign-up. Each launch uses a fresh temporary profile; see [how profile isolation works](/docs/faq#does-an-installed-browser-use-my-own-profile-bookmarks-or-extensions).',
+    lead: 'Proxy QA Browser opens your own site in bundled engines and in the Chromium-family browsers installed on your computer. It is free and open source, runs on your computer and needs no account or sign-up. Each launch uses a fresh temporary profile; see [how profile isolation works](/faq#does-an-installed-browser-use-my-own-profile-bookmarks-or-extensions).',
     screenshot: {
       src: '/docs-assets/images/launch-browser-picker.webp',
       alt: 'The browser list on the Launch page: bundled Chromium, Firefox and WebKit, an installed Google Chrome with its version, and one-click Install buttons for Microsoft Edge, Brave and Opera.',
@@ -386,7 +406,7 @@ export const USE_CASES: UseCase[] = [
     faqs: [
       { question: 'Is there a free, open-source tool for cross-browser testing of web forms?', answer: 'Yes. Proxy QA Browser is free and open source under the Apache License 2.0. It opens your own forms in bundled Chromium, Firefox and WebKit and in installed Chrome, Edge, Brave and Opera, by hand or as a recorded matrix, on Windows, Linux and macOS with no account.' },
       { question: 'Is WebKit the same as Safari?', answer: 'No. WebKit is the open-source engine Safari is built on, driven by Playwright and labelled "WebKit / Safari-compatible QA" in the app. It catches WebKit-specific layout and behaviour issues, but it does not replace testing in Apple Safari when that matters.' },
-      { question: 'Can I test WebKit on Windows?', answer: 'Yes. The app downloads a native Windows build of WebKit, the engine Safari is built on, during first-run setup or later from Settings. It is not Safari itself.', link: { href: '/docs/faq#does-it-work-the-same-on-windows-linux-and-macos', label: 'Platform differences' } },
+      { question: 'Can I test WebKit on Windows?', answer: 'Yes. The app downloads a native Windows build of WebKit, the engine Safari is built on, during first-run setup or later from Settings. It is not Safari itself.', link: { href: '/faq#does-it-work-the-same-on-windows-linux-and-macos', label: 'Platform differences' } },
       { question: 'Which browsers run in CI?', answer: 'The runner Docker image, which the GitHub Action uses, contains Chromium, Firefox and WebKit. Installed vendor browsers such as Chrome, Edge and Brave are not included. The image is published for linux/amd64.', link: { href: '/docs/ci-runner#docker-image', label: 'Docker image' } },
     ],
     docLinks: [
@@ -407,6 +427,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'test-recorder',
+    summary: 'Record a form flow once and replay it across browsers, devices and locations.',
     navLabel: 'Test recorder',
     title: 'Free record-and-playback testing tool',
     description: 'Record a test on your own form once and replay it across browsers, devices and, with your own proxy plan, locations. Assertions, CSV datasets and reports.',
@@ -485,6 +506,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'visual-regression-testing',
+    summary: 'Catch unintended visual changes against baselines you approve.',
     navLabel: 'Visual regression',
     title: 'Open-source visual regression testing',
     description: 'Compare screenshots of your own pages with approved baselines per browser, device and location, review the differences and export approved baselines for CI.',
@@ -551,6 +573,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'geo-blocking-testing',
+    summary: 'Confirm your own geo-blocks and regional redirects work per market.',
     navLabel: 'Geo-blocking checks',
     title: 'Test your geo-blocking and geo-redirects',
     description: 'Check that your own site blocks, allows or redirects visitors by country and US state: exit IP checked first, HTTP status and redirect hops in reports.',
@@ -621,6 +644,7 @@ export const USE_CASES: UseCase[] = [
   },
   {
     slug: 'cloud-testing-alternative',
+    summary: 'What a free, local QA browser covers, and when a cloud service is the better fit.',
     navLabel: 'Cloud testing alternative',
     title: 'Open-source alternative to cloud testing',
     description: 'Test your own forms by browser, emulated device and location on your own computer: free, open source, no account. What it covers and what it does not.',
@@ -679,7 +703,7 @@ export const USE_CASES: UseCase[] = [
       { title: 'Export the results', text: 'Export JSON, JUnit or HTML, or run the same scenario headless in CI.' },
     ],
     faqs: [
-      { question: 'Is Proxy QA Browser really free?', answer: 'Yes. It is free and open source under the Apache License 2.0, with no account, trial or paid tier. Only location targeting costs money: it needs your own plan with a supported proxy provider, billed by that provider.', link: { href: '/docs/faq', label: 'FAQ' } },
+      { question: 'Is Proxy QA Browser really free?', answer: 'Yes. It is free and open source under the Apache License 2.0, with no account, trial or paid tier. Only location targeting costs money: it needs your own plan with a supported proxy provider, billed by that provider.', link: { href: '/faq', label: 'FAQ' } },
       { question: 'Can it replace testing on physical iPhones?', answer: 'Not entirely. iPhone presets apply the viewport, scale factor, touch support and user agent in WebKit or a Chromium-family browser, which catches most layout problems on your own pages, but they are not a physical iPhone, and WebKit is not Apple Safari.', link: { href: '/docs/locations-and-devices#browser-compatibility', label: 'Browser compatibility' } },
       { question: 'How many browsers run at once?', answer: 'A QA automation matrix runs 1 to 4 browsers concurrently on your computer (2 by default), up to 100 cases per matrix by default and 500 at most. For more capacity, run exported scenarios with the command-line runner on your own CI machines.', link: { href: '/docs/automation#matrices-retries-and-limits', label: 'Matrices, retries and limits' } },
       { question: 'Can it run in CI like a hosted grid?', answer: 'The command-line runner, its Docker image for linux/amd64 and the GitHub Action run exported scenarios headless in Chromium, Firefox and WebKit on CI machines you provide, with JSON, JUnit and HTML reports. Installed vendor browsers are not in the image.', link: { href: '/docs/ci-runner#docker-image', label: 'Docker image' } },

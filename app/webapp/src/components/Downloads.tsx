@@ -93,7 +93,8 @@ function DownloadCard({ platform, recommended, release }: { platform: DownloadPl
   </article>
 }
 
-export default function Downloads({ initialRelease, visitorOs = 'unknown' }: { initialRelease: Release | null; visitorOs?: VisitorOs }) {
+/** `heading`: the section heading, left out on /download, whose own H1 introduces the cards. */
+export default function Downloads({ initialRelease, visitorOs = 'unknown', heading = true }: { initialRelease: Release | null; visitorOs?: VisitorOs; heading?: boolean }) {
   const [release, setRelease] = useState(initialRelease), [checking, setChecking] = useState(false), [message, setMessage] = useState('')
   async function check() {
     setChecking(true); setMessage('')
@@ -101,8 +102,8 @@ export default function Downloads({ initialRelease, visitorOs = 'unknown' }: { i
     catch (e) { setMessage(e instanceof Error ? e.message : 'Could not check for updates.') } finally { setChecking(false) }
   }
   const cards = orderDownloadCards(visitorOs)
-  return <section id="download" className="downloads section" aria-labelledby="download-title">
-    <div className="section-heading"><div><span className="eyebrow">DOWNLOAD</span><h2 id="download-title">Free for Windows,{' '}<br />Linux and macOS.</h2></div><p>No account and no installer wizard. Your profiles and proxy keys stay on your device, and every file below comes with its SHA-256 checksum.</p></div>
+  return <section id="download" className="downloads section" aria-labelledby={heading ? 'download-title' : undefined} aria-label={heading ? undefined : 'Downloads'}>
+    {heading ? <div className="section-heading"><div><span className="eyebrow">DOWNLOAD</span><h2 id="download-title">Free for Windows,{' '}<br />Linux and macOS.</h2></div><p>No account and no installer wizard. Your profiles and proxy keys stay on your device, and every file below comes with its SHA-256 checksum.</p></div> : null}
     {isMobileOs(visitorOs) ? <p className="dl-mobile-note">You are on {OS_LABELS[visitorOs]}. Proxy QA Browser is a desktop app: open this page on your Windows, Linux or Mac computer to download it. Phones and tablets are emulated inside the app.</p> : null}
     <div className="dl-grid">{cards.map(card => <DownloadCard key={card.platform} platform={card.platform} recommended={card.recommended} release={release} />)}</div>
     <div className="update-line"><span><span className="status-dot" /> {release ? `Version ${release.version}, published ${new Date(release.releasedAt).toLocaleDateString('en-GB', { timeZone: 'UTC' })}` : 'Preparing the first public release'}</span><button className="text-button" type="button" disabled={checking} onClick={check}>{checking ? 'Checking…' : 'Check for the latest release'} <span aria-hidden="true">↻</span></button></div>

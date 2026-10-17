@@ -45,8 +45,7 @@
       "pages": [
         { "slug": "security-and-privacy", "title": "Security and privacy", "seoTitle": "Security and privacy: vault, no telemetry", "description": "The AES-256-GCM credential vault and OS keychain, what is never logged, Electron hardening, every network connection the app makes and where data is stored." },
         { "slug": "settings", "title": "Settings reference", "seoTitle": "Settings reference: defaults and limits", "description": "Reference for every Proxy QA Browser setting: where it lives, its default and allowed range, QA automation policy limits and environment variables." },
-        { "slug": "troubleshooting", "title": "Troubleshooting", "seoTitle": "Troubleshooting and error codes", "description": "Fix common problems with installing, proxies and locations, browsers, sessions, the vault and QA automation, and look up what each error code means." },
-        { "slug": "faq", "title": "FAQ", "seoTitle": "FAQ: cost, privacy, proxies and browsers", "description": "Answers to common questions about Proxy QA Browser: cost, responsible use, data and privacy, proxy plans, browsers, emulated devices, CI and AI assistants." }
+        { "slug": "troubleshooting", "title": "Troubleshooting", "seoTitle": "Troubleshooting and error codes", "description": "Fix common problems with installing, proxies and locations, browsers, sessions, the vault and QA automation, and look up what each error code means." }
       ]
     },
     {

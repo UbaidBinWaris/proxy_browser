@@ -10,7 +10,7 @@ import { SiteFooter } from '../src/components/SiteChrome.tsx'
 import { parseReleaseNotes } from '../src/lib/changelog.ts'
 import { GALLERY_SCREENSHOTS, HERO_SCREENSHOT } from '../src/lib/home.ts'
 import { securityTxt } from '../src/lib/security-txt.ts'
-import { ABOUT_DATE, SCHEMA_IDS, USE_CASES_DATE, breadcrumbList, docArticle, homeGraph, legalBreadcrumbs, pageBreadcrumbs, pageMetadata, profilePage, sitemapEntries } from '../src/lib/seo.ts'
+import { ABOUT_DATE, FAQ_DATE, SCHEMA_IDS, USE_CASES_DATE, breadcrumbList, docArticle, homeGraph, legalBreadcrumbs, pageBreadcrumbs, pageMetadata, profilePage, sitemapEntries } from '../src/lib/seo.ts'
 import { LEGAL_LINKS, OWNER, POLICY_DATE, REPO_URL, SITE_URL } from '../src/lib/site.ts'
 import { USE_CASES } from '../src/lib/use-cases.ts'
 
@@ -19,7 +19,7 @@ type Node = Record<string, unknown>
 
 test('sitemap lists home, docs, use-case, legal, about and changelog pages', () => {
   const urls = sitemapEntries([{ slug: 'introduction' }, { slug: 'install' }]).map(e => e.url)
-  for (const path of ['', '/docs', '/docs/introduction', '/docs/install', '/changelog', '/about', '/terms', '/acceptable-use', '/privacy', '/licenses', '/security', '/disclaimer', '/use-cases', ...USE_CASES.map(u => `/use-cases/${u.slug}`)]) assert.ok(urls.includes(`${SITE_URL}${path}`), path)
+  for (const path of ['', '/download', '/faq', '/docs', '/docs/introduction', '/docs/install', '/changelog', '/about', '/terms', '/acceptable-use', '/privacy', '/licenses', '/security', '/disclaimer', '/use-cases', ...USE_CASES.map(u => `/use-cases/${u.slug}`)]) assert.ok(urls.includes(`${SITE_URL}${path}`), path)
   assert.equal(new Set(urls).size, urls.length)
   assert.ok(!urls.some(u => u.includes('/admin')))
   assert.ok(!urls.some(u => u.includes('/docs/search')), 'search result pages are noindex and stay out of the sitemap')
@@ -40,6 +40,7 @@ test('sitemap dates docs by their last commit, legal pages by the policy date, a
   assert.deepEqual(entry('').images, [`${SITE_URL}/docs-assets/images/launch.webp`])
   for (const link of LEGAL_LINKS) assert.equal(entry(link.href).lastModified, POLICY_DATE, link.href)
   assert.equal(entry('/about').lastModified, ABOUT_DATE)
+  assert.equal(entry('/faq').lastModified, FAQ_DATE)
   for (const path of ['/use-cases', ...USE_CASES.map(u => `/use-cases/${u.slug}`)]) assert.equal(entry(path).lastModified, USE_CASES_DATE, path)
   assert.equal(entry('/changelog').lastModified, undefined, 'release notes carry no dates, so none is invented')
 })

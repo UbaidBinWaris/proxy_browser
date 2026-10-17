@@ -20,7 +20,8 @@ import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promi
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const RESERVED_SLUGS = new Set(['search'])
+// search: the docs search route; faq: redirected to /faq (app/webapp/next.config.ts).
+const RESERVED_SLUGS = new Set(['search', 'faq'])
 // The website appends the suffix to every docs title; search results show about 60 characters in all.
 const SEO_TITLE_SUFFIX = ' | Proxy QA Browser'
 const SEO_TITLE_MAX = 60 - SEO_TITLE_SUFFIX.length

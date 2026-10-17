@@ -17,7 +17,7 @@ after(async () => { await rm(work, { recursive: true, force: true }) })
 
 const manifest = { sections: [
   { title: 'Getting started', pages: [{ slug: 'introduction', title: 'Introduction', description: 'Start here.' }, { slug: 'install', title: 'Install' }] },
-  { title: 'Reference', pages: [{ slug: 'faq', title: 'FAQ' }] },
+  { title: 'Reference', pages: [{ slug: 'glossary', title: 'Glossary' }] },
 ] }
 
 async function fixtureRepo(name: string, pages: Record<string, string>, data: unknown = manifest) {
@@ -37,11 +37,11 @@ function sync(root: string, out: string, ...flags: string[]) {
 }
 
 test('sync copies docs, images, release notes and NOTICE when the manifest is valid', async () => {
-  const { root, out } = await fixtureRepo('valid', { introduction: '# Introduction\n\nHello.', install: '```md\n# Not a heading\n```\n\n# Install\n', faq: '# FAQ\n' })
+  const { root, out } = await fixtureRepo('valid', { introduction: '# Introduction\n\nHello.', install: '```md\n# Not a heading\n```\n\n# Install\n', glossary: '# Glossary\n' })
   const result = sync(root, out)
   assert.equal(result.status, 0, result.stderr)
   assert.deepEqual(JSON.parse(await readFile(join(out, 'content', 'manifest.json'), 'utf8')), manifest)
-  assert.equal(await readFile(join(out, 'content', 'docs', 'faq.md'), 'utf8'), '# FAQ\n')
+  assert.equal(await readFile(join(out, 'content', 'docs', 'glossary.md'), 'utf8'), '# Glossary\n')
   assert.equal(await readFile(join(out, 'public', 'docs-assets', 'images', 'shot.png'), 'utf8'), 'png')
   assert.ok((await readFile(join(out, 'content', 'NOTICE.txt'), 'utf8')).includes('Ubaid Bin Waris'))
   assert.deepEqual(JSON.parse(await readFile(join(out, 'content', 'release-notes.json'), 'utf8')), { '1.0.0': ['First'] })
@@ -50,7 +50,7 @@ test('sync copies docs, images, release notes and NOTICE when the manifest is va
 test('sync records image sizes and the images each page shows, and rejects references to missing images', async () => {
   // 2×3 PNG: signature, IHDR length and type, then width and height.
   const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0, 0, 0, 2, 0, 0, 0, 3])])
-  const { root, out } = await fixtureRepo('images', { introduction: '# Introduction\n\n![Shot](images/real.png "Caption")\n\n```md\n![ignored](images/none.png)\n```', install: '# Install\n', faq: '# FAQ\n' })
+  const { root, out } = await fixtureRepo('images', { introduction: '# Introduction\n\n![Shot](images/real.png "Caption")\n\n```md\n![ignored](images/none.png)\n```', install: '# Install\n', glossary: '# Glossary\n' })
   await writeFile(join(root, 'docs', 'site', 'images', 'real.png'), png)
   assert.equal(sync(root, out).status, 0)
   assert.deepEqual(JSON.parse(await readFile(join(out, 'content', 'images.json'), 'utf8')), { 'images/real.png': { width: 2, height: 3 } })
@@ -65,7 +65,7 @@ test('sync records image sizes and the images each page shows, and rejects refer
 })
 
 test('a missing page fails the sync unless --allow-missing is given', async () => {
-  const { root, out } = await fixtureRepo('missing', { introduction: '# Introduction\n', faq: '# FAQ\n' })
+  const { root, out } = await fixtureRepo('missing', { introduction: '# Introduction\n', glossary: '# Glossary\n' })
   const strict = sync(root, out)
   assert.equal(strict.status, 1)
   assert.match(strict.stderr, /docs\/site\/install\.md is listed in manifest\.json but does not exist/)
@@ -73,7 +73,7 @@ test('a missing page fails the sync unless --allow-missing is given', async () =
   assert.equal(lenient.status, 0, lenient.stderr)
   assert.match(lenient.stderr, /install/)
   const written = JSON.parse(await readFile(join(out, 'content', 'manifest.json'), 'utf8')) as DocsManifest
-  assert.deepEqual(allPages(written).map(p => p.slug), ['introduction', 'faq'])
+  assert.deepEqual(allPages(written).map(p => p.slug), ['introduction', 'glossary'])
 })
 
 test('duplicate slugs, bad slugs and mismatched titles fail even with --allow-missing', async () => {
@@ -89,15 +89,15 @@ test('duplicate slugs, bad slugs and mismatched titles fail even with --allow-mi
 test('navigation helpers give reading order across sections and handle unknown slugs', () => {
   const m = parseManifest(JSON.stringify(manifest))
   assert.deepEqual(neighbours(m, 'introduction'), { previous: null, next: { slug: 'install', title: 'Install' } })
-  assert.deepEqual(neighbours(m, 'install'), { previous: { slug: 'introduction', title: 'Introduction', description: 'Start here.' }, next: { slug: 'faq', title: 'FAQ' } })
-  assert.deepEqual(neighbours(m, 'faq'), { previous: { slug: 'install', title: 'Install' }, next: null })
+  assert.deepEqual(neighbours(m, 'install'), { previous: { slug: 'introduction', title: 'Introduction', description: 'Start here.' }, next: { slug: 'glossary', title: 'Glossary' } })
+  assert.deepEqual(neighbours(m, 'glossary'), { previous: { slug: 'install', title: 'Install' }, next: null })
   assert.deepEqual(neighbours(m, 'nope'), { previous: null, next: null })
   assert.equal(findPage(m, 'nope'), null)
-  assert.equal(findPage(m, 'faq')?.section, 'Reference')
+  assert.equal(findPage(m, 'glossary')?.section, 'Reference')
 })
 
 test('loadDoc renders a synced page and returns null for unknown or malformed slugs', async () => {
-  const { root, out } = await fixtureRepo('render', { introduction: '# Introduction\n\nSee [install](install.md).\n\n## Next', install: '# Install\n', faq: '# FAQ\n' })
+  const { root, out } = await fixtureRepo('render', { introduction: '# Introduction\n\nSee [install](install.md).\n\n## Next', install: '# Install\n', glossary: '# Glossary\n' })
   assert.equal(sync(root, out).status, 0)
   const previous = process.env.CONTENT_DIR; process.env.CONTENT_DIR = join(out, 'content')
   try {
@@ -112,11 +112,11 @@ test('loadDoc renders a synced page and returns null for unknown or malformed sl
 })
 
 test('an optional seoTitle is validated, kept in the synced manifest and parsed', async () => {
-  const withSeo = { sections: [{ title: 'Getting started', pages: [{ slug: 'introduction', title: 'Introduction', seoTitle: 'Free QA browser for location testing' }, { slug: 'install', title: 'Install' }] }, { title: 'Reference', pages: [{ slug: 'faq', title: 'FAQ', seoTitle: 'x'.repeat(42) }] }] }
-  const { root, out } = await fixtureRepo('seo-title', { introduction: '# Introduction\n', install: '# Install\n', faq: '# FAQ\n' }, withSeo)
+  const withSeo = { sections: [{ title: 'Getting started', pages: [{ slug: 'introduction', title: 'Introduction', seoTitle: 'Free QA browser for location testing' }, { slug: 'install', title: 'Install' }] }, { title: 'Reference', pages: [{ slug: 'glossary', title: 'Glossary', seoTitle: 'x'.repeat(42) }] }] }
+  const { root, out } = await fixtureRepo('seo-title', { introduction: '# Introduction\n', install: '# Install\n', glossary: '# Glossary\n' }, withSeo)
   const tooLong = sync(root, out)
   assert.equal(tooLong.status, 1)
-  assert.match(tooLong.stderr, /\(faq\): "seoTitle" must be 1-41 characters/)
+  assert.match(tooLong.stderr, /\(glossary\): "seoTitle" must be 1-41 characters/)
   withSeo.sections[1]!.pages[0]!.seoTitle = 'Frequently asked questions'
   await writeFile(join(root, 'docs', 'site', 'manifest.json'), JSON.stringify(withSeo))
   assert.equal(sync(root, out).status, 0)

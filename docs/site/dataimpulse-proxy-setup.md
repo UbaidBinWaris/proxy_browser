@@ -6,7 +6,7 @@ To test your own site through a DataImpulse plan, save the plan's proxy login in
 
 - A DataImpulse **Residential** or **Mobile** plan of your own. They are separate plans with separate logins on the same gateway.
 - The plan's proxy **login** and **password** from your DataImpulse dashboard. Enter the bare login; the app adds every targeting parameter itself.
-- Proxy QA Browser for [Windows, Linux or macOS](/#download).
+- Proxy QA Browser for [Windows, Linux or macOS](/download).
 
 ## Set up DataImpulse in the app
 

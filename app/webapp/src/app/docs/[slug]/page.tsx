@@ -54,7 +54,7 @@ export default async function DocPage({ params }: Props) {
         </section> : null}
         <div className="doc-download">
           <p>Proxy QA Browser is free and open source for Windows, Linux and macOS.</p>
-          <a className="button primary" href="/#download">Download free <span aria-hidden="true">↓</span></a>
+          <a className="button primary" href="/download">Download free <span aria-hidden="true">↓</span></a>
         </div>
         <a className="edit-link" href={`${DOCS_EDIT_URL}/${slug}.md`} rel="noopener noreferrer">Edit this page on GitHub <span aria-hidden="true">↗</span></a>
         {previous || next ? <nav className="pager" aria-label="Previous and next pages">

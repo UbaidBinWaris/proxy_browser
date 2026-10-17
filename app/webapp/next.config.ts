@@ -5,6 +5,11 @@ const config: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
   images: { unoptimized: true },
+  async redirects() {
+    // The FAQ moved from the docs to its own page. Browsers keep the #fragment across the redirect, and every question
+    // kept its heading id, so /docs/faq#is-there-a-mac-version still lands on its answer.
+    return [{ source: '/docs/faq', destination: '/faq', permanent: true }]
+  },
   async headers() {
     // Docs screenshots and brand files keep their names across releases, so they are cached for a day, not immutable.
     const assetCache = [{ key: 'Cache-Control', value: 'public, max-age=86400, stale-while-revalidate=604800' }]

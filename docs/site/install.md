@@ -4,7 +4,7 @@ Download and run Proxy QA Browser on Windows, Linux or macOS; there is no instal
 
 ## Choose a download
 
-Downloads are on the [download page](/#download). Each release ships one file per platform. The files contain no proxy credentials and no personal data, so you can share them with colleagues; each person enters their own proxy keys on first run.
+Downloads are on the [download page](/download). Each release ships one file per platform. The files contain no proxy credentials and no personal data, so you can share them with colleagues; each person enters their own proxy keys on first run.
 
 | Platform | File | Browser engines | Updates |
 | --- | --- | --- | --- |

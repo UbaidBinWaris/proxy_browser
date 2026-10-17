@@ -1,11 +1,12 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import { Inline } from '@/components/Inline'
 import { JsonLd } from '@/components/JsonLd'
 import { findPage, loadManifest } from '@/lib/docs'
 import { screenshotSrcSet } from '@/lib/home'
 import { DEFAULT_SOCIAL_IMAGE, breadcrumbList, faqPage, pageMetadata, useCaseWebPage } from '@/lib/seo'
-import { REPO_URL, SITE_NAME } from '@/lib/site'
-import { USE_CASES, USE_CASES_PATH, findUseCase, inlineParts, structuredFaqs, useCaseImagePath, useCasePath } from '@/lib/use-cases'
+import { DOWNLOAD_PATH, REPO_URL, SITE_NAME } from '@/lib/site'
+import { USE_CASES, USE_CASES_PATH, findUseCase, relatedUseCases, structuredFaqs, useCaseImagePath, useCasePath } from '@/lib/use-cases'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -27,11 +28,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 const docHref = (slug: string) => `/docs/${slug}`
 
-/** Text with `[anchor](/path)` links (see src/lib/use-cases.ts) rendered as links. */
-function Inline({ text }: Readonly<{ text: string }>) {
-  return <>{inlineParts(text).map((part, i) => typeof part === 'string' ? part : <a key={i} href={part.href}>{part.label}</a>)}</>
-}
-
 export default async function UseCasePage({ params }: Props) {
   const useCase = findUseCase((await params).slug)
   if (!useCase) notFound()
@@ -39,7 +35,7 @@ export default async function UseCasePage({ params }: Props) {
   const manifest = await loadManifest().catch(() => null)
   const { screenshot } = useCase
   const docsHref = docHref(useCase.docLinks[0]?.slug ?? 'introduction')
-  const ownFaqs = structuredFaqs(useCase)
+  const ownFaqs = structuredFaqs(useCase), related = relatedUseCases(useCase)
   return <>
     <JsonLd data={breadcrumbList([{ name: 'Home', path: '/' }, { name: 'Use cases', path: USE_CASES_PATH }, { name: useCase.navLabel, path: useCasePath(useCase.slug) }])} />
     <JsonLd data={useCaseWebPage(useCase)} />
@@ -52,7 +48,7 @@ export default async function UseCasePage({ params }: Props) {
       <h1>{useCase.h1}</h1>
       <p className="page-lead"><Inline text={useCase.lead} /></p>
       <div className="hero-actions">
-        <a className="button primary" href="/#download">Download free <span aria-hidden="true">↓</span></a>
+        <a className="button primary" href={DOWNLOAD_PATH}>Download free <span aria-hidden="true">↓</span></a>
         <a className="button" href={docsHref}>Read the docs <span aria-hidden="true">→</span></a>
       </div>
     </header>
@@ -85,11 +81,17 @@ export default async function UseCasePage({ params }: Props) {
         return <li key={link.slug}><a href={docHref(link.slug)}><strong>{link.label}</strong>{page?.description ? <small>{page.description}</small> : null}</a></li>
       })}</ul>
     </section> : null}
+    <section className="use-case-related" aria-labelledby="more-use-cases-title">
+      <span className="eyebrow">MORE USE CASES</span>
+      <h2 id="more-use-cases-title">Related use cases.</h2>
+      <ul className="use-case-doc-links">{related.map(other => <li key={other.slug}><a href={useCasePath(other.slug)}><strong>{other.navLabel}</strong><small>{other.summary}</small></a></li>)}</ul>
+      <p className="page-meta"><a className="faq-link" href={USE_CASES_PATH}>All use cases</a></p>
+    </section>
     <section className="home-cta" aria-labelledby="cta-title">
       <h2 id="cta-title">Try it on your own site.</h2>
       <p>Free and open source, for Windows, Linux and macOS. Use it on sites you own or are contracted to test.</p>
       <div className="hero-actions">
-        <a className="button primary" href="/#download">Download free <span aria-hidden="true">↓</span></a>
+        <a className="button primary" href={DOWNLOAD_PATH}>Download free <span aria-hidden="true">↓</span></a>
         <a className="button" href={REPO_URL} rel="noopener noreferrer">View source on GitHub <span aria-hidden="true">↗</span><span className="visually-hidden"> (external site)</span></a>
       </div>
     </section>

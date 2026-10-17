@@ -136,7 +136,7 @@ test('popular pages prefer the curated list and fall back to reading order', () 
 })
 
 test('section anchors match the heading ids markdown.ts renders for real docs pages', async () => {
-  for (const slug of ['install', 'ci-runner', 'troubleshooting', 'faq']) {
+  for (const slug of ['install', 'ci-runner', 'troubleshooting', 'proxy-providers']) {
     const markdown = await readFile(resolve(docsSite, `${slug}.md`), 'utf8')
     const { headings } = renderMarkdown(markdown, { stripTitle: true })
     const sections = pageSections(markdown, slug)

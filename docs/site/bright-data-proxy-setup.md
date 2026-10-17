@@ -6,7 +6,7 @@ To test your own site through a Bright Data residential zone, save the zone's us
 
 - A Bright Data **Residential** zone of your own.
 - The zone's username as shown in the Bright Data control panel, `brd-customer-<customer id>-zone-<zone name>`, without any targeting parameters, and the zone password.
-- Proxy QA Browser for [Windows, Linux or macOS](/#download).
+- Proxy QA Browser for [Windows, Linux or macOS](/download).
 
 ## Set up Bright Data in the app
 

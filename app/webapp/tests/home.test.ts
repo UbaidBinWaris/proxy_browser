@@ -4,7 +4,8 @@ import { readFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DEFAULT_PLATFORM_ORDER, detectOs, formatSize, isMobileOs, macDownloads, orderDownloadCards, platformAsset, recommendedPlatform } from '../src/lib/downloads.ts'
 import type { VisitorOs } from '../src/lib/downloads.ts'
-import { FAQS, FEATURES, GALLERY_CARDS, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, MORE_USE_CASE_LINKS, SCREENSHOT_MAX_BYTES, STEPS, USE_CASES, SCREENSHOT_SMALL_WIDTH, screenshotSrcSet } from '../src/lib/home.ts'
+import { HOME_FAQ_QUESTIONS, answerText, faqItems, homeFaqs } from '../src/lib/faq.ts'
+import { FEATURES, GALLERY_SCREENSHOTS, HERO_SCREENSHOT, SCREENSHOT_MAX_BYTES, STEPS, SCREENSHOT_SMALL_WIDTH, screenshotSrcSet } from '../src/lib/home.ts'
 import type { Release } from '../src/lib/releases.ts'
 import { DEVICE_PRESET_COUNT, HOME_TITLE, SITE_DESCRIPTION, SITE_NAME } from '../src/lib/site.ts'
 import { USE_CASES as USE_CASE_PAGES } from '../src/lib/use-cases.ts'
@@ -17,13 +18,11 @@ async function homeCopy(): Promise<string> {
   return [
     await homePage(),
     ...FEATURES.flatMap(f => [f.title, f.text]),
-    ...USE_CASES.flatMap(u => [u.title, u.text, ...u.points]),
-    ...MORE_USE_CASE_LINKS.map(l => l.label),
+    ...USE_CASE_PAGES.flatMap(u => [u.navLabel, u.summary]),
     ...STEPS.flatMap(s => [s.title, s.text]),
-    ...FAQS.flatMap(f => [f.question, f.answer]),
+    ...homeFaqs().flatMap(f => [f.question, answerText(f)]),
     HERO_SCREENSHOT.caption,
     ...GALLERY_SCREENSHOTS.flatMap(shot => [shot.title, shot.text, ...shot.points]),
-    ...GALLERY_CARDS.flatMap(card => [card.title, card.text]),
   ].join('\n')
 }
 const occurrences = (text: string, phrase: string) => text.toLowerCase().split(phrase.toLowerCase()).length - 1
@@ -99,11 +98,17 @@ test('per-platform files: Windows/Linux assets, one macOS file per architecture 
 test('every home page docs link points to an existing docs page', async () => {
   const manifest = JSON.parse(await readFile(join(repo, 'docs', 'site', 'manifest.json'), 'utf8')) as { sections: Array<{ pages: Array<{ slug: string }> }> }
   const slugs = new Set(manifest.sections.flatMap(section => section.pages.map(page => page.slug)))
-  const linked = [...FEATURES.map(f => f.docSlug), ...USE_CASES.map(u => u.docSlug), ...GALLERY_SCREENSHOTS.map(s => s.docSlug), ...GALLERY_CARDS.map(c => c.docSlug), ...FAQS.flatMap(f => f.link?.href.startsWith('/docs/') ? [f.link.href.slice('/docs/'.length)] : [])]
-  for (const slug of linked) assert.ok(slugs.has(slug), `missing docs page: ${slug}`)
-  assert.ok(FEATURES.length >= 9)
-  assert.equal(new Set(FEATURES.map(f => f.docSlug)).size, FEATURES.length, 'each feature links to its own page')
-  for (const href of FAQS.flatMap(f => f.link && !f.link.href.startsWith('/docs/') ? [f.link.href] : [])) assert.match(href, /^\/(acceptable-use|privacy|terms|security|licenses|disclaimer|changelog|about)$/)
+  for (const slug of GALLERY_SCREENSHOTS.map(s => s.docSlug)) assert.ok(slugs.has(slug), `missing docs page: ${slug}`)
+})
+
+test('the features are six short, distinct items, each with its own icon', () => {
+  assert.equal(FEATURES.length, 6)
+  assert.equal(new Set(FEATURES.map(f => f.icon)).size, FEATURES.length)
+  assert.equal(new Set(FEATURES.map(f => f.title)).size, FEATURES.length)
+  for (const feature of FEATURES) {
+    assert.equal(feature.text.split(/(?<=[.!?])\s+/).length, 1, `${feature.title}: one sentence`)
+    assert.ok(feature.text.length <= 130, `${feature.title}: ${feature.text.length} characters`)
+  }
 })
 
 test('the home title, description and social cards describe the app without overclaiming', async () => {
@@ -137,8 +142,8 @@ test('home copy stays within what the docs support', async () => {
   assert.ok(!/\breal (devices?|phones?|tablets?|iphones?)\b/i.test(copy))
   // QA aids, not legal determinations.
   assert.ok(!/tcpa compliance|compliance (check|software)/i.test(copy))
-  for (const title of [...FEATURES.map(f => f.title), ...USE_CASES.map(u => u.title), ...GALLERY_SCREENSHOTS.map(s => s.title), ...GALLERY_CARDS.map(c => c.title)]) assert.ok(!/compliance|verified/i.test(title), title)
-  for (const point of [...USE_CASES.flatMap(u => u.points), ...GALLERY_SCREENSHOTS.flatMap(s => s.points)]) assert.ok(!/\bverified\b/i.test(point), point)
+  for (const title of [...FEATURES.map(f => f.title), ...GALLERY_SCREENSHOTS.map(s => s.title)]) assert.ok(!/compliance|verified/i.test(title), title)
+  for (const point of GALLERY_SCREENSHOTS.flatMap(s => s.points)) assert.ok(!/\bverified\b/i.test(point), point)
   // WebKit is the engine Safari is built on, not Safari (docs/site/browsers.md).
   assert.ok(!/\bin safari\b|\bsafari browser\b/i.test(copy))
   // No positioning the product as an evasion tool.
@@ -148,7 +153,7 @@ test('home copy stays within what the docs support', async () => {
   assert.match(hero, /your own proxy plan/)
   // The hero names the product: a desktop QA browser for your own site.
   assert.match(hero, /desktop QA browser/)
-  assert.match(FEATURES.find(f => f.docSlug === 'locations-and-devices')!.text, /your own proxy plan/)
+  assert.match(FEATURES.find(f => f.icon === 'location')!.text, /your own proxy plan/)
   // Each exact-match search phrase appears at most once on the page.
   for (const phrase of ['test your website from different locations', 'free cross-browser testing', 'website form testing', 'website testing tool']) assert.ok(occurrences(copy, phrase) <= 1, phrase)
 })
@@ -164,25 +169,40 @@ test('the device preset count comes from one constant that matches the docs', as
     assert.ok(!/\b\d+\s+(?:[a-z,]+\s+){0,4}?presets\b/i.test(source), `${file}: use DEVICE_PRESET_COUNT`)
   }
   assert.ok(FEATURES.some(f => f.text.startsWith(`${DEVICE_PRESET_COUNT} emulated`)))
-  assert.ok(GALLERY_CARDS.some(c => c.title === `${DEVICE_PRESET_COUNT} emulated device presets`))
   for (const file of [join(webapp, 'src', 'lib', 'home.ts'), join(webapp, 'src', 'app', 'page.tsx')]) {
     assert.ok(!(await readFile(file, 'utf8')).includes(String(DEVICE_PRESET_COUNT)), `${file}: no literal ${DEVICE_PRESET_COUNT}, use DEVICE_PRESET_COUNT`)
   }
   assert.ok(STEPS.some(s => s.text.includes(`${DEVICE_PRESET_COUNT} emulated device presets`)))
 })
 
-test('the home page body links each use-case page once, and only published ones', async () => {
-  const linked = [...USE_CASES.flatMap(u => u.useCaseSlug ? [u.useCaseSlug] : []), ...MORE_USE_CASE_LINKS.map(l => l.slug)]
-  assert.equal(new Set(linked).size, linked.length, 'one link per use-case page')
-  assert.equal(new Set(MORE_USE_CASE_LINKS.map(l => l.label)).size, MORE_USE_CASE_LINKS.length)
-  for (const page of USE_CASE_PAGES) assert.ok(linked.includes(page.slug), `the home page does not link /use-cases/${page.slug}`)
-  // Cards and the "More use cases" row render a link only when the page exists.
+test('the home page links every use-case page once, with a short summary', async () => {
   const page = await homePage()
-  assert.ok(page.includes('MORE_USE_CASE_LINKS.filter(link => findUseCase(link.slug))'))
-  assert.ok(page.includes('useCase.useCaseSlug ? findUseCase(useCase.useCaseSlug) : null'))
+  // One card per use case, rendered from src/lib/use-cases.ts, so a new page is linked automatically.
+  assert.ok(page.includes('{USE_CASES.map(useCase => <li key={useCase.slug}>'))
+  assert.equal(page.split('href={useCasePath(useCase.slug)}').length - 1, 1)
+  for (const useCase of USE_CASE_PAGES) assert.ok(useCase.summary.length > 0 && useCase.summary.length <= 90, `${useCase.slug}: summary is ${useCase.summary.length} characters`)
+  assert.equal(new Set(USE_CASE_PAGES.map(u => u.summary)).size, USE_CASE_PAGES.length)
 })
 
-test('the gallery shows three screenshot rows and three text cards, each with its own docs link', async () => {
+test('downloads go to /download, and the home page keeps the #download anchor the desktop app opens', async () => {
+  const page = await homePage()
+  assert.ok(page.includes('id="download"'))
+  assert.ok(!page.includes('href="#download"') && !page.includes('/#download'))
+  assert.ok((page.match(/href=\{DOWNLOAD_PATH\}/g) ?? []).length >= 3)
+  for (const file of ['src/components/SiteChrome.tsx', 'src/app/use-cases/[slug]/page.tsx', 'src/app/docs/[slug]/page.tsx', 'src/app/llms.txt/route.ts', 'src/lib/seo.ts']) {
+    assert.ok(!(await readFile(join(webapp, file), 'utf8')).includes('#download'), `${file} still links #download`)
+  }
+})
+
+test('the home questions come from the FAQ page', async () => {
+  const questions = new Set(faqItems().map(item => item.question))
+  for (const question of HOME_FAQ_QUESTIONS) assert.ok(questions.has(question), question)
+  assert.equal(homeFaqs().length, HOME_FAQ_QUESTIONS.length)
+  // The FAQPage structured data lives on /faq only, so the same questions are not marked up twice.
+  assert.ok(!(await homePage()).includes('faqPage('))
+})
+
+test('the gallery shows three screenshot rows, each with its own docs link', async () => {
   assert.equal(GALLERY_SCREENSHOTS.length, 3)
   assert.deepEqual(GALLERY_SCREENSHOTS.map(s => s.src.split('/').pop()), ['run-detail.webp', 'qa-results.webp', 'check-evidence.webp'])
   assert.deepEqual(GALLERY_SCREENSHOTS.map(s => s.docSlug), ['launching', 'automation', 'checks'])
@@ -192,23 +212,14 @@ test('the gallery shows three screenshot rows and three text cards, each with it
     const sentences = shot.text.split(/(?<=[.!?])\s+/).length
     assert.ok(sentences >= 2 && sentences <= 3, `${shot.title}: ${sentences} sentences`)
   }
-  assert.equal(GALLERY_CARDS.length, 3)
-  assert.deepEqual(GALLERY_CARDS.map(c => c.docSlug), ['locations-and-devices', 'browsers', 'security-and-privacy'])
-  assert.equal(new Set(GALLERY_CARDS.map(c => c.icon)).size, GALLERY_CARDS.length)
-  for (const card of GALLERY_CARDS) {
-    const sentences = card.text.split(/(?<=[.!?])\s+/).length
-    assert.ok(sentences >= 2 && sentences <= 3, `${card.title}: ${sentences} sentences`)
-    // The cards explain in more depth than the features grid; they do not repeat its wording.
-    for (const feature of FEATURES) assert.ok(!card.text.includes(feature.text) && card.title !== feature.title, card.title)
-  }
-  // Rows and cards are H3s under the section's H2; images keep their size, srcset, sizes and lazy loading.
+  // Rows are H3s under the section's H2; images keep their size, srcset, sizes and lazy loading.
   const page = await homePage()
   const gallery = page.slice(page.indexOf('className="section home-gallery"'), page.indexOf('id="use-cases"'))
+  assert.ok(page.includes('aria-hidden="true" focusable="false"'), 'feature icons are decorative')
   assert.equal((gallery.match(/<h2\b/g) ?? []).length, 1)
-  assert.equal((gallery.match(/<h3>/g) ?? []).length, 2, 'one H3 in the row template, one in the card template')
+  assert.equal((gallery.match(/<h3>/g) ?? []).length, 1, 'one H3 in the row template')
   assert.ok(!/<h4\b/.test(gallery))
   for (const attr of ['srcSet={screenshotSrcSet(shot)}', 'sizes="', 'width={shot.width}', 'height={shot.height}', 'alt={shot.alt}', 'loading="lazy"']) assert.ok(gallery.includes(attr), attr)
-  assert.ok(gallery.includes('aria-hidden="true" focusable="false"'), 'card icons are decorative')
 })
 
 // Screenshots live in docs/site/images (published with the docs under /docs-assets/images).

@@ -11,7 +11,9 @@ export const DEFAULT_SOCIAL_IMAGE: SocialImage = { url: '/opengraph-image', widt
 
 /** Last content change of the about page and of the use-case pages (ISO dates, for the sitemap); update with their copy. */
 export const ABOUT_DATE = '2026-10-10'
-export const USE_CASES_DATE = '2026-10-10'
+export const USE_CASES_DATE = '2026-10-18'
+/** Last content change of /faq (src/lib/faq.ts), for the sitemap; update with its questions. */
+export const FAQ_DATE = '2026-10-18'
 
 /**
  * Per-page metadata with canonical URL and matching Open Graph / Twitter fields. Pass `article` for docs pages:
@@ -51,6 +53,7 @@ export function sitemapEntries(docPages: Pick<ManifestPage, 'slug' | 'lastModifi
     if (legal.has(path)) return POLICY_DATE
     if (path === '/about') return ABOUT_DATE
     if (path === USE_CASES_PATH) return USE_CASES_DATE
+    if (path === '/faq') return FAQ_DATE
     // No date for /changelog: release-notes.json lists versions without release dates.
     return path === '/' || path === '/docs' ? newest : undefined
   }
@@ -122,7 +125,7 @@ export function homeGraph(release: { version: string; releasedAt: string } | nul
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
         author: { '@id': SCHEMA_IDS.person },
         sameAs: [REPO_URL],
-        ...(release ? { softwareVersion: release.version, dateModified: release.releasedAt, downloadUrl: `${SITE_URL}/#download` } : {}),
+        ...(release ? { softwareVersion: release.version, dateModified: release.releasedAt, downloadUrl: `${SITE_URL}/download` } : {}),
       },
       { '@type': 'SoftwareSourceCode', '@id': SCHEMA_IDS.source, name: `${SITE_NAME} source code`, codeRepository: REPO_URL, license: APACHE_LICENSE, programmingLanguage: 'TypeScript', targetProduct: { '@id': SCHEMA_IDS.software }, author: { '@id': SCHEMA_IDS.person } },
       person,

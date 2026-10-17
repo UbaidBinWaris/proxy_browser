@@ -6,7 +6,7 @@ To test your own site through an IPRoyal residential plan, save the plan's proxy
 
 - An IPRoyal **Residential** proxy plan of your own.
 - The proxy username and password from your IPRoyal dashboard, without any targeting parameters.
-- Proxy QA Browser for [Windows, Linux or macOS](/#download).
+- Proxy QA Browser for [Windows, Linux or macOS](/download).
 
 ## Set up IPRoyal in the app
 

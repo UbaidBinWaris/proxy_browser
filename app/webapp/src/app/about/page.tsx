@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import { JsonLd } from '@/components/JsonLd'
 import { pageBreadcrumbs, pageMetadata, profilePage } from '@/lib/seo'
-import { LICENSE_URL, OWNER, REPO_BLOB_URL, REPO_URL } from '@/lib/site'
+import { CONTACT_EMAILS, FAQ_PATH, LICENSE_URL, OWNER, REPO_BLOB_URL, REPO_URL } from '@/lib/site'
 
 export const metadata: Metadata = pageMetadata({ title: `Built by ${OWNER.name}`, description: `Proxy QA Browser is a free, open-source QA browser created and maintained by ${OWNER.name}, an independent AI systems and full-stack engineer.`, path: '/about' })
 
@@ -13,7 +13,7 @@ const contacts = [
   { label: 'Website', detail: 'ubaidbinwaris.com', href: OWNER.website },
   { label: 'GitHub', detail: 'github.com/UbaidBinWaris', href: OWNER.github },
   { label: 'LinkedIn', detail: 'linkedin.com/in/ubaidbinwaris', href: OWNER.linkedin },
-  { label: 'Email', detail: OWNER.email, href: `mailto:${OWNER.email}` },
+  ...CONTACT_EMAILS.map(contact => ({ label: `Email: ${contact.label}`, detail: contact.address, href: `mailto:${contact.address}` })),
 ]
 
 export default function About() {
@@ -44,7 +44,7 @@ export default function About() {
       <aside className="contact-card" aria-labelledby="contact-heading">
         <h2 id="contact-heading">Get in touch</h2>
         <ul>{contacts.map(c => <li key={c.label}><a href={c.href} rel={c.href.startsWith('http') ? 'noopener noreferrer' : undefined}>{c.label}<span>{c.detail}</span></a></li>)}</ul>
-        <p className="page-meta">Project source: <a className="quiet-link" href={REPO_URL} rel="noopener noreferrer">UbaidBinWaris/proxy_browser</a></p>
+        <p className="page-meta">Questions first? See the <a className="quiet-link" href={FAQ_PATH}>FAQ</a>. Project source: <a className="quiet-link" href={REPO_URL} rel="noopener noreferrer">UbaidBinWaris/proxy_browser</a></p>
       </aside>
     </div>
   </>

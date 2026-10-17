@@ -84,7 +84,7 @@ After the restart, a notice at the top of the window says how it ended:
 
 On macOS the app in Applications already is the computer copy, so **Set up on this computer**, shortcuts, pinning and **Choose USB update** are not offered.
 
-**Settings → App & updates** and the startup check verify the signed feed exactly as on other platforms. When a release includes a macOS download for your Mac's architecture, the app shows **Download vX.Y.Z**, which opens the [download page](/#download). Replace the app in Applications with the new one; profiles, history and the vault live outside the app bundle and are kept. The app does not replace itself on macOS.
+**Settings → App & updates** and the startup check verify the signed feed exactly as on other platforms. When a release includes a macOS download for your Mac's architecture, the app shows **Download vX.Y.Z**, which opens the [download page](/download). Replace the app in Applications with the new one; profiles, history and the vault live outside the app bundle and are kept. The app does not replace itself on macOS.
 
 macOS releases are unsigned DMGs for Apple silicon and Intel; a newly downloaded copy needs **Open Anyway** once, see [Install](/docs/install#macos).
 
