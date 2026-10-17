@@ -18,6 +18,8 @@ Providers are built into the app; no plug-ins are loaded at runtime, because a p
 
 > **Note:** **Community-verified** providers were written from each provider's official parameter documentation and **have not been tested with a live account**. The provider pickers label them *(community-verified)* and the keys window says *"Community-verified (not tested with a live account)"*. If a gateway refuses a parameter, check the provider documentation linked from the keys window and [open an issue](https://github.com/UbaidBinWaris/proxy_browser/issues) with the redacted error.
 
+Step-by-step setup for each provider, with its targeting examples and common errors: [DataImpulse](/docs/dataimpulse-proxy-setup), [Bright Data](/docs/bright-data-proxy-setup), [Oxylabs](/docs/oxylabs-proxy-setup), [Decodo](/docs/decodo-proxy-setup) and [IPRoyal](/docs/iproyal-proxy-setup).
+
 Profiles, quick launches, CLI runs, proxy sessions and run history record which provider they used. Records created before providers were selectable are DataImpulse records.
 
 ## Pools, logins and billing

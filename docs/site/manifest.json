@@ -21,6 +21,16 @@
       ]
     },
     {
+      "title": "Provider setup guides",
+      "pages": [
+        { "slug": "dataimpulse-proxy-setup", "title": "DataImpulse proxy setup", "seoTitle": "DataImpulse proxy setup for QA testing", "description": "Use your DataImpulse Residential or Mobile plan to test your own site by US state, city or ZIP: login, targeting parameters, sticky sessions and fixes." },
+        { "slug": "bright-data-proxy-setup", "title": "Bright Data proxy setup", "seoTitle": "Bright Data proxy setup for QA testing", "description": "Use your Bright Data residential zone to test your own site by US state, city or ZIP: zone username, targeting parameters, sessions and common errors." },
+        { "slug": "oxylabs-proxy-setup", "title": "Oxylabs proxy setup", "seoTitle": "Oxylabs proxy setup for QA testing", "description": "Use your Oxylabs Residential Proxies plan to test your own site by US state, city or ZIP: customer- login, cc, st and postalcode parameters and fixes." },
+        { "slug": "decodo-proxy-setup", "title": "Decodo proxy setup", "seoTitle": "Decodo proxy setup for QA testing", "description": "Use your Decodo (formerly Smartproxy) residential plan to test your own site by US state, city or ZIP: user- login, parameters, sticky sessions, fixes." },
+        { "slug": "iproyal-proxy-setup", "title": "IPRoyal proxy setup", "seoTitle": "IPRoyal proxy setup for QA testing", "description": "Use your IPRoyal residential plan to test your own site by US state or city: password parameters, 8-character sticky sessions, lifetime and common errors." }
+      ]
+    },
+    {
       "title": "QA automation",
       "pages": [
         { "slug": "automation", "title": "Scenarios and matrices", "seoTitle": "Scenarios, CSV datasets and test matrices", "description": "Record QA scenarios, import CSV datasets, run browser × device × location matrices, compare screenshots, schedule runs and export JSON, JUnit or HTML." },

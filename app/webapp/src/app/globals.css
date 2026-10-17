@@ -1817,6 +1817,33 @@ h2 {
   max-width: 72ch;
 }
 
+.doc-use-cases {
+  margin-bottom: 24px;
+}
+
+.doc-use-cases h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+
+.doc-download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: white;
+  padding: 16px 20px;
+  margin-bottom: 24px;
+}
+
+.doc-download p {
+  margin: 0;
+  font-size: 15px;
+}
+
 .edit-link {
   font-size: 13px;
   font-weight: 600;

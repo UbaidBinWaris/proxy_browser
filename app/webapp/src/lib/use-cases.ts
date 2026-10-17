@@ -44,6 +44,8 @@ export type UseCase = {
 
 export const USE_CASES_PATH = '/use-cases'
 export const useCasePath = (slug: string): string => `${USE_CASES_PATH}/${slug}`
+/** The use cases that list a docs page among their `docLinks`, linked back from that page. */
+export const useCasesForDoc = (docSlug: string): UseCase[] => USE_CASES.filter(useCase => useCase.docLinks.some(link => link.slug === docSlug))
 /** The page's social preview image (src/app/og/use-cases/[slug]/route.tsx). */
 export const useCaseImagePath = (slug: string): string => `/og${USE_CASES_PATH}/${slug}`
 

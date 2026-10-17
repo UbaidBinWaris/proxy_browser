@@ -6,6 +6,7 @@ import { Prose, Toc } from '@/components/Prose'
 import { allPages, loadDoc, loadManifest, longDate, neighbours } from '@/lib/docs'
 import { breadcrumbList, docArticle, pageMetadata } from '@/lib/seo'
 import { DOCS_EDIT_URL } from '@/lib/site'
+import { useCasePath, useCasesForDoc } from '@/lib/use-cases'
 
 type Props = { params: Promise<{ slug: string }> }
 
@@ -31,7 +32,7 @@ export default async function DocPage({ params }: Props) {
   const { slug } = await params
   const doc = await loadDoc(slug)
   if (!doc) notFound()
-  const manifest = await loadManifest(), { previous, next } = neighbours(manifest, slug)
+  const manifest = await loadManifest(), { previous, next } = neighbours(manifest, slug), useCases = useCasesForDoc(slug)
   return <div className="docs-shell">
     <JsonLd data={docArticle(doc)} />
     <JsonLd data={breadcrumbList([{ name: 'Home', path: '/' }, { name: 'Documentation', path: '/docs' }, { name: doc.title, path: `/docs/${slug}` }])} />
@@ -47,6 +48,14 @@ export default async function DocPage({ params }: Props) {
       <Toc headings={doc.headings} className="toc-inline" />
       <Prose html={doc.html} />
       <footer className="docs-footer">
+        {useCases.length ? <section className="doc-use-cases" aria-labelledby="doc-use-cases-title">
+          <h2 id="doc-use-cases-title">Use cases</h2>
+          <ul className="use-case-doc-links">{useCases.map(useCase => <li key={useCase.slug}><a href={useCasePath(useCase.slug)}><strong>{useCase.navLabel}</strong><small>{useCase.description}</small></a></li>)}</ul>
+        </section> : null}
+        <div className="doc-download">
+          <p>Proxy QA Browser is free and open source for Windows, Linux and macOS.</p>
+          <a className="button primary" href="/#download">Download free <span aria-hidden="true">↓</span></a>
+        </div>
         <a className="edit-link" href={`${DOCS_EDIT_URL}/${slug}.md`} rel="noopener noreferrer">Edit this page on GitHub <span aria-hidden="true">↗</span></a>
         {previous || next ? <nav className="pager" aria-label="Previous and next pages">
           {previous ? <a className="pager-previous" href={`/docs/${previous.slug}`} rel="prev"><small>← Previous</small><strong>{previous.title}</strong></a> : null}
