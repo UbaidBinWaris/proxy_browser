@@ -1,9 +1,21 @@
 name: Deploy website
 # Website-only deploy: rebuilds app/webapp and swaps it in on the production server with deploy/install-webapp.sh,
 # which health-checks the new site and restores the previous one if anything fails. No desktop builds, no release,
-# no update-feed change: app users see no update notice. Start it from the Actions tab (Deploy website → Run workflow)
-# or from a terminal: `npm run deploy:website` (needs the GitHub CLI, `gh auth login`).
+# no update-feed change: app users see no update notice. It runs on every push to main that changes the website or its
+# docs, and can be started by hand from the Actions tab (Deploy website → Run workflow) or from a terminal:
+# `npm run deploy:website` (needs the GitHub CLI, `gh auth login`). The tests, typecheck and build below gate every deploy.
 on:
+  push:
+    branches: [main]
+    paths:
+      - app/webapp/**
+      - docs/site/**
+      - resources/release-notes.json
+      - scripts/sync-docs.mjs
+      - scripts/sync-brand.mjs
+      - deploy/package-webapp.sh
+      - deploy/install-webapp.sh
+      - .github/workflows/deploy-website.yml
   workflow_dispatch:
 permissions:
   contents: read

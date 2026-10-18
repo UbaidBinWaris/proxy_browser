@@ -103,7 +103,7 @@ export default async function Home() {
       <ol>{STEPS.map((step, i) => <li key={step.title}><span aria-hidden="true">{String(i + 1).padStart(2, '0')}</span><div><h3>{step.title}</h3><p>{step.text}</p></div></li>)}</ol>
     </section>
     {/* The desktop app opens this anchor (the home page with the download hash) for macOS updates, so it stays. */}
-    <section id="download" className="home-download section" aria-labelledby="download-title">
+    <section id="download" className="home-download" aria-labelledby="download-title">
       <div>
         <span className="eyebrow">DOWNLOAD</span>
         <h2 id="download-title">Free for Windows, Linux and macOS.</h2>

@@ -147,4 +147,6 @@ npm ci --prefix app/webapp
 npm run webapp:dev
 ```
 
+Website changes deploy on their own: every push to `main` that touches `app/webapp`, `docs/site`, the release notes or the website deploy scripts runs **Deploy website**, which tests, typechecks and builds the site, swaps it in on the server and restores the previous version if the health check fails. It changes no app release and no update feed. Start it by hand from **Actions → Deploy website → Run workflow** or with `npm run deploy:website`. Desktop releases still deploy only from a `v*` tag.
+
 Server preparation, storage layout and operations are in [docs/SERVER-DEPLOYMENT.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/SERVER-DEPLOYMENT.md), and the current security scope in [docs/SECURITY-REVIEW.md](https://github.com/UbaidBinWaris/proxy_browser/blob/main/docs/SECURITY-REVIEW.md).

@@ -1015,11 +1015,12 @@ h2 {
 .how {
   background: #f0f0f7;
   border: 1px solid #e7e7f0;
-  border-radius: 14px;
-  padding: 45px 50px;
+  border-radius: 16px;
+  padding: 48px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 65px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 64px;
+  align-items: start;
 }
 
 .how h2 {
@@ -1028,9 +1029,10 @@ h2 {
 
 .how>div>p {
   margin: 20px 0;
-  max-width: 290px;
+  max-width: 300px;
 }
 
+/* Steps: a numbered badge per step, joined by a line, with the heading on the badge's centre line. */
 .how ol {
   list-style: none;
   margin: 0;
@@ -1038,36 +1040,59 @@ h2 {
 }
 
 .how li {
+  position: relative;
   display: flex;
-  gap: 22px;
-  margin-bottom: 24px;
+  gap: 16px;
+  padding-bottom: 28px;
 }
 
 .how li:last-child {
-  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.how li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 44px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: #dcdbec;
 }
 
 .how li>span {
-  border: 1px solid #dbdae9;
-  background: #fafaff;
+  border: 1px solid #d6d5ee;
+  background: white;
   color: var(--purple-text);
   border-radius: 50%;
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  font-size: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.how li>div {
+  min-width: 0;
 }
 
 .how h3 {
-  font-size: 14px;
-  margin: 5px 0 6px;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: -.2px;
+  margin: 7px 0 4px;
 }
 
 .how li p {
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0;
 }
 
 .platform-mark {
@@ -1209,7 +1234,7 @@ h2 {
     display: none;
   }
   .how {
-    padding: 40px 30px;
+    padding: 40px 32px;
     gap: 40px;
   }
 }
@@ -1259,9 +1284,9 @@ h2 {
     max-width: 420px;
   }
   .how {
-    grid-template-columns: 1fr;
-    padding: 30px 24px;
-    gap: 30px;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 32px 24px;
+    gap: 32px;
   }
   .how h2 {
     font-size: 32px;
@@ -2569,11 +2594,7 @@ h2 {
   margin-top: 24px;
 }
 
-.use-case-steps h3 {
-  font-size: 15px;
-}
-
-.use-case-steps li p, .use-case-steps > div > p {
+.use-case-steps > div > p {
   font-size: 14px;
 }
 
