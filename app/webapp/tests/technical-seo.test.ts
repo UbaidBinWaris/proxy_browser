@@ -34,10 +34,21 @@ test('robots.txt allows the site, keeps crawlers out of /api/ and lists the site
 })
 
 test('llms.txt says what the app is and is not for, and lists every use case', async () => {
-  const text = await (await llmsTxt()).text()
-  assert.match(text, /## A good fit for\n/)
-  assert.match(text, /## Not a fit for\n[\s\S]*Physical phones and tablets[\s\S]*Bypassing bot detection/)
-  for (const useCase of USE_CASES) assert.ok(text.includes(`${SITE_URL}/use-cases/${useCase.slug}`), useCase.slug)
+  // Its own docs manifest, so the test does not depend on scripts/sync-docs.mjs having run (the macOS CI job skips it).
+  const content = await mkdtemp(join(tmpdir(), 'proxy-seo-llms-')), previous = process.env.CONTENT_DIR
+  try {
+    await writeFile(join(content, 'manifest.json'), JSON.stringify({ sections: [{ title: 'Getting started', pages: [{ slug: 'introduction', title: 'Introduction', description: 'Start here.' }] }] }))
+    process.env.CONTENT_DIR = content
+    const text = await (await llmsTxt()).text()
+    assert.match(text, /## A good fit for\n/)
+    assert.match(text, /## Not a fit for\n[\s\S]*Physical phones and tablets[\s\S]*Bypassing bot detection/)
+    assert.ok(text.includes(`- [Introduction](${SITE_URL}/docs/introduction): Start here.`), 'docs pages come from the manifest')
+    for (const useCase of USE_CASES) assert.ok(text.includes(`${SITE_URL}/use-cases/${useCase.slug}`), useCase.slug)
+  } finally {
+    if (previous === undefined) delete process.env.CONTENT_DIR
+    else process.env.CONTENT_DIR = previous
+    await rm(content, { recursive: true, force: true })
+  }
 })
 
 test('release downloads are served with X-Robots-Tag: noindex', async () => {
