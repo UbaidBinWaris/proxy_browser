@@ -143,6 +143,17 @@ function GeneralTab({ form, errors, set, onSubmit, screenshotDir, onReveal }: Fo
             description={form.singleSessionMode ? 'Launching while a browser is open offers to close it first.' : 'Several browsers can run side by side.'}
           />
           <Switch
+            id="settings-simpleDevices"
+            checked={form.simpleDevices}
+            onChange={(checked) => set('simpleDevices', checked)}
+            label="Simple device picker (beta)"
+            description={
+              form.simpleDevices
+                ? 'Launch offers only Windows, macOS, Android and iOS. Windows and macOS open the browser maximized at your screen size; Android and iOS pick a random current phone. QA automation is not affected.'
+                : 'The full device catalog with brands, filters and every preset.'
+            }
+          />
+          <Switch
             id="settings-checkUpdatesOnStartup"
             checked={form.checkUpdatesOnStartup}
             onChange={(checked) => set('checkUpdatesOnStartup', checked)}

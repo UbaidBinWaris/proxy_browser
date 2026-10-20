@@ -41,6 +41,7 @@ export interface SettingsFormState {
   /** Editor text; validated as a whole number in the shared range. */
   locationMatchAttempts: string
   checkUpdatesOnStartup: boolean
+  simpleDevices: boolean
   updateChannel: AppSettings['updateChannel']
 }
 
@@ -65,6 +66,7 @@ export function settingsFormFrom(settings: AppSettings): SettingsFormState {
     locationMatchPolicy: settings.locationMatchPolicy,
     locationMatchAttempts: String(settings.locationMatchAttempts),
     checkUpdatesOnStartup: settings.checkUpdatesOnStartup,
+    simpleDevices: settings.simpleDevices,
     updateChannel: settings.updateChannel,
   }
 }
@@ -135,6 +137,7 @@ export function validateSettingsForm(
     locationMatchPolicy: form.locationMatchPolicy,
     locationMatchAttempts: numberOrNaN(form.locationMatchAttempts),
     checkUpdatesOnStartup: form.checkUpdatesOnStartup,
+    simpleDevices: form.simpleDevices,
     updateChannel: form.updateChannel,
   })
   if (!parsed.success) {

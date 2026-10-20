@@ -766,13 +766,27 @@ export function resolveUserAgent(profile: Profile, preset: DevicePresetInfo): st
  * userAgent follows `resolveUserAgent`, and locale/timezone are profile fields
  * by definition. Screen size is only forwarded when the profile keeps the
  * preset viewport, so a custom viewport never reports a mismatched physical
- * screen.
+ * screen. `fitScreen` (desktop presets only) drops the viewport so the page
+ * follows the maximized window; phones and tablets ignore it.
  */
-export function buildContextOptions(profile: Profile, preset: DevicePresetInfo): BrowserContextOptions {
+export function buildContextOptions(profile: Profile, preset: DevicePresetInfo, { fitScreen = false }: { fitScreen?: boolean } = {}): BrowserContextOptions {
   const { emulation } = definition(preset.id)
+  const userAgent = resolveUserAgent(profile, preset)
+  if (fitScreen && preset.deviceType === 'desktop') {
+    // Simple device picker (settings.simpleDevices): the page fills the browser window, which opens maximized at
+    // this computer's screen size. Playwright rejects deviceScaleFactor and isMobile without a viewport, and the
+    // real screen is reported as is.
+    return {
+      viewport: null,
+      ...(userAgent !== undefined ? { userAgent } : {}),
+      locale: profile.locale,
+      timezoneId: profile.timezone,
+      ignoreHTTPSErrors: false,
+      acceptDownloads: false,
+    }
+  }
   const viewport = { width: profile.viewportWidth, height: profile.viewportHeight }
   const keepsPresetViewport = viewport.width === preset.viewportWidth && viewport.height === preset.viewportHeight
-  const userAgent = resolveUserAgent(profile, preset)
 
   const options: BrowserContextOptions = {
     viewport,

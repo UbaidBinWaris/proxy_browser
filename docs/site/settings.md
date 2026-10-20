@@ -16,6 +16,7 @@ Settings are stored in the local database and validated on load, key by key, so 
 | --- | --- | --- | --- |
 | `defaultFormUrl` | General → **Default start URL** | `https://example.com/` | Opened when Launch has no start URL and a profile has no form URL override. `http(s)` only |
 | `singleSessionMode` | General → **One session at a time** | on | Only one browser session may be open; Launch offers **Close it and launch** |
+| `simpleDevices` | General → **Simple device picker (beta)** | off | Launch and profiles offer only Windows, macOS, Android and iOS; desktops open maximized at your screen size and phones are random current models. QA automation is not affected. See [Simple device picker](/docs/locations-and-devices#simple-device-picker-beta) |
 | `checkUpdatesOnStartup` | General → **Check for updates on startup** | on | One background check of the signed update feed after start, at most once per 24 hours; never downloads |
 | `screenshotDir` | General → **Screenshot folder** (read-only) | `<userData>/data/screenshots` | Where screenshots are written |
 | `browserExecutables` | Browsers → row **…** → **Set custom path** | none | Executable path per installed browser, yours or saved automatically |

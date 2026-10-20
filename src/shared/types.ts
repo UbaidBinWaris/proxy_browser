@@ -263,6 +263,10 @@ export const DEVICE_OS_LABELS: Record<DeviceOs, string> = {
   other: 'Other',
 }
 
+/** The systems the simple device picker (settings.simpleDevices) offers, in display order. */
+export const SIMPLE_DEVICE_OS = ['windows', 'macos', 'android', 'ios'] as const satisfies readonly DeviceOs[]
+export type SimpleDeviceOs = (typeof SIMPLE_DEVICE_OS)[number]
+
 export const DEVICE_ORIENTATIONS = ['portrait', 'landscape'] as const
 export type DeviceOrientation = (typeof DEVICE_ORIENTATIONS)[number]
 
@@ -1040,6 +1044,13 @@ export const AppSettingsSchema = z.object({
   checkUpdatesOnStartup: z.boolean().default(true),
   /** Beta releases are offered only after an explicit opt-in. */
   updateChannel: UpdateChannelSchema.default('stable'),
+  /**
+   * Simple device picker (beta). On: manual launches choose only Windows, macOS, Android or iOS (see
+   * SIMPLE_DEVICE_OS); a desktop opens maximized at this computer's screen size instead of the preset's
+   * viewport, and a phone is a random current model of that system. Off: the full catalog and picker.
+   * QA automation is never affected. Databases created before this key existed load as `false`.
+   */
+  simpleDevices: z.boolean().default(false),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 export type BrowserExecutableOverrides = AppSettings['browserExecutables']
@@ -1079,6 +1090,7 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'screenshotDir'> = {
   locationMatchAttempts: 3,
   checkUpdatesOnStartup: true,
   updateChannel: 'stable',
+  simpleDevices: false,
 }
 
 // ---------------------------------------------------------------------------

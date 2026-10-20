@@ -362,6 +362,19 @@ describe('DEVICE_PRESETS catalog', () => {
     expect(buildContextOptions(profileFor(hidpi), hidpi)).toMatchObject({ deviceScaleFactor: 2, screen: { width: 1792, height: 1120 } })
   })
 
+  it('fitScreen drops the viewport for desktop presets only (simple device picker)', () => {
+    const desktop = getPreset('windows-desktop')
+    const full = buildContextOptions(profileFor(desktop), desktop, { fitScreen: true })
+    // Playwright rejects deviceScaleFactor and isMobile without a viewport; the real screen is reported as is.
+    expect(full).toEqual({ viewport: null, userAgent: desktop.userAgent, locale: 'en-US', timezoneId: 'America/New_York', ignoreHTTPSErrors: false, acceptDownloads: false })
+    // Installed browsers and other engines keep their own user agent, as with a fixed viewport.
+    expect(buildContextOptions(profileFor(desktop, 'firefox'), desktop, { fitScreen: true })).not.toHaveProperty('userAgent')
+    // Phones keep full emulation.
+    const phone = getPreset('iphone-15')
+    expect(buildContextOptions(profileFor(phone), phone, { fitScreen: true })).toEqual(buildContextOptions(profileFor(phone), phone))
+    expect(buildContextOptions(profileFor(desktop), desktop)).toMatchObject({ viewport: { width: desktop.viewportWidth, height: desktop.viewportHeight } })
+  })
+
   it('ships the curated custom Android phones with realistic Chrome UAs', () => {
     for (const id of CUSTOM_ANDROID_IDS) {
       const preset = getPreset(id)

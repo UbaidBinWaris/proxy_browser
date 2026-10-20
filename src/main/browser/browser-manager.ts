@@ -57,6 +57,7 @@ import type {
   BrowserEngineFamily,
   BrowserEngineInfo,
   BrowserSession,
+  DevicePresetInfo,
   IpInfo,
   NetworkEntry,
   Profile,
@@ -146,7 +147,34 @@ export interface BrowserManagerOptions {
   heartbeatIntervalMs?: number
   /** Site access tokens (src/main/site-access): routes enabled tokens into every new context. */
   siteAccess?: SiteAccessAttacher
+  /**
+   * Work area of the display the app window is on (screen minus taskbar/dock), in CSS px. Used to size
+   * Firefox and WebKit windows to the screen for full-screen desktop launches (settings.simpleDevices);
+   * null or absent leaves their windows at the engine default. Chromium-family browsers maximize themselves.
+   */
+  screenWorkArea?: () => ScreenArea | null
 }
+
+export interface ScreenArea {
+  width: number
+  height: number
+}
+
+/** Full-screen desktop launch: the simple device picker is on and the profile uses a desktop preset. */
+export function fitsScreen(settings: Pick<AppSettings, 'simpleDevices'>, preset: Pick<DevicePresetInfo, 'deviceType'> | undefined): boolean {
+  return settings.simpleDevices === true && preset?.deviceType === 'desktop'
+}
+
+/**
+ * Firefox and WebKit ignore window-size flags, so the content area is sized to the work area minus the window's own
+ * frame (toolbar, borders), measured from the page: the whole window then covers the screen. Best effort only.
+ */
+export async function fitWindowToArea(page: Page, area: ScreenArea): Promise<void> {
+  const frame = await page.evaluate(() => ({ width: Math.max(0, window.outerWidth - window.innerWidth), height: Math.max(0, window.outerHeight - window.innerHeight) }))
+  await page.setViewportSize({ width: Math.max(MIN_FIT_SIDE_PX, Math.round(area.width - frame.width)), height: Math.max(MIN_FIT_SIDE_PX, Math.round(area.height - frame.height)) })
+}
+/** Never shrink a fitted page below the smallest viewport a profile may have. */
+const MIN_FIT_SIDE_PX = 320
 
 interface LiveSession {
   session: BrowserSession
@@ -271,6 +299,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
   }
 
   const label = (ls: LiveSession): string => `${ls.session.profileName} [${BROWSER_ENGINE_LABELS[ls.session.engine]}]`
+  const presetOf = (ls: LiveSession): DevicePresetInfo | undefined => DEVICE_PRESETS.find((candidate) => candidate.id === ls.profile.devicePreset)
 
   const forget = (ls: LiveSession): void => {
     try {
@@ -569,6 +598,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       }
       // The marker lets the app find (and, after a crash, terminate) exactly this session's browser process.
       launchOptions.args = [...ls.settings.extraChromiumArgs, sessionMarkerArg(ls.session.id)]
+      if (fitsScreen(ls.settings, presetOf(ls))) launchOptions.args.push('--start-maximized')
     }
     if (engineInfo.kind === 'installed') {
       // A real browser on this machine: same Chromium automation protocol, its own binary.
@@ -615,7 +645,8 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     if (!preset) {
       throw new AppException('INVALID_PROFILE', `Profile "${ls.profile.name}" uses unknown device preset "${ls.profile.devicePreset}". Edit the profile and pick a preset.`)
     }
-    const context = await ls.browser.newContext(buildContextOptions(ls.profile, preset))
+    const fitScreen = fitsScreen(ls.settings, preset)
+    const context = await ls.browser.newContext(buildContextOptions(ls.profile, preset, { fitScreen }))
     ls.context = context
     if (isDemoUrl(ls.formUrl)) await attachDemoPage(context)
     await opts.siteAccess?.attach(context, (note) => logger.info(SCOPE, `${label(ls)}: ${note}`, { sessionId: ls.session.id, runId: ls.runId }))
@@ -625,6 +656,18 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     const page = await context.newPage()
     ls.page = page
     watchPage(ls, page)
+    if (fitScreen) {
+      logger.info(SCOPE, `${label(ls)}: full-screen desktop window (simple device picker)`, { sessionId: ls.session.id, engine: ls.engineInfo.id })
+      const area = opts.screenWorkArea?.() ?? null
+      if (area && ls.engineInfo.family !== 'chromium') {
+        const fit = (target: Page): void => {
+          void fitWindowToArea(target, area).catch((err: unknown) => logger.warn(SCOPE, `${label(ls)}: could not size the window to the screen`, { sessionId: ls.session.id, error: err instanceof Error ? err.message : String(err) }))
+        }
+        fit(page)
+        // WebKit opens every page in a window of its own.
+        if (ls.engineInfo.family === 'webkit') context.on('page', fit)
+      }
+    }
     page.on('framenavigated', (frame: Frame) => {
       if (frame !== page.mainFrame()) return
       const url = frame.url()

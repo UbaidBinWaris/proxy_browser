@@ -13,6 +13,8 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl'
 import { ErrorAlert } from '@/components/ui/ErrorAlert'
 import { BrowserPicker } from '@/components/BrowserPicker'
 import { DevicePicker } from '@/components/DevicePicker'
+import { SimpleDevicePicker } from '@/components/SimpleDevicePicker'
+import { pickSimpleDevice, simpleCatalog, simpleOsOf } from '@/lib/simpleDevices'
 import { LocationCombobox, TARGET_MODE_ICONS } from '@/components/LocationCombobox'
 import { PoolPicker, configuredPools } from '@/components/PoolPicker'
 import { Select } from '@/components/ui/Select'
@@ -131,6 +133,9 @@ export function LaunchPage(): React.JSX.Element {
     [presets, form.devicePreset],
   )
   const direct = form.pool === 'none'
+  /** Simple device picker (beta): only Windows, macOS, Android and iOS, also for Random device and Random all. */
+  const simpleDevices = settings?.simpleDevices === true
+  const devicePresets = useMemo(() => (simpleDevices ? simpleCatalog(presets) : presets), [simpleDevices, presets])
 
   // Keep engine and preset mutually compatible (and the engine launchable, or installable from the hint) as either side changes.
   useEffect(() => {
@@ -143,12 +148,14 @@ export function LaunchPage(): React.JSX.Element {
   useEffect(() => {
     if (presets.length === 0) return
     const known = presets.some((p) => p.id === form.devicePreset)
-    const compatible = compatiblePresets(presets, form.engine)
-    if (!known || (preset && !preset.supportedEngines.includes(form.engine))) {
-      const next = compatible[0] ?? presets[0]
+    const outsideSimple = simpleDevices && simpleOsOf(preset) === null
+    if (!known || outsideSimple || (preset && !preset.supportedEngines.includes(form.engine))) {
+      // The simple picker starts from a Windows desktop (full screen) when the device is not one it offers.
+      const simpleStart = simpleDevices ? (pickSimpleDevice(presets, simpleOsOf(preset) ?? 'windows', form.engine) ?? pickSimpleDevice(presets, 'windows', null)) : null
+      const next = simpleStart ?? compatiblePresets(devicePresets, form.engine)[0] ?? devicePresets[0]
       if (next && next.id !== form.devicePreset) setField('devicePreset', next.id)
     }
-  }, [presets, preset, form.engine, form.devicePreset, setField])
+  }, [presets, devicePresets, simpleDevices, preset, form.engine, form.devicePreset, setField])
 
   // The remembered provider/product may not exist (anymore): fall back to a configured provider and product.
   useEffect(() => {
@@ -222,7 +229,7 @@ export function LaunchPage(): React.JSX.Element {
   }
 
   const handleRandomDevice = (): void => {
-    const pick = pickRandomDevice(presets, engines, form.engine)
+    const pick = pickRandomDevice(devicePresets, engines, form.engine)
     if (!pick) {
       toast.warning(
         'No device available',
@@ -238,7 +245,7 @@ export function LaunchPage(): React.JSX.Element {
   const handleRandomAll = async (): Promise<void> => {
     setRandomAllBusy(true)
     try {
-      const pick = randomAll({ configuredPools: configured, presets, engines })
+      const pick = randomAll({ configuredPools: configured, presets: devicePresets, engines })
       if (!pick) {
         toast.warning('Nothing to randomise yet', 'Device presets or browser status are still loading.')
         return
@@ -566,6 +573,18 @@ export function LaunchPage(): React.JSX.Element {
                 <Field htmlFor="launch-devicePreset" label="Device" error={errors.devicePreset}>
                   <div className="flex items-center gap-2">
                     <div className="min-w-0 flex-1">
+                      {simpleDevices ? (
+                        <SimpleDevicePicker
+                          id="launch-devicePreset"
+                          presets={presets}
+                          value={form.devicePreset}
+                          engine={form.engine}
+                          loading={presetsLoading}
+                          onChange={(next) => update('devicePreset', next.id)}
+                          onRandom={handleRandomDevice}
+                          aria-describedby={fieldDescribedBy('launch-devicePreset', false, !!errors.devicePreset)}
+                        />
+                      ) : (
                       <DevicePicker
                         id="launch-devicePreset"
                         presets={presets}
@@ -580,7 +599,9 @@ export function LaunchPage(): React.JSX.Element {
                             : fieldDescribedBy('launch-devicePreset', false, !!errors.devicePreset)
                         }
                       />
+                      )}
                     </div>
+                    {simpleDevices ? null : (
                     <Button
                       variant="outline"
                       size="sm"
@@ -590,9 +611,10 @@ export function LaunchPage(): React.JSX.Element {
                     >
                       Random
                     </Button>
+                    )}
                   </div>
                 </Field>
-                {preset && !errors.devicePreset ? (
+                {preset && !errors.devicePreset && !simpleDevices ? (
                   <div className="flex min-w-0 items-center gap-1">
                     <p
                       id="launch-device-summary"

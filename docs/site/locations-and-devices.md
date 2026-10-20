@@ -95,6 +95,21 @@ The device field opens a large panel (a centered dialog on windows narrower than
 
 Recent devices and favorites are kept in this computer's app storage only.
 
+### Simple device picker (beta)
+
+Turn on **Settings → General → Simple device picker (beta)** for a faster device choice. The device field then shows four buttons instead of the panel:
+
+| Choice | What happens |
+| --- | --- |
+| **Windows**, **macOS** | A current desktop preset of that system. The browser opens **maximized at your own screen size**; the preset viewport is ignored |
+| **Android**, **iOS** | A random current phone of that system, emulated as usual. **Another phone** draws a different one |
+
+- **Random** and **Random all** on the Launch page stay within these four systems.
+- Linux, iPadOS and ChromeOS presets, tablets, landscape variants and legacy devices are hidden, not removed: turn the setting off to use them again. Saved profiles keep their device.
+- Chromium-family browsers maximize their own window. Firefox and WebKit windows are sized to the screen's work area when the browser opens; WebKit sizes each new window the same way.
+- Phones need WebKit or a Chromium-family browser, so **Android** and **iOS** are unavailable while Firefox is selected.
+- Only launches from the Launch page and saved profiles change. QA automation keeps the exact preset viewports, which its screenshot comparisons rely on.
+
 ### Browser compatibility
 
 | Preset | Works on |

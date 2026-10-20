@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { BrowserWindow, app, dialog, ipcMain, net, protocol, safeStorage, session, shell } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, net, protocol, safeStorage, screen, session, shell } from 'electron'
 import originalFs from 'original-fs'
 
 import { EVENTS } from '@shared/ipc'
@@ -512,6 +512,8 @@ async function bootstrap(): Promise<Runtime> {
     liveSessions,
     findBrowserPid: async (sessionId) => sessionRootPids(await toolkit.listMarked(), sessionId)[0] ?? null,
     siteAccess,
+    // Full-screen desktop launches (simple device picker): Firefox and WebKit windows are sized to this area.
+    screenWorkArea: () => screen.getPrimaryDisplay().workAreaSize,
   })
   const launcher = createLauncher({
     profiles,

@@ -256,6 +256,7 @@ describe('settings form validation', () => {
     // Off on purpose: saving the form must keep an opt-out instead of restoring the schema default.
     checkUpdatesOnStartup: false,
     updateChannel: 'beta' as const,
+    simpleDevices: false,
   }
 
   it('round-trips valid settings and passes executable overrides through untouched', () => {

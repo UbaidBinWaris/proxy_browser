@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Badge } from '@/components/ui/Badge'
 import { DevicePicker } from '@/components/DevicePicker'
+import { SimpleDevicePicker } from '@/components/SimpleDevicePicker'
 import { LocationCombobox, TARGET_MODE_ICONS } from '@/components/LocationCombobox'
 import { EngineInstallHint } from '@/components/EngineInstallHint'
 import { toAppError } from '@/lib/api'
@@ -368,18 +369,33 @@ export function ProfileEditorPage(): React.JSX.Element {
                 htmlFor="profile-devicePreset"
                 label="Device preset"
                 error={errors.devicePreset}
-                hint="Search and filter 200+ devices. Sets device type, viewport and default user agent."
+                hint={
+                  settings?.simpleDevices
+                    ? 'Simple device picker (beta): Windows and macOS open full screen; Android and iOS pick a random phone. Turn it off in Settings for every preset.'
+                    : 'Search and filter 200+ devices. Sets device type, viewport and default user agent.'
+                }
                 required
               >
-                <DevicePicker
-                  id="profile-devicePreset"
-                  presets={presets}
-                  value={form.devicePreset}
-                  onChange={applyPreset}
-                  loading={presetsStatus === 'loading'}
-                  invalid={!!errors.devicePreset}
-                  aria-describedby={fieldDescribedBy('profile-devicePreset', true, !!errors.devicePreset)}
-                />
+                {settings?.simpleDevices ? (
+                  <SimpleDevicePicker
+                    id="profile-devicePreset"
+                    presets={presets}
+                    value={form.devicePreset}
+                    onChange={applyPreset}
+                    loading={presetsStatus === 'loading'}
+                    aria-describedby={fieldDescribedBy('profile-devicePreset', true, !!errors.devicePreset)}
+                  />
+                ) : (
+                  <DevicePicker
+                    id="profile-devicePreset"
+                    presets={presets}
+                    value={form.devicePreset}
+                    onChange={applyPreset}
+                    loading={presetsStatus === 'loading'}
+                    invalid={!!errors.devicePreset}
+                    aria-describedby={fieldDescribedBy('profile-devicePreset', true, !!errors.devicePreset)}
+                  />
+                )}
               </Field>
               <Field htmlFor="profile-engine" label="Browser engine" error={engineError} hint={engineHint} required>
                 <Select

@@ -23,6 +23,7 @@ const settings = {
   locationMatchAttempts: 4,
   checkUpdatesOnStartup: true,
   updateChannel: 'stable' as const,
+  simpleDevices: false,
 }
 
 describe('Chromium flag parsing', () => {

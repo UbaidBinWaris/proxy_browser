@@ -58,6 +58,10 @@ interface FakeWorld {
   cdp: Array<{ method: string; params?: unknown }>
   /** Window state reported by Browser.getWindowBounds. */
   windowState: string
+  /** Options of every browser.newContext call. */
+  contextOptions: Array<Record<string, unknown>>
+  /** page.setViewportSize calls (full-screen sizing of Firefox and WebKit windows). */
+  viewportSizes: Array<{ width: number; height: number }>
 }
 
 const world = vi.hoisted<FakeWorld>(() => ({
@@ -73,6 +77,8 @@ const world = vi.hoisted<FakeWorld>(() => ({
   relays: [],
   cdp: [],
   windowState: 'normal',
+  contextOptions: [],
+  viewportSizes: [],
 }))
 
 class FakePage extends EventEmitter {
@@ -103,6 +109,13 @@ class FakePage extends EventEmitter {
     return { status: () => world.gotoStatus, statusText: () => '' }
   }
   locator(selector: string): unknown { return { selector } }
+  /** Only used to measure the window frame (outer minus inner size) for full-screen windows. */
+  async evaluate(): Promise<{ width: number; height: number }> {
+    return { width: 52, height: 137 }
+  }
+  async setViewportSize(size: { width: number; height: number }): Promise<void> {
+    world.viewportSizes.push(size)
+  }
   async screenshot(): Promise<void> {
     return undefined
   }
@@ -170,7 +183,8 @@ class FakeBrowser extends EventEmitter {
   isConnected(): boolean {
     return !this.disconnected
   }
-  async newContext(): Promise<FakeContext> {
+  async newContext(options: Record<string, unknown> = {}): Promise<FakeContext> {
+    world.contextOptions.push(options)
     const context = new FakeContext()
     this.contexts.push(context)
     return context
@@ -301,7 +315,7 @@ interface HarnessOptions {
   /** Replace the fake proxy manager (e.g. with a real one over a scripted IP checker). */
   makeProxy?: (db: Database, logger: Logger) => ProxyManager
   launchTimeoutMs?: number
-  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess'>
+  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess' | 'screenWorkArea'>
 }
 
 async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null = null, options: HarnessOptions = {}): Promise<Harness> {
@@ -486,6 +500,8 @@ describe('createBrowserManager', () => {
     world.newPageHangs = false
     world.cdp.length = 0
     world.windowState = 'normal'
+    world.contextOptions.length = 0
+    world.viewportSizes.length = 0
     h = await buildHarness(200)
   })
 
@@ -605,6 +621,45 @@ describe('createBrowserManager', () => {
     const b = await h.manager.launch(h.profile({ name: 'B', stickySessionId: 'b' }))
     await waitFor(() => h.manager.get(a.id)?.status === 'open' && h.manager.get(b.id)?.status === 'open', 'both open')
     await h.manager.closeAll()
+  })
+
+  it('opens desktop presets maximized at the screen size when the simple device picker is on', async () => {
+    h.db.close()
+    h = await buildHarness(200, null, { manager: { screenWorkArea: () => ({ width: 1920, height: 1048 }) } })
+    h.settings.simpleDevices = true
+    const chromium = await h.manager.launch(h.profile({ name: 'Full screen', proxyMode: 'none', stickySessionId: null }))
+    await waitFor(() => h.manager.get(chromium.id)?.status === 'open', 'open')
+    expect(world.launches[0]?.options.args).toEqual([`--proxy-qa-session=${chromium.id}`, '--start-maximized'])
+    expect(world.contextOptions[0]).toMatchObject({ viewport: null, locale: 'en-US', timezoneId: 'America/New_York' })
+    expect(world.contextOptions[0]).not.toHaveProperty('deviceScaleFactor')
+    expect(world.contextOptions[0]).not.toHaveProperty('isMobile')
+    // Chromium maximizes itself: its window is never resized from the page.
+    expect(world.viewportSizes).toEqual([])
+    await h.manager.close(chromium.id)
+
+    // Firefox ignores window flags: the content area is the work area minus the measured frame (52 × 137 here).
+    const firefox = await h.manager.launch(h.profile({ name: 'FF full screen', engine: 'firefox', proxyMode: 'none', stickySessionId: null }))
+    await waitFor(() => h.manager.get(firefox.id)?.status === 'open' && world.viewportSizes.length > 0, 'ff sized')
+    expect(world.launches.at(-1)?.options.args).toBeUndefined()
+    expect(world.contextOptions.at(-1)).toMatchObject({ viewport: null })
+    expect(world.viewportSizes).toEqual([{ width: 1868, height: 911 }])
+    await h.manager.close(firefox.id)
+  })
+
+  it('keeps the preset viewport for phones, and for every preset when the simple device picker is off', async () => {
+    h.settings.simpleDevices = true
+    const phone = await h.manager.launch(h.profile({ name: 'Phone', deviceType: 'mobile', devicePreset: 'iphone-15', viewportWidth: 393, viewportHeight: 659, proxyMode: 'none', stickySessionId: null }))
+    await waitFor(() => h.manager.get(phone.id)?.status === 'open', 'phone open')
+    expect(world.launches[0]?.options.args).toEqual([`--proxy-qa-session=${phone.id}`])
+    expect(world.contextOptions[0]).toMatchObject({ viewport: { width: 393, height: 659 }, isMobile: true })
+    await h.manager.close(phone.id)
+
+    h.settings.simpleDevices = false
+    const desktop = await h.manager.launch(h.profile({ name: 'Fixed desktop', proxyMode: 'none', stickySessionId: null }))
+    await waitFor(() => h.manager.get(desktop.id)?.status === 'open', 'desktop open')
+    expect(world.launches.at(-1)?.options.args).toEqual([`--proxy-qa-session=${desktop.id}`])
+    expect(world.contextOptions.at(-1)).toMatchObject({ viewport: { width: 1366, height: 768 } })
+    await h.manager.close(desktop.id)
   })
 
   it('appends settings.extraChromiumArgs to every Chromium-family launch and logs them', async () => {
