@@ -33,10 +33,10 @@ Place names are lower case with spaces removed (`newjersey`, `stlouis`), as in D
 
 ## Sticky and rotating sessions
 
-Sticky mode (the default) adds `sessid.<id>` and keeps one exit IP for about 30 minutes, or for **Session TTL** minutes (1–1440), sent as `sessttl.<minutes>`. Use it for multi-step forms. Turn **Sticky session** off for rotating mode, where every request may use a different exit IP.
+Sticky mode (the default) adds `sessid.<id>` and keeps one exit IP for **Session TTL** minutes, sent as `sessttl.<minutes>`. When no TTL is set the app sends the default from Settings → Advanced → Targeting → **Keep the same IP for (minutes)** (15, enough for a 5–10 minute visit). DataImpulse lifetimes are capped at 60: without `sessttl` a sticky session switched to another IP after about 5 minutes in testing, and `sessttl.120` did not keep one IP. Before the browser opens the app checks the session's IP twice, 3 seconds apart, and switches to a fresh session if it changed; while the browser is open it re-checks every 20 seconds and **stops the browser** if the IP changes. Use sticky mode for forms. Turn **Sticky session** off for rotating mode, where every request may use a different exit IP.
 
 ```text
-login__cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.60
+login__cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.15
 ```
 
 Before the window opens, the app checks the exit IP and can re-roll the sticky session until its location meets your [match policy](/docs/locations-and-devices#location-match-policy-and-re-rolls).
@@ -51,7 +51,7 @@ The [CI runner](/docs/ci-runner#proxy-credentials) reads the login from environm
 | --- | --- |
 | `PROXY_AUTH_FAILED` / HTTP 407 | Re-enter the login and password in **Manage keys**, click **Test connection**, and check that the plan is active and allows the targeting you chose |
 | Pool shows **Not set up** | Save a login for that product. DataImpulse Mobile needs its own Mobile-plan login |
-| `PROXY_DEAD` with HTTP 503 | The gateway has no free exit IP for this sticky session and location, typical for thin ZIP codes. Wait about 30 minutes, use rotating mode, or target the city or state. See the [ZIP targeting caveat](/docs/locations-and-devices#zip-targeting-caveat) |
+| `PROXY_DEAD` with HTTP 503 | The gateway has no free exit IP for this sticky session and location, typical for thin ZIP codes. Launch again later, or target the city or state. See the [ZIP targeting caveat](/docs/locations-and-devices#zip-targeting-caveat) |
 | Location badge **Mismatch** | The exit IP geolocates elsewhere, common with carrier IPs. Use more **Attempts** or a broader target |
 
 More error codes are in [Troubleshooting](/docs/troubleshooting#proxy-and-location).

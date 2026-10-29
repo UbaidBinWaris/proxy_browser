@@ -10,7 +10,8 @@ import { errorLabel } from '@/lib/result'
 import { sessionLabelFor } from '@/lib/launch'
 import type { ConnectionKind } from '@/lib/launch'
 import { describeTarget, locationAttemptsLabel, poolLabel, resolveTargetMatch, targetMatchSentence } from '@/lib/targeting'
-import { cn, formatDate, orDash } from '@/lib/utils'
+import { APPROXIMATE_ZIP_NOTE, cityAndApproxZip, cn, formatDate, orDash } from '@/lib/utils'
+import { rotatingArea } from '@/lib/exitIpWatch'
 import type { ProviderLike } from '@/lib/providers'
 
 export interface ProxyStatusCardProps {
@@ -46,11 +47,11 @@ export interface ProxyStatusCardProps {
   className?: string
 }
 
-function Fact({ label, value, mono }: { label: string; value: string; mono?: boolean }): React.JSX.Element {
+function Fact({ label, value, mono, title }: { label: string; value: string; mono?: boolean; /** Overrides the default tooltip (the value). */ title?: string }): React.JSX.Element {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={cn('mt-0.5 truncate text-sm font-medium', mono && 'font-mono')} title={value}>
+      <dd className={cn('mt-0.5 truncate text-sm font-medium', mono && 'font-mono')} title={title ?? value}>
         {value}
       </dd>
     </div>
@@ -239,12 +240,15 @@ export function ProxyStatusCard({
       {targeting}
       <dl className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-4">
         <div className="col-span-2 md:col-span-1">
-          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Public IP</dt>
+          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{connection === 'rotating' ? 'Public IP (sample)' : 'Public IP'}</dt>
           <dd className="tabular mt-0.5 font-mono text-xl font-semibold tracking-tight">{ip.ip}</dd>
+          {connection === 'rotating' ? (
+            <dd className="mt-1 text-xs text-info">Rotating: each connection can use a different IP{target ? ` within ${rotatingArea(target)}` : ''}.</dd>
+          ) : null}
         </div>
         <Fact label="Country" value={ip.countryCode ? `${orDash(ip.country)} (${ip.countryCode})` : orDash(ip.country)} />
         <Fact label="State / Region" value={orDash(ip.region)} />
-        <Fact label="City / ZIP" value={ip.postalCode ? `${orDash(ip.city)} · ${ip.postalCode}` : orDash(ip.city)} />
+        <Fact label="City / ZIP" value={cityAndApproxZip(ip.city, ip.postalCode)} title={ip.postalCode ? APPROXIMATE_ZIP_NOTE : undefined} />
         <Fact label="ISP" value={ip.asn ? `${orDash(ip.isp)} · ${ip.asn}` : orDash(ip.isp)} />
         <Fact label="Latency" value={`${Math.round(ip.latencyMs)} ms`} mono />
         <Fact label="Session" value={sessionLabel} mono />

@@ -69,6 +69,14 @@ export interface ProxyManagerOptions {
   onGatewayTest?: (status: ProxyStatus, at: string) => void
   /** Product for raw-gateway tests (profile === null) of the default provider. Defaults to its first configured product, else its first product. */
   defaultPool?: () => ProductKey
+  /**
+   * Sticky lifetime (minutes) for profiles that do not set their own (settings.defaultStickyTtlMinutes).
+   * Without it a provider uses its own short default: DataImpulse moved sticky sessions to another
+   * exit IP after ~5 minutes in testing, which is how a form ended up recorded from a different city.
+   */
+  defaultStickyTtlMinutes?: () => number | null
+  /** Pause between the two checks of the stickiness confirmation (tests use 0). */
+  stickyConfirmDelayMs?: number
   /** State catalogue so `compareTarget` can match a USPS code against a state name (and vice versa). */
   locations?: Pick<LocationsService, 'states'>
 }
@@ -198,15 +206,21 @@ export function compareTargetWith(target: GeoTarget | null, ip: IpInfo | null, s
     (wantCode !== null && gotCode !== null && gotCode === wantCode)
   if (!stateMatches) return 'mismatch'
   if (target.mode === 'state') return 'match'
-  // ZIP: the state matched but the postal code differs (or the IP service did not report one).
-  if (wantZip !== null) return 'partial'
 
-  // City: the state matched; the city name decides between partial and match.
+  // City (and ZIP): the state matched; the city name decides between partial and match.
+  // A ZIP in the requested city counts as a match: IP location databases disagree by a ZIP or two
+  // for the same IP (live: one Seattle IP was 98104 in ip-api and 98101 in ipinfo), so a neighbouring
+  // ZIP is not evidence of a wrong exit — and re-rolling for it only burns sessions in a thin pool.
   const wantCity = target.city ? encodePlaceName(target.city) : null
   const gotCity = ip.city ? encodePlaceName(ip.city) : null
   if (wantCity && gotCity && wantCity === gotCity) return 'match'
   return 'partial'
 }
+
+/** Extra sessions tried when a sticky session does not hold its IP between two checks. */
+export const STICKY_CONFIRM_RETRIES = 2
+/** Pause between the two checks: unstable sessions changed IP on every request, 3 s apart, in testing. */
+export const STICKY_CONFIRM_DELAY_MS = 3_000
 
 /** Preference when no attempt met the location policy (higher wins; ties go to the later attempt). */
 const MATCH_RANK: Record<TargetMatch, number> = { match: 3, partial: 2, unknown: 1, mismatch: 0 }
@@ -237,6 +251,32 @@ export function describeRequestedLocation(target: GeoTarget, policy: LocationMat
   const place = target.city ? (stateShort ? `${target.city}, ${stateShort}` : target.city) : stateShort
   if (!target.zip) return place ?? stateLabel
   return place ? `ZIP ${target.zip} (${place})` : `ZIP ${target.zip}`
+}
+
+/**
+ * Wider areas to try, in order, when the target area has no exit IP right now:
+ * ZIP → its city → its state; city → its state. State and country targets have nothing wider
+ * that still keeps the state, so they return [].
+ */
+export function widerTargets(target: GeoTarget): GeoTarget[] {
+  const state: GeoTarget | null = target.state || target.stateCode ? { ...target, mode: 'state', city: null, zip: null } : null
+  if (target.mode === 'zip') {
+    const city: GeoTarget | null = target.city ? { ...target, mode: 'city', zip: null } : null
+    return [city, state].filter((t): t is GeoTarget => t !== null)
+  }
+  if (target.mode === 'city') return state ? [state] : []
+  return []
+}
+
+/** The gateway answered but had no exit IP for this session and area (HTTP 503 → PROXY_DEAD). */
+export function isNoExitIpAvailable(error: { code: string; message: string; detail?: string } | null | undefined): boolean {
+  if (!error || error.code !== 'PROXY_DEAD') return false
+  return /\b503\b/.test(error.detail ?? '') || /no exit IP available/i.test(error.message)
+}
+
+/** "ZIP 58250 (Lankin, ND)", "Newark, NJ", "North Dakota" — the area as the user picked it. */
+export function describeArea(target: GeoTarget): string {
+  return describeRequestedLocation(target, 'exact')
 }
 
 /** "same state" / "different state" … for the fallback warning. */
@@ -326,6 +366,13 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     return configured?.pool ?? provider.capabilities.products[0]?.key ?? 'residential'
   }
 
+  /** The profile's own sticky lifetime, else the configured default (null only when neither is set). */
+  function effectiveStickyTtl(own: number | null): number | null {
+    if (own !== null && own > 0) return own
+    const fallback = opts.defaultStickyTtlMinutes?.() ?? null
+    return fallback !== null && fallback > 0 ? fallback : null
+  }
+
   /** Everything the provider needs for a profile (or the raw gateway when profile is null). */
   function requestFor(profile: Profile | null, provider: ProxyProvider): ProxyRequest {
     if (!profile) return { pool: gatewayPool(provider), sessionId: null, target: null, ttlMinutes: null }
@@ -333,7 +380,7 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
       pool: profile.proxyPool,
       sessionId: sessionIdFor(profile, provider),
       target: profile.target ? { ...profile.target } : null,
-      ttlMinutes: profile.proxyMode === 'sticky' ? profile.stickyTtlMinutes : null,
+      ttlMinutes: profile.proxyMode === 'sticky' ? effectiveStickyTtl(profile.stickyTtlMinutes) : null,
     }
   }
 
@@ -428,6 +475,71 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     emit(row)
   }
 
+  /**
+   * Checks a sticky session again a few seconds after its first check: the IP it switched to, or
+   * null when it kept its IP (or the second check failed — the first one worked, so it gets the benefit).
+   */
+  async function switchedIp(provider: ProxyProvider, request: ProxyRequest, first: IpInfo): Promise<IpInfo | null> {
+    const delay = opts.stickyConfirmDelayMs ?? STICKY_CONFIRM_DELAY_MS
+    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+    try {
+      const second = await provider.getCurrentIp(request)
+      return second.ip !== first.ip ? second : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Logs a session that did not keep its exit IP; the failed verification once that happened more than STICKY_CONFIRM_RETRIES times. */
+  function unstableSession(profile: Profile, sessionId: string, first: IpInfo, second: IpInfo, unstable: number, target: GeoTarget | null, attempts: number, maxAttempts: number): LaunchVerification | null {
+    logger.warn(LOG_SCOPE, `Sticky session did not keep its exit IP (${first.ip} then ${second.ip})`, { profileId: profile.id, profileName: profile.name, sessionId, unstable })
+    if (unstable <= STICKY_CONFIRM_RETRIES) return null
+    const where = target ? describeArea(target) : 'this location'
+    const error = {
+      code: 'IP_UNSTABLE' as const,
+      message: `The proxy could not keep one IP in ${where}: the IP changed within seconds in ${unstable} sessions in a row. Try again in a minute or choose another location.`,
+      detail: `${first.ip} then ${second.ip}`,
+    }
+    return { result: { status: 'failed', sessionId, ip: null, error }, targetMatch: null, attempts, maxAttempts, sessionId, warning: null }
+  }
+
+  /**
+   * The requested area had no exit IP: try each wider area once with a fresh sticky id. The first
+   * one that works is used for this launch (the saved profile keeps its own target); null when none does.
+   */
+  async function tryWiderAreas(profile: Profile, provider: ProxyProvider, base: ProxyRequest, target: GeoTarget, options: LaunchVerifyOptions): Promise<LaunchVerification | null> {
+    const candidates = widerTargets(target).filter((wider) => provider.capabilities.targetModes.includes(wider.mode))
+    let sessionId = base.sessionId
+    let checks = 1
+    for (const wider of candidates) {
+      if (options.shouldContinue && !options.shouldContinue()) return null
+      if (sessionId !== null) sessionId = provider.rotateSession(sessionId, profile.name)
+      checks += 1
+      options.onProgress?.({ attempt: checks, attempts: checks, sessionId, message: `No exit IPs in ${describeArea(target)} right now — trying ${describeArea(wider)}…` })
+      let { result } = await runTest(profile, provider, { ...base, target: wider, sessionId })
+      let unstable = 0
+      while (result.status === 'working' && result.ip && options.confirmSticky && sessionId !== null) {
+        const second = await switchedIp(provider, { ...base, target: wider, sessionId }, result.ip)
+        if (!second) break
+        unstable += 1
+        const failed = unstableSession(profile, sessionId, result.ip, second, unstable, wider, checks, checks)
+        if (failed) return failed
+        sessionId = provider.rotateSession(sessionId, profile.name)
+        options.onProgress?.({ attempt: checks, attempts: checks, sessionId, message: `Exit IP ${result.ip.ip} changed to ${second.ip} within seconds — trying another session…` })
+        ;({ result } = await runTest(profile, provider, { ...base, target: wider, sessionId }))
+      }
+      if (result.status === 'working' && result.ip) {
+        if (sessionId !== null) persistStickySessionId(profile, sessionId, `widened to ${describeArea(wider)}`)
+        const targetMatch = compareTarget(wider, result.ip)
+        const warning = `No exit IPs available in ${describeArea(target)} right now; connected via ${describeArea(wider)} instead (${describeExitLocation(result.ip, states)}).`
+        logger.warn(LOG_SCOPE, warning, { profileId: profile.id, profileName: profile.name, requested: describeArea(target), widenedTo: describeArea(wider), sessionId, targetMatch })
+        return { result, targetMatch, attempts: checks, maxAttempts: checks, sessionId, warning, widenedTarget: wider }
+      }
+      if (!isNoExitIpAvailable(result.error)) return null
+    }
+    return null
+  }
+
   async function verifyForLaunch(profile: Profile, options: LaunchVerifyOptions): Promise<LaunchVerification> {
     if (profile.proxyMode === 'none') {
       throw new AppException('INVALID_PROFILE', `Profile "${profile.name}" does not use a proxy; there is no proxy exit IP to verify.`)
@@ -450,6 +562,7 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     let stopped = false
     /** Why re-rolling ended before the budget was spent (gateway refused another session, credentials rejected). */
     let gaveUp: string | null = null
+    let unstable = 0
     while (attempts < maxAttempts) {
       attempts += 1
       const { result } = await runTest(profile, provider, request)
@@ -457,9 +570,26 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
       if (result.status === 'working' && result.ip) {
         const targetMatch = target ? compareTarget(target, result.ip) : null
         const current: VerifiedAttempt = { attempt: attempts, sessionId: request.sessionId, result, ip: result.ip, targetMatch }
+        const acceptable = !canReroll || satisfiesLocationPolicy(policy, targetMatch)
+        // Only the session about to be used is checked a second time; one being re-rolled for its location is dropped anyway.
+        if (acceptable && options.confirmSticky && request.sessionId !== null) {
+          const second = await switchedIp(provider, request, result.ip)
+          if (second) {
+            unstable += 1
+            const failed = unstableSession(profile, request.sessionId, result.ip, second, unstable, target, attempts, maxAttempts)
+            if (failed) return failed
+            // An unstable session does not use up the location budget: try a fresh one.
+            attempts -= 1
+            const next = provider.rotateSession(request.sessionId, profile.name)
+            persistStickySessionId(profile, next, 'previous session did not keep its exit IP')
+            request = { ...base, sessionId: next }
+            options.onProgress?.({ attempt: attempts + 1, attempts: maxAttempts, sessionId: next, message: `Exit IP ${result.ip.ip} changed to ${second.ip} within seconds — trying another session…` })
+            continue
+          }
+        }
         // Ties go to the later attempt.
         if (!best || rankOf(targetMatch) >= rankOf(best.targetMatch)) best = current
-        if (!canReroll || satisfiesLocationPolicy(policy, targetMatch)) {
+        if (acceptable) {
           if (attempts > 1) {
             logger.info(LOG_SCOPE, `Exit location met the "${policy}" location policy on attempt ${attempts}/${maxAttempts}`, {
               profileId: profile.id,
@@ -475,8 +605,15 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
         }
         progressReason = `Exit IP ${result.ip.ip} is in ${describeExitLocation(result.ip, states)}`
       } else {
-        // The first check failing means there is nothing to launch with; a failed re-roll only costs an attempt.
-        if (attempts === 1) return { result, targetMatch: null, attempts, maxAttempts, sessionId: request.sessionId, warning: null }
+        // The first check failing means there is nothing to launch with — unless the area simply has no
+        // exit IP right now, in which case a wider area may (ZIP → city → state). A failed re-roll only costs an attempt.
+        if (attempts === 1) {
+          if (options.widenWhenUnavailable && target && isNoExitIpAvailable(result.error)) {
+            const widened = await tryWiderAreas(profile, provider, base, target, options)
+            if (widened) return widened
+          }
+          return { result, targetMatch: null, attempts, maxAttempts, sessionId: request.sessionId, warning: null }
+        }
         const code = result.error?.code ?? 'INTERNAL'
         logger.warn(LOG_SCOPE, `Location re-roll attempt ${attempts}/${maxAttempts} could not verify the exit IP`, {
           profileId: profile.id,

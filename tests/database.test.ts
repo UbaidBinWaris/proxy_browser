@@ -57,6 +57,7 @@ const runInput = (overrides: Partial<Omit<TestRun, 'id'>> = {}): Omit<TestRun, '
   locationAttempts: 1,
   locationMaxAttempts: 1,
   locationWarning: null,
+  ipChanges: [],
   proxySessionId: null,
   formUrl: 'https://forms.example.com/qa',
   startedAt: '2026-01-01T00:00:00.000Z',
@@ -96,7 +97,7 @@ describe('database', () => {
       const journal = raw.prepare('PRAGMA journal_mode').get() as { journal_mode: string }
       expect(journal.journal_mode).toBe('wal')
       const migrations = raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[]
-      expect(migrations.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+      expect(migrations.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
       const tables = raw
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
         .all()
@@ -157,7 +158,7 @@ describe('database', () => {
 
       const raw = new DatabaseSync(legacyPath)
       const versions = (raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as { version: number }[]).map((m) => m.version)
-      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
       const fk = raw.prepare('PRAGMA foreign_key_list(proxy_sessions)').all() as Array<{ on_delete: string; table: string }>
       expect(fk).toEqual([expect.objectContaining({ table: 'profiles', on_delete: 'CASCADE' })])
       const runsFk = raw.prepare('PRAGMA foreign_key_list(test_runs)').all() as Array<{ on_delete: string }>

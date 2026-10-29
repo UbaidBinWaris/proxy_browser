@@ -8,6 +8,8 @@ import { CopyButton } from '@/components/ui/CopyButton'
 import { ErrorAlert } from '@/components/ui/ErrorAlert'
 import { ProxyStatusCard } from '@/components/ProxyStatusCard'
 import { LocationAttemptsNote } from '@/components/LocationAttemptsNote'
+import { ExitIpWatchNotice } from '@/components/ExitIpWatchNotice'
+import { sessionExitIpNotice } from '@/lib/exitIpWatch'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { deriveLaunchSteps, failedStepFor, isBrowserWindowOpen, stepLabel } from '@/lib/launch'
 import type { ConnectionKind, LaunchStep } from '@/lib/launch'
@@ -210,6 +212,9 @@ export function LaunchPanel({
             retryLabel="Retry launch"
           />
         ) : null}
+
+        {/* Exit-IP watch: a switch here means the page may already have seen another IP. */}
+        {isSessionLive(session) && !direct ? <ExitIpWatchNotice notice={sessionExitIpNotice(session)} /> : null}
 
         {errored && session.error && !failedAtVerify ? (
           <ErrorAlert

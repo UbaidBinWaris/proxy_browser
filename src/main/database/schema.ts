@@ -285,6 +285,17 @@ export const MIGRATIONS: readonly Migration[] = [
       `)
     },
   },
+  {
+    /**
+     * Exit-IP watch: a JSON array of ExitIpChange recorded when the provider switched the exit IP
+     * of an open session. NULL for runs from earlier versions (read back as no changes).
+     */
+    version: 9,
+    name: 'exit-ip-changes',
+    up: (db) => {
+      db.exec('ALTER TABLE test_runs ADD COLUMN ip_changes_json TEXT')
+    },
+  },
 ]
 
 /** Create the migrations ledger and apply every pending migration in order. */

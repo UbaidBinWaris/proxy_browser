@@ -78,6 +78,9 @@ export type SettingsField =
   | 'defaultTargetCountry'
   | 'locationMatchPolicy'
   | 'locationMatchAttempts'
+  | 'defaultStickyTtlMinutes'
+  | 'watchExitIp'
+  | 'widenTargetWhenUnavailable'
   | 'checkUpdatesOnStartup'
   | 'simpleDevices'
   | 'updateChannel'
@@ -99,6 +102,9 @@ export const SETTINGS_FIELD_LOCATIONS: Record<SettingsField, SettingsFieldLocati
   defaultTargetCountry: { tab: 'advanced', section: 'targeting' },
   locationMatchPolicy: { tab: 'advanced', section: 'targeting' },
   locationMatchAttempts: { tab: 'advanced', section: 'targeting' },
+  defaultStickyTtlMinutes: { tab: 'advanced', section: 'targeting' },
+  watchExitIp: { tab: 'advanced', section: 'targeting' },
+  widenTargetWhenUnavailable: { tab: 'advanced', section: 'targeting' },
   extraChromiumArgs: { tab: 'advanced', section: 'browser-flags' },
   ipCheckProvider: { tab: 'advanced', section: 'ip-verification' },
   ipCheckTimeoutMs: { tab: 'advanced', section: 'ip-verification' },

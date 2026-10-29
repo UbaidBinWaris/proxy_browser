@@ -27,7 +27,7 @@ Launch is the start page. It is one form with one primary button, **Connect & La
 - **Start URL**: the page to open. Empty uses the default URL from Settings. Only `http://` and `https://` URLs are accepted. Click the field to see recent and saved URLs, or type to search older ones.
 - **Frequent links**: one-click shortcuts ranked by use in the latest 1,000 launches, plus saved profile links and the default URL.
 - **Save as profile**: off by default. Off, the launch creates a hidden *quick launch* profile. On, a name field appears and the profile is kept on the Profiles page. An empty name is generated as *"Pool · target · device"*, for example *"Residential · New Jersey · Apple iPhone 15"*.
-- **Will connect as**: the exact parameter string that will be sent to the provider, for example `cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.60`, with a copy button. It never contains your login or password. An icon at the end shows warnings (such as DataImpulse's 2× billing for state, city and ZIP targeting) and what the location policy will do.
+- **Will connect as**: the exact parameter string that will be sent to the provider, for example `cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.15`, with a copy button. It never contains your login or password. An icon at the end shows warnings (such as DataImpulse's 2× billing for state, city and ZIP targeting) and what the location policy will do.
 
 **Connect & Launch** creates the profile, verifies the exit IP, opens the browser and takes you to the run page. It is disabled while the pool has no keys or the browser is not installed or is being installed.
 

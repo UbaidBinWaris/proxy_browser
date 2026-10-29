@@ -499,6 +499,26 @@ export const LocationMatchPolicySchema = z.enum(LOCATION_MATCH_POLICIES)
 export type LocationMatchPolicy = z.infer<typeof LocationMatchPolicySchema>
 export const LOCATION_MATCH_ATTEMPTS_MIN = 1
 export const LOCATION_MATCH_ATTEMPTS_MAX = 8
+/**
+ * Sticky session lifetime requested when a profile does not set its own (minutes).
+ * Measured 2026-10-30 against DataImpulse: without a lifetime parameter a sticky session
+ * switched to another exit IP (same state, different city) after ~5 minutes; with
+ * `sessttl.30` / `sessttl.60` the IP held for the whole test; `sessttl.120` was
+ * unreliable (one Texas session got a new IP on every request).
+ *
+ * 15 minutes covers a typical 5–10 minute visit with margin, and a short lifetime releases the
+ * IP sooner (a sticky session reserves its IP until the lifetime ends, which exhausts thin
+ * ZIP/city pools). A browser kept open longer is still protected by the exit-IP watch.
+ */
+export const DEFAULT_STICKY_TTL_MINUTES = 15
+export const STICKY_TTL_MINUTES_MIN = 1
+export const STICKY_TTL_MINUTES_MAX = 1440
+/**
+ * How often an open proxied session re-checks its exit IP (and keeps idle-based sessions alive).
+ * Short, because a change stops the browser: the window in which a form could still be sent
+ * from the new IP is at most this long. Each check is one ~1 KB request through the proxy.
+ */
+export const IP_WATCH_INTERVAL_MS = 20_000
 
 /** True when `match` satisfies `policy` ('unknown' cannot be improved by a re-roll, so it is accepted). */
 export function satisfiesLocationPolicy(policy: LocationMatchPolicy, match: TargetMatch | null): boolean {
@@ -830,6 +850,8 @@ export interface TestRun {
   locationMaxAttempts: number
   /** Set when no attempt met the location policy and the best result was used, e.g. "Could not get an exit IP in …". */
   locationWarning: string | null
+  /** Exit-IP changes detected while the browser was open (the page may have seen these IPs too). */
+  ipChanges: ExitIpChange[]
   proxySessionId: string | null
   formUrl: string
   startedAt: string
@@ -876,6 +898,28 @@ export const NETWORK_FILTER_KEYWORDS = ['lead', 'submit', 'certificate', 'cert',
 // Sessions (live browser sessions)
 // ---------------------------------------------------------------------------
 
+/** The exit IP of an open session changed (the provider swapped the sticky IP). */
+export interface ExitIpChange {
+  /** When the change was detected (ISO). */
+  at: string
+  fromIp: string
+  toIp: string
+  city: string | null
+  region: string | null
+  postalCode: string | null
+}
+
+/**
+ * Exit-IP watch of an open session (settings.watchExitIp):
+ * - 'watching': the IP is re-checked every minute through the same session and has not changed;
+ * - 'changed': the provider switched to another exit IP — the page may now see a different IP than the one verified;
+ * - 'unverified': the last checks failed, so the current IP is unknown;
+ * - 'rotating': a rotating session — every connection may use a different IP by design, so there is nothing to watch;
+ * - 'off': direct connection, watch disabled, or the session is not open.
+ */
+export const EXIT_IP_WATCH_STATES = ['off', 'watching', 'changed', 'unverified', 'rotating'] as const
+export type ExitIpWatchState = (typeof EXIT_IP_WATCH_STATES)[number]
+
 export interface BrowserSession {
   id: string
   runId: string
@@ -909,6 +953,12 @@ export interface BrowserSession {
   browserPid: number | null
   /** Last time the session monitor confirmed the browser is connected and has an open page (ISO). */
   lastHeartbeatAt: string | null
+  exitIpWatch: ExitIpWatchState
+  /** The exit IP from the latest successful re-check (null until the first one). */
+  currentExitIp: IpInfo | null
+  /** Every exit-IP change detected while the browser was open, oldest first. */
+  ipChanges: ExitIpChange[]
+  lastIpCheckAt: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1088,23 @@ export const AppSettingsSchema = z.object({
   /** Total attempts (first check + re-rolls) for the location policy. Each costs one small IP-check request. */
   locationMatchAttempts: z.int().min(LOCATION_MATCH_ATTEMPTS_MIN).max(LOCATION_MATCH_ATTEMPTS_MAX).default(3),
   /**
+   * Sticky session lifetime (minutes) requested from the provider when a profile does not set its
+   * own. Each provider clamps it to what it supports (DataImpulse: at most 60). Databases created
+   * before this key existed load as 60.
+   */
+  defaultStickyTtlMinutes: z.int().min(STICKY_TTL_MINUTES_MIN).max(STICKY_TTL_MINUTES_MAX).default(DEFAULT_STICKY_TTL_MINUTES),
+  /**
+   * While a proxied sticky browser is open, re-check its exit IP every IP_WATCH_INTERVAL_MS through
+   * the same session; on a change, block the page's traffic, close the browser and alert. Also keeps
+   * providers whose sessions expire when idle (Bright Data) alive.
+   */
+  watchExitIp: z.boolean().default(true),
+  /**
+   * When the requested ZIP or city has no exit IP right now (HTTP 503 from the gateway), connect
+   * through the city, then the state, instead of failing — and say so on the run. This launch only.
+   */
+  widenTargetWhenUnavailable: z.boolean().default(true),
+  /**
    * Check the publisher's signed feed once after start (at most once per 24 hours). Never downloads;
    * builds without a feed skip it. Databases created before this key existed load as `true`.
    */
@@ -1088,6 +1155,9 @@ export const DEFAULT_SETTINGS: Omit<AppSettings, 'screenshotDir'> = {
   defaultTargetCountry: 'us',
   locationMatchPolicy: 'state',
   locationMatchAttempts: 3,
+  defaultStickyTtlMinutes: DEFAULT_STICKY_TTL_MINUTES,
+  watchExitIp: true,
+  widenTargetWhenUnavailable: true,
   checkUpdatesOnStartup: true,
   updateChannel: 'stable',
   simpleDevices: false,
@@ -1202,6 +1272,12 @@ export const APP_ERROR_CODES = [
   'SESSION_LIMIT',
   /** The engine is being installed (or uninstalled) by a background task; launch it once that finishes. */
   'ENGINE_BUSY',
+  /** The exit IP changed while the browser was open; the browser was stopped so nothing more was sent from another IP. */
+  'IP_CHANGED',
+  /** Before launch, no sticky session kept the same exit IP between two checks (the provider ignored stickiness). */
+  'IP_UNSTABLE',
+  /** The form URL did not respond while the proxy exit was confirmed working (site down or blocking the IP). */
+  'SITE_UNREACHABLE',
   'INTERNAL',
 ] as const
 export type AppErrorCode = (typeof APP_ERROR_CODES)[number]

@@ -36,7 +36,7 @@ The app stores **one login per provider product**. A product without a login is 
 Parameters are appended to the login after a double underscore: `__` starts the list, `;` separates parameters and `.` separates key and value.
 
 ```text
-login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sessttl.60
+login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sessttl.15
 ```
 
 | Key | Meaning | Sent when |
@@ -81,12 +81,12 @@ These providers accept only certain sticky session IDs (letters and digits only;
 
 ## Sticky and rotating sessions
 
-Use sticky for multi-step forms: one exit IP is kept for the session TTL (about 30 minutes by default with DataImpulse; Bright Data ends a session after 5 idle minutes). Rotating may use a different exit IP for every request.
+Use sticky for multi-step forms: one exit IP is kept for the session TTL (the app always sends one: **Keep the same IP for (minutes)** in Settings, 15 by default; Bright Data has no TTL and ends a session after 5 idle minutes — the app's 20-second IP re-check keeps it active). Rotating may use a different exit IP for every request.
 
 | Mode | Behaviour |
 | --- | --- |
-| **Sticky** (default) | A session ID pins one exit IP for about 30 minutes (DataImpulse default) or for **Session TTL** minutes. Quick launches generate a fresh ID per launch, `ql-<YYYYMMDD>-<4 random characters>`. Saved profiles use their **Sticky session ID**; a sticky profile without one gets `profile-<name>` generated and saved on first use |
-| **Rotating** (Sticky session off) | No session ID or TTL is sent; every request may use a different exit IP |
+| **Sticky** (default) | A session ID pins one exit IP for **Session TTL** minutes, or the Settings default (15). Before the browser opens the session's IP is checked twice, 3 seconds apart; while the browser is open it is re-checked every 20 seconds and the browser is **stopped** if the provider switched it. Quick launches generate a fresh ID per launch, `ql-<YYYYMMDD>-<4 random characters>`. Saved profiles use their **Sticky session ID**; a sticky profile without one gets `profile-<name>` generated and saved on first use |
+| **Rotating** (Sticky session off) | No session ID or TTL is sent; every request may use a different exit IP. The IP shown is labelled **Public IP (sample)** and is not watched |
 
 **Rotate** under **Settings → Advanced → Proxy session history** appends `-r2`, `-r3`, … to a profile's ID. That is a new sticky session, normally with a new exit IP, and the app tests it at once.
 

@@ -20,6 +20,8 @@ import { Tabs, tabPanelProps } from '@/components/ui/Tabs'
 import { LaunchPanel } from '@/components/LaunchPanel'
 import { NetworkInspector } from '@/components/NetworkInspector'
 import { LocationAttemptsNote } from '@/components/LocationAttemptsNote'
+import { ExitIpWatchNotice } from '@/components/ExitIpWatchNotice'
+import { exitIpNotice } from '@/lib/exitIpWatch'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { useEvent } from '@/hooks/useEvent'
 import { useLaunch } from '@/hooks/useLaunch'
@@ -32,7 +34,7 @@ import { profileInputFrom } from '@/lib/profileForm'
 import { buildOutcomePatch, hasOutcomeChanges, isUserAssignableStatus, outcomeFormFrom, syncOutcomeForm } from '@/lib/runForm'
 import type { OutcomeField, OutcomeForm } from '@/lib/runForm'
 import { describeTarget, poolLabel } from '@/lib/targeting'
-import { describeVerifiedLocation, durationBetween, formatDate, orDash, screenshotUrl } from '@/lib/utils'
+import { APPROXIMATE_ZIP_NOTE, cityAndApproxZip, describeVerifiedLocation, durationBetween, formatDate, orDash, screenshotUrl } from '@/lib/utils'
 import { upsertNetworkEntry } from '@/lib/network'
 import { useAppStore } from '@/stores/app'
 import { useProfilesStore, selectProfileById } from '@/stores/profiles'
@@ -45,11 +47,11 @@ type DetailTab = 'result' | 'network'
 
 const NO_DIRTY: ReadonlySet<OutcomeField> = new Set()
 
-function Fact({ label, value, mono, span, truncate }: { label: string; value: string; mono?: boolean; span?: boolean; truncate?: boolean }): React.JSX.Element {
+function Fact({ label, value, mono, span, truncate, title }: { label: string; value: string; mono?: boolean; span?: boolean; truncate?: boolean; /** Overrides the default tooltip (the value). */ title?: string }): React.JSX.Element {
   return (
     <div className={span ? 'col-span-2 min-w-0' : 'min-w-0'}>
       <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={mono ? (truncate ? 'mt-0.5 truncate font-mono text-sm' : 'mt-0.5 break-all font-mono text-sm') : 'mt-0.5 truncate text-sm'} title={value}>
+      <dd className={mono ? (truncate ? 'mt-0.5 truncate font-mono text-sm' : 'mt-0.5 break-all font-mono text-sm') : 'mt-0.5 truncate text-sm'} title={title ?? value}>
         {value}
       </dd>
     </div>
@@ -478,11 +480,23 @@ export function RunDetailPage(): React.JSX.Element {
                       {target && connection !== 'direct' ? (
                         <LocationAttemptsNote attempts={locationAttempts} maxAttempts={locationMaxAttempts} warning={locationWarning} className="mt-1" />
                       ) : null}
+                      {connection !== 'direct' ? (
+                        <ExitIpWatchNotice
+                          className="mt-2"
+                          notice={exitIpNotice({
+                            watch: session?.exitIpWatch ?? 'off',
+                            ipChanges: run.ipChanges.length >= (session?.ipChanges.length ?? 0) ? run.ipChanges : (session?.ipChanges ?? []),
+                            verifiedIp: run.publicIp ? { ip: run.publicIp, city: verified.city, region: verified.region } : (session?.ip ?? null),
+                            target,
+                            lastIpCheckAt: session?.lastIpCheckAt ?? null,
+                          })}
+                        />
+                      ) : null}
                     </dd>
                   </div>
                   <Fact label="Country" value={orDash(run.country)} />
                   <Fact label="State" value={orDash(run.region)} />
-                  <Fact label="City / ZIP" value={run.postalCode ? `${orDash(run.city)} · ${run.postalCode}` : orDash(run.city)} />
+                  <Fact label="City / ZIP" value={cityAndApproxZip(run.city, run.postalCode)} title={run.postalCode ? APPROXIMATE_ZIP_NOTE : undefined} />
                   <Fact label="Location" value={describeVerifiedLocation(run)} />
                   <Fact label="Start time" value={formatDate(run.startedAt, { seconds: true })} />
                   <Fact label="Duration" value={durationBetween(run.startedAt, run.endedAt)} mono />

@@ -47,7 +47,7 @@ Set `QA_PROVIDER=brightdata`, `QA_PROVIDER_USERNAME` and `QA_PROVIDER_PASSWORD` 
 | --- | --- |
 | `PROXY_AUTH_FAILED` / HTTP 407 | Check the zone username (no targeting parameters in it) and password in **Manage keys**, and that the zone is active and allows the targeting you chose |
 | A targeting parameter is refused | Support is community-verified. Check Bright Data's parameter documentation, linked from the keys window, and [open an issue](https://github.com/UbaidBinWaris/proxy_browser/issues) with the redacted error |
-| Exit IP changes mid-test | The session was idle for more than about 5 minutes. Launch again, or keep the page active |
+| Browser stopped: *"the IP address changed"* | Bright Data replaced the session's IP (it ends sessions idle for about 5 minutes; the app's 20-second re-check normally keeps it active). Click **Launch again** |
 | Location badge **Mismatch** | Use more **Attempts**, a broader target, or the **Same state** policy |
 
 More error codes are in [Troubleshooting](/docs/troubleshooting#proxy-and-location). All providers side by side: [Proxy providers](/docs/proxy-providers).

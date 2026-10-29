@@ -25,7 +25,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { BrowserWindow, app, dialog, ipcMain, net, protocol, safeStorage, screen, session, shell } from 'electron'
+import { BrowserWindow, Notification, app, dialog, ipcMain, net, protocol, safeStorage, screen, session, shell } from 'electron'
 import originalFs from 'original-fs'
 
 import { EVENTS } from '@shared/ipc'
@@ -60,6 +60,7 @@ import type {
 import { openDatabase } from './database/index'
 import { createBroadcaster, registerIpcHandlers } from './ipc/index'
 import { SCREENSHOT_SCHEME, resolveScreenshotRequest } from './ipc/screenshot-protocol'
+import { ipChangeNotificationText } from './notifications/ip-change'
 import { createLauncher } from './launcher/launcher'
 import { resolveGeoNamesDir } from './locations/geonames-loader'
 import { createLocationsService } from './locations/locations-service'
@@ -494,6 +495,7 @@ async function bootstrap(): Promise<Runtime> {
     logger,
     locations,
     defaultPool: () => getSettings().defaultProxyPool,
+    defaultStickyTtlMinutes: () => getSettings().defaultStickyTtlMinutes,
     onGatewayTest: (status, at) => vault?.recordProxyTest(status, at),
   })
   const profiles = createProfileManager({ repo: db.profiles, logger, providers })
@@ -514,6 +516,23 @@ async function bootstrap(): Promise<Runtime> {
     siteAccess,
     // Full-screen desktop launches (simple device picker): Firefox and WebKit windows are sized to this area.
     screenWorkArea: () => screen.getPrimaryDisplay().workAreaSize,
+    // The browser is being stopped: bring the app (with its alert dialog) to the front and also show a
+    // system notification, since the user was looking at the browser window, not the app.
+    onExitIpChange: (changed, change) => {
+      const showApp = (): void => {
+        const target = mainWindow
+        if (!target || target.isDestroyed()) return
+        if (target.isMinimized()) target.restore()
+        target.show()
+        target.focus()
+      }
+      showApp()
+      if (!Notification.isSupported()) return
+      const text = ipChangeNotificationText(changed, change)
+      const notice = new Notification({ title: text.title, body: text.body, urgency: 'critical' })
+      notice.on('click', showApp)
+      notice.show()
+    },
   })
   const launcher = createLauncher({
     profiles,

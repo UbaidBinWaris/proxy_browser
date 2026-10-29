@@ -58,6 +58,7 @@ import type {
   BrowserEngineInfo,
   BrowserSession,
   DevicePresetInfo,
+  ExitIpChange,
   IpInfo,
   NetworkEntry,
   Profile,
@@ -66,7 +67,7 @@ import type {
   TargetMatch,
   TestRun,
 } from '@shared/types'
-import { BROWSER_ENGINE_LABELS } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, IP_WATCH_INTERVAL_MS } from '@shared/types'
 import { AppException } from '../contracts'
 import type {
   BrowserManager,
@@ -87,7 +88,7 @@ import { memoryLiveSessionsStore } from '../sessions/live-sessions-store'
 import type { LiveSessionsStore } from '../sessions/live-sessions-store'
 import { webkitLaunchEnv, webkitLibsDirFromEnv } from './browsers-path'
 import { DEVICE_PRESETS, buildContextOptions } from './device-presets'
-import { mapLaunchError, mapNavigationError, sanitizeErrorText, shortErrorText } from './error-mapping'
+import { AMBIGUOUS_NAVIGATION_CODES, blameWebsite, mapLaunchError, mapNavigationError, sanitizeErrorText, shortErrorText } from './error-mapping'
 import { attachNetworkInspector } from './network-inspector'
 import { DEFAULT_MASK_SELECTORS, redactUrl } from '../security/data-privacy'
 import type { SiteAccessAttacher } from '../site-access'
@@ -145,6 +146,13 @@ export interface BrowserManagerOptions {
   /** Find a Chromium-family session's browser pid by its `--proxy-qa-session` marker. */
   findBrowserPid?: (sessionId: string) => Promise<number | null>
   heartbeatIntervalMs?: number
+  /**
+   * How often an open proxied sticky session re-checks its exit IP through the same session
+   * (settings.watchExitIp). Defaults to IP_WATCH_INTERVAL_MS; 0 disables the watch.
+   */
+  ipWatchIntervalMs?: number
+  /** Called once per detected exit-IP change (main.ts shows a system notification: the user is in the browser window, not the app). */
+  onExitIpChange?: (session: BrowserSession, change: ExitIpChange) => void
   /** Site access tokens (src/main/site-access): routes enabled tokens into every new context. */
   siteAccess?: SiteAccessAttacher
   /**
@@ -204,6 +212,10 @@ interface LiveSession {
   startupTimedOut: boolean
   /** The monitor found no open page and is closing the browser. */
   closingAfterLastWindow: boolean
+  /** Exit-IP watch (see startIpWatch). */
+  ipWatchTimer: ReturnType<typeof setTimeout> | null
+  ipWatchBusy: boolean
+  ipWatchFailures: number
 }
 
 /** What the verify step established before the browser launches. */
@@ -328,8 +340,161 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Exit-IP watch
+  //
+  // Providers may swap a sticky session's exit IP (DataImpulse did so after ~5 minutes when no
+  // lifetime was requested, and replaces an IP whose device goes offline). The page then talks to
+  // the site from a different IP — and city — than the one verified at launch, which is exactly
+  // what a lead-certification service records. While the browser is open the session's IP is
+  // re-checked through the very same proxy username (same sticky session, so the same exit), right
+  // after the page opens and then every ipWatchIntervalMs. The check also keeps providers whose
+  // sessions expire when idle alive. Rotating sessions are not watched: they change by design.
+  // -------------------------------------------------------------------------
+
+  const ipWatchIntervalMs = opts.ipWatchIntervalMs ?? IP_WATCH_INTERVAL_MS
+  /** Consecutive failed checks before the session's IP is reported as unverified. */
+  const IP_WATCH_FAILURE_LIMIT = 3
+
+  const placeOf = (ip: IpInfo): string => [ip.city, ip.region, ip.postalCode].filter((part): part is string => Boolean(part)).join(', ') || ip.country || 'unknown location'
+
+  /**
+   * A page that fails through a verified proxy is usually blamed on the proxy. Re-check the exit IP
+   * through the same session: when it still answers, the website is the problem and the error says so.
+   */
+  const NAVIGATION_RECHECK_TIMEOUT_MS = 15_000
+  const assignNavigationBlame = async (ls: LiveSession, mapped: AppException, formUrl: string): Promise<AppException> => {
+    const connection = ls.connection
+    if (!connection || !AMBIGUOUS_NAVIGATION_CODES.includes(mapped.code)) return mapped
+    try {
+      const exit = await withTimeout(ipChecker.lookup(connection), NAVIGATION_RECHECK_TIMEOUT_MS, 'Re-checking the proxy exit')
+      logger.info(SCOPE, `${label(ls)}: page failed (${mapped.code}) but the proxy exit ${exit.ip} still answers; blaming the website`, {
+        sessionId: ls.session.id,
+        code: mapped.code,
+      })
+      return blameWebsite(mapped, formUrl, exit)
+    } catch (err) {
+      logger.info(SCOPE, `${label(ls)}: proxy re-check after the failed page also failed: ${shortErrorText(err, ls.secrets)}`, { sessionId: ls.session.id })
+      return mapped
+    }
+  }
+
+  /** Abort every request the session's pages make from now on (best effort, never throws). */
+  const blockAllTraffic = async (ls: LiveSession): Promise<void> => {
+    const context = ls.context
+    if (!context) return
+    try {
+      await context.route('**/*', (route) => route.abort('blockedbyclient'))
+    } catch (err) {
+      logger.warn(SCOPE, `${label(ls)}: could not block traffic after the IP change: ${shortErrorText(err, ls.secrets)}`, { sessionId: ls.session.id })
+    }
+  }
+
+  const stopIpWatch = (ls: LiveSession): void => {
+    if (ls.ipWatchTimer) clearTimeout(ls.ipWatchTimer)
+    ls.ipWatchTimer = null
+  }
+
+  const scheduleIpCheck = (ls: LiveSession, delayMs: number): void => {
+    stopIpWatch(ls)
+    if (ls.finalized) return
+    ls.ipWatchTimer = setTimeout(() => {
+      ls.ipWatchTimer = null
+      void checkExitIp(ls).finally(() => {
+        if (!ls.finalized && ls.session.status === 'open') scheduleIpCheck(ls, ipWatchIntervalMs)
+      })
+    }, delayMs)
+    // The watch must never keep the process alive on its own.
+    ls.ipWatchTimer.unref?.()
+  }
+
+  const startIpWatch = (ls: LiveSession): void => {
+    const { connection } = ls
+    if (!connection || !ls.settings.watchExitIp || ipWatchIntervalMs <= 0) return
+    if (connection.sessionId === null) {
+      ls.session.exitIpWatch = 'rotating'
+      emitSession(ls.session)
+      return
+    }
+    ls.session.exitIpWatch = 'watching'
+    emitSession(ls.session)
+    // First check right away: catches a switch between the launch check and the page load.
+    scheduleIpCheck(ls, 0)
+  }
+
+  const checkExitIp = async (ls: LiveSession): Promise<void> => {
+    const connection = ls.connection
+    if (!connection || ls.finalized || ls.ipWatchBusy) return
+    ls.ipWatchBusy = true
+    try {
+      const ip = await ipChecker.lookup(connection)
+      if (ls.finalized) return
+      ls.ipWatchFailures = 0
+      ls.session.lastIpCheckAt = new Date().toISOString()
+      const previous = ls.session.currentExitIp ?? ls.session.ip
+      ls.session.currentExitIp = ip
+      if (previous && previous.ip !== ip.ip) {
+        const change: ExitIpChange = {
+          at: ls.session.lastIpCheckAt,
+          fromIp: previous.ip,
+          toIp: ip.ip,
+          city: ip.city,
+          region: ip.region,
+          postalCode: ip.postalCode,
+        }
+        ls.session.ipChanges = [...ls.session.ipChanges, change]
+        ls.session.exitIpWatch = 'changed'
+        // Stop at once: first cut the page off the network so nothing more (a form submit, a
+        // certification ping) leaves from the new IP, then record why and close the browser.
+        await blockAllTraffic(ls)
+        const message = `Stopped: the IP changed from ${previous.ip} (${placeOf(previous)}) to ${ip.ip} (${placeOf(ip)}). The browser was closed so the form could not be sent from another IP. Launch again.`
+        ls.session.statusDetail = message
+        ls.session.error = { code: 'IP_CHANGED', message, detail: `${previous.ip} → ${ip.ip}` }
+        ls.closeReason = 'exit IP changed'
+        updateRun(ls, { ipChanges: ls.session.ipChanges, status: 'failed', errorMessage: message })
+        logger.warn(SCOPE, `${label(ls)}: exit IP changed ${previous.ip} → ${ip.ip}`, {
+          sessionId: ls.session.id,
+          runId: ls.runId,
+          proxySessionId: connection.sessionId,
+          fromIp: previous.ip,
+          toIp: ip.ip,
+          fromPlace: placeOf(previous),
+          toPlace: placeOf(ip),
+        })
+        try {
+          opts.onExitIpChange?.(ls.session, change)
+        } catch (err) {
+          logger.warn(SCOPE, `${label(ls)}: exit-IP change notification failed: ${shortErrorText(err, ls.secrets)}`, { sessionId: ls.session.id })
+        }
+        emitSession(ls.session)
+        stopIpWatch(ls)
+        void close(ls.session.id).catch((err: unknown) => {
+          logger.warn(SCOPE, `${label(ls)}: closing after the IP change failed: ${shortErrorText(err, ls.secrets)}`, { sessionId: ls.session.id })
+          if (live.has(ls.session.id)) finalize(ls, 'exit IP changed')
+        })
+        return
+      } else if (ls.session.exitIpWatch === 'unverified') {
+        ls.session.exitIpWatch = ls.session.ipChanges.length > 0 ? 'changed' : 'watching'
+      }
+      emitSession(ls.session)
+    } catch (err) {
+      if (ls.finalized) return
+      ls.ipWatchFailures += 1
+      if (ls.ipWatchFailures === IP_WATCH_FAILURE_LIMIT && ls.session.exitIpWatch !== 'changed') {
+        ls.session.exitIpWatch = 'unverified'
+        emitSession(ls.session)
+        logger.warn(SCOPE, `${label(ls)}: exit IP could not be re-checked ${IP_WATCH_FAILURE_LIMIT} times in a row: ${shortErrorText(err, ls.secrets)}`, {
+          sessionId: ls.session.id,
+        })
+      }
+    } finally {
+      ls.ipWatchBusy = false
+    }
+  }
+
   /** Release everything that is not the browser itself (inspector, relay, handles). Never throws. */
   const teardownResources = (ls: LiveSession): void => {
+    stopIpWatch(ls)
     ls.detachNetwork?.()
     ls.detachNetwork = null
     const relay = ls.relay
@@ -465,6 +630,8 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         policy: ls.settings.locationMatchPolicy,
         attempts: ls.settings.locationMatchAttempts,
         shouldContinue: () => !ls.cancelRequested,
+        widenWhenUnavailable: ls.settings.widenTargetWhenUnavailable,
+        confirmSticky: true,
         onProgress: (progress) => {
           ls.session.locationAttempts = progress.attempt
           ls.session.locationMaxAttempts = progress.attempts
@@ -483,13 +650,20 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         )
         return null
       }
-      if (verification.sessionId !== null && verification.sessionId !== connection.sessionId) {
-        // The location re-roll settled on another sticky id: the browser must connect with that one.
-        ls.profile = { ...profile, stickySessionId: verification.sessionId }
+      const widened = verification.widenedTarget ?? null
+      if (widened || (verification.sessionId !== null && verification.sessionId !== connection.sessionId)) {
+        // The re-roll settled on another sticky id and/or the area was widened (no exit IP in the requested
+        // ZIP/city): the browser must connect with exactly what was verified. A widened target applies to this
+        // launch only — the saved profile keeps its own.
+        ls.profile = { ...profile, stickySessionId: verification.sessionId ?? profile.stickySessionId, ...(widened ? { target: widened } : {}) }
         const rerolled = proxy.resolveForProfile(ls.profile)
         if (rerolled) {
           ls.connection = rerolled
           if (!ls.secrets.includes(rerolled.password)) ls.secrets.push(rerolled.password)
+        }
+        if (widened) {
+          ls.session.target = widened
+          updateRun(ls, { target: widened })
         }
       }
       const where = [result.ip.city, result.ip.region, result.ip.postalCode, result.ip.country ?? 'unknown country'].filter((part): part is string => Boolean(part)).join(', ')
@@ -508,7 +682,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       return {
         ip: result.ip,
         proxySessionId: verification.sessionId ?? result.sessionId ?? connection.sessionId,
-        targetMatch: profile.target ? verification.targetMatch : null,
+        targetMatch: (verification.widenedTarget ?? profile.target) ? verification.targetMatch : null,
         attempts: verification.attempts,
         maxAttempts: verification.maxAttempts,
         warning: verification.warning,
@@ -895,16 +1069,16 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         await abortLaunch(ls)
         return
       }
+      const mapped = mapNavigationError(err, {
+        timeoutMs: settings.navigationTimeoutMs,
+        viaProxy: ls.connection !== null,
+        secrets: ls.secrets,
+        ...(ls.connection ? { providerName: proxy.providers().find((candidate) => candidate.id === ls.profile.providerId)?.displayName } : {}),
+      })
+      const blamed = await assignNavigationBlame(ls, mapped, formUrl)
+      if (ls.finalized) return
       // Keep the window open so the tester can inspect the error page; the run stays failed unless re-marked.
-      failSession(
-        ls,
-        mapNavigationError(err, {
-          timeoutMs: settings.navigationTimeoutMs,
-          viaProxy: ls.connection !== null,
-          secrets: ls.secrets,
-          ...(ls.connection ? { providerName: proxy.providers().find((candidate) => candidate.id === ls.profile.providerId)?.displayName } : {}),
-        }),
-      )
+      failSession(ls, blamed)
       return
     }
     if (ls.finalized) return
@@ -930,6 +1104,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       return
     }
     setStatus(ls, 'open')
+    startIpWatch(ls)
   }
 
   const launch = async (profile: Profile): Promise<BrowserSession> => {
@@ -964,6 +1139,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       locationAttempts: 1,
       locationMaxAttempts,
       locationWarning: null,
+      ipChanges: [],
       proxySessionId: connection?.sessionId ?? null,
       formUrl: redactUrl(formUrl),
       startedAt,
@@ -1004,6 +1180,10 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         error: null,
         browserPid: null,
         lastHeartbeatAt: null,
+        exitIpWatch: 'off',
+        currentExitIp: null,
+        ipChanges: [],
+        lastIpCheckAt: null,
       },
       runId: run.id,
       profile,
@@ -1024,6 +1204,9 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       launchTask: null,
       startupTimedOut: false,
       closingAfterLastWindow: false,
+      ipWatchTimer: null,
+      ipWatchBusy: false,
+      ipWatchFailures: 0,
     }
     live.set(ls.session.id, ls)
     remember(ls)

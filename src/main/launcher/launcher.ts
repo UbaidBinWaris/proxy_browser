@@ -136,7 +136,8 @@ export function createLauncher(opts: LauncherOptions): Launcher {
     pool,
     sessionId,
     target: input.target,
-    ttlMinutes: sessionId ? input.stickyTtlMinutes : null,
+    // Same rule as ProxyManager.requestFor: the profile's own lifetime, else settings.defaultStickyTtlMinutes.
+    ttlMinutes: sessionId ? (input.stickyTtlMinutes ?? getSettings().defaultStickyTtlMinutes ?? null) : null,
   })
 
   /** Explicit override → state time zone → Eastern for a US-wide target → the host's zone for anything else. */

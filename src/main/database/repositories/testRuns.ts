@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite'
 
 import { TestRunPatchSchema } from '@shared/types'
-import type { BrowserEngine, DevicePresetId, RunStatus, TestRun } from '@shared/types'
+import type { BrowserEngine, DevicePresetId, ExitIpChange, RunStatus, TestRun } from '@shared/types'
 
 import { AppException } from '../../contracts'
 import type { TestRunRepository } from '../../contracts'
@@ -32,6 +32,7 @@ const COLUMN_OF: Record<RunField, string> = {
   locationAttempts: 'location_attempts',
   locationMaxAttempts: 'location_max_attempts',
   locationWarning: 'location_warning',
+  ipChanges: 'ip_changes_json',
   proxySessionId: 'proxy_session_id',
   formUrl: 'form_url',
   startedAt: 'started_at',
@@ -68,6 +69,7 @@ function rowToRun(row: Row): TestRun {
     locationAttempts: Math.max(1, asNumberOrNull(row.location_attempts) ?? 1),
     locationMaxAttempts: Math.max(1, asNumberOrNull(row.location_max_attempts) ?? 1),
     locationWarning: asStringOrNull(row.location_warning),
+    ipChanges: parseIpChanges(row.ip_changes_json),
     proxySessionId: asStringOrNull(row.proxy_session_id),
     formUrl: redactUrl(asString(row.form_url)),
     startedAt: asString(row.started_at),
@@ -83,11 +85,30 @@ function rowToRun(row: Row): TestRun {
   }
 }
 
-/** The GeoTarget object is stored as JSON; every other field is a scalar already. */
+/** Exit-IP changes stored as a JSON array; anything unreadable (or NULL from older rows) is no changes. */
+export function parseIpChanges(raw: unknown): ExitIpChange[] {
+  if (typeof raw !== 'string' || raw.length === 0) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (c): c is ExitIpChange =>
+        typeof c === 'object' && c !== null && typeof (c as ExitIpChange).fromIp === 'string' && typeof (c as ExitIpChange).toIp === 'string' && typeof (c as ExitIpChange).at === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+/** The GeoTarget object and the exit-IP changes are stored as JSON; every other field is a scalar already. */
 function toParam(field: RunField, value: TestRun[RunField]): SQLInputValue {
   if (field === 'target') return targetToJson(value as TestRun['target'])
+  if (field === 'ipChanges') {
+    const changes = value as TestRun['ipChanges']
+    return changes.length > 0 ? JSON.stringify(changes) : null
+  }
   if ((field === 'formUrl' || field === 'finalUrl') && typeof value === 'string') return redactUrl(value)
-  return nullable(value as Exclude<TestRun[RunField], TestRun['target']>)
+  return nullable(value as Exclude<TestRun[RunField], TestRun['target'] | TestRun['ipChanges']>)
 }
 
 function notFound(id: string): AppException {

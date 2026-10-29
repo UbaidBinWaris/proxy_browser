@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, ArrowUpRight, ChevronRight, Rocket, Shuffle } from 'lucide-react'
 import type { BrowserEngine, DevicePresetInfo, LocationEntry, QuickLaunchInput, TargetMode } from '@shared/types'
-import { BROWSER_ENGINE_LABELS, DEFAULT_SETTINGS } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, DEFAULT_SETTINGS, DEFAULT_STICKY_TTL_MINUTES } from '@shared/types'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -52,6 +52,8 @@ import { useSecurityStore } from '@/stores/security'
 import { useSessionsStore, selectActiveSession } from '@/stores/sessions'
 import { engineBusyReason, useTasksStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
+import { ExitIpWatchNotice } from '@/components/ExitIpWatchNotice'
+import { exitIpNotice } from '@/lib/exitIpWatch'
 import { toast } from '@/stores/toasts'
 
 /** DOM id of the control that shows a given form error (for focusing the first offender). */
@@ -133,6 +135,8 @@ export function LaunchPage(): React.JSX.Element {
     [presets, form.devicePreset],
   )
   const direct = form.pool === 'none'
+  /** Lifetime used when the field is empty (settings.defaultStickyTtlMinutes). */
+  const defaultTtl = settings?.defaultStickyTtlMinutes ?? DEFAULT_STICKY_TTL_MINUTES
   /** Simple device picker (beta): only Windows, macOS, Android and iOS, also for Random device and Random all. */
   const simpleDevices = settings?.simpleDevices === true
   const devicePresets = useMemo(() => (simpleDevices ? simpleCatalog(presets) : presets), [simpleDevices, presets])
@@ -483,9 +487,7 @@ export function LaunchPage(): React.JSX.Element {
                   Options
                   <span className="font-normal">
                     ·{' '}
-                    {form.sticky
-                      ? `sticky${form.stickyTtlMinutes ? `, ${form.stickyTtlMinutes} min` : ''}`
-                      : 'rotating'}
+                    {form.sticky ? `sticky, ${form.stickyTtlMinutes || defaultTtl} min` : 'rotating'}
                   </span>
                 </button>
                 {optionsOpen && !direct ? (
@@ -516,7 +518,7 @@ export function LaunchPage(): React.JSX.Element {
                       htmlFor="launch-stickyTtlMinutes"
                       label="Session TTL (min)"
                       error={errors.stickyTtlMinutes}
-                      hint="Empty = provider default (~30)."
+                      hint={`How long to keep one exit IP. Empty = ${defaultTtl} min (Settings).`}
                     >
                       <Input
                         id="launch-stickyTtlMinutes"
@@ -526,7 +528,7 @@ export function LaunchPage(): React.JSX.Element {
                         max={1440}
                         value={form.stickyTtlMinutes}
                         onChange={(e) => update('stickyTtlMinutes', e.target.value)}
-                        placeholder="30"
+                        placeholder={String(defaultTtl)}
                         disabled={!form.sticky}
                         className="w-28"
                         invalid={!!errors.stickyTtlMinutes}
@@ -534,6 +536,12 @@ export function LaunchPage(): React.JSX.Element {
                       />
                     </Field>
                   </div>
+                ) : null}
+                {!direct && !form.sticky ? (
+                  <ExitIpWatchNotice
+                    className="mt-2"
+                    notice={exitIpNotice({ watch: 'rotating', ipChanges: [], verifiedIp: null, target: built.input?.target ?? null, lastIpCheckAt: null })}
+                  />
                 ) : null}
               </div>
             </CardBody>

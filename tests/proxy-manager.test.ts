@@ -5,7 +5,7 @@ import { AppException } from '../src/main/contracts'
 import type { Database, IpChecker, Logger, ProxyConnection, ProxyProvider, ProxyRequest } from '../src/main/contracts'
 import { openDatabase } from '../src/main/database/index'
 import { DataImpulseProvider, buildTargetingString, dataImpulseDialect, poolNotConfiguredMessage } from '../src/main/proxy/providers/dataimpulse'
-import { compareTargetWith, createProxyManager, describeExitLocation, describeRequestedLocation, normalizePostalCode, profileInputFrom } from '../src/main/proxy/proxy-manager'
+import { compareTargetWith, createProxyManager, describeExitLocation, describeRequestedLocation, normalizePostalCode, profileInputFrom , isNoExitIpAvailable, widerTargets } from '../src/main/proxy/proxy-manager'
 
 const PASSWORD = 'Hunter2!Secret'
 
@@ -145,6 +145,23 @@ describe('createProxyManager', () => {
     const rotating = db.profiles.create({ ...input, name: 'Rot', proxyMode: 'rotating', stickySessionId: null, target: TX_CITY, stickyTtlMinutes: 45 })
     expect(manager.resolveForProfile(rotating)).toMatchObject({ pool: 'residential', sessionId: null, targetingString: 'cr.us;state.texas;city.austin' })
     expect(manager.resolveForProfile(db.profiles.create({ ...input, name: 'Direct', proxyMode: 'none', stickySessionId: null }))).toBeNull()
+  })
+
+  it('sticky profiles without their own lifetime get the default one (provider default changed the IP after ~5 min)', () => {
+    const provider = fakeProvider(['residential', 'mobile'])
+    let fallback: number | null = 60
+    const manager = createProxyManager({ provider, sessions: db.proxySessions, profiles: db.profiles, logger: fakeLogger(entries), defaultStickyTtlMinutes: () => fallback })
+    const noTtl = db.profiles.create({ ...input, target: NJ, stickyTtlMinutes: null })
+    expect(manager.resolveForProfile(noTtl)?.targetingString).toBe('cr.us;state.newjersey;sessid.e2e-chromium-001;sessttl.60')
+    // A profile's own lifetime wins over the default.
+    const own = db.profiles.create({ ...input, name: 'Own', target: NJ, stickyTtlMinutes: 20 })
+    expect(manager.resolveForProfile(own)?.targetingString).toBe('cr.us;state.newjersey;sessid.e2e-chromium-001;sessttl.20')
+    // Rotating requests never carry a lifetime.
+    const rotating = db.profiles.create({ ...input, name: 'Rot', proxyMode: 'rotating', stickySessionId: null, target: NJ, stickyTtlMinutes: null })
+    expect(manager.resolveForProfile(rotating)?.targetingString).toBe('cr.us;state.newjersey')
+    // No default configured: nothing is added (old behaviour).
+    fallback = null
+    expect(manager.resolveForProfile(noTtl)?.targetingString).toBe('cr.us;state.newjersey;sessid.e2e-chromium-001')
   })
 
   it('rotateSession writes the new sticky id back to the profile and tests it', async () => {
@@ -353,14 +370,14 @@ describe('compareTarget', () => {
     expect(compareTargetWith(newark, ip({ region: 'New York', city: 'Newark' }), resolver)).toBe('mismatch')
   })
 
-  it('zip mode: the postal code is verified exactly; the same state with another or no ZIP is partial', () => {
+  it('zip mode: an equal ZIP or a ZIP in the requested city is a match; the same state elsewhere is partial', () => {
     const zip = nj('zip', { city: 'Newark', zip: '07102' })
     expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Newark', postalCode: '07102' }), resolver)).toBe('match')
     expect(compareTargetWith(zip, ip({ region: 'NJ', city: 'Newark', postalCode: '07102-1234' }), resolver)).toBe('match')
     expect(compareTargetWith(zip, ip({ region: 'NJ', city: 'Newark', postalCode: ' 07102 ' }), resolver)).toBe('match')
-    // The right city is no longer enough: the ZIP decides.
-    expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Newark', postalCode: '07103' }), resolver)).toBe('partial')
-    expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Newark', postalCode: null }), resolver)).toBe('partial')
+    // IP databases disagree by a ZIP or two for the same IP (98104 vs 98101 live), so the requested city is enough.
+    expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Newark', postalCode: '07103' }), resolver)).toBe('match')
+    expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Newark', postalCode: null }), resolver)).toBe('match')
     expect(compareTargetWith(zip, ip({ region: 'New Jersey', city: 'Elizabeth', postalCode: '07201' }), resolver)).toBe('partial')
     expect(compareTargetWith(nj('zip', { city: null, zip: '07102' }), ip({ region: 'New Jersey', city: 'Newark', postalCode: '07104' }), resolver)).toBe('partial')
     // Live finding: a carrier IP in the 07102 pool geolocates to New York, NY 10118.
@@ -425,7 +442,8 @@ describe('verifyForLaunch (location re-roll)', () => {
   const ZIP_07102: GeoTarget = { mode: 'zip', country: 'us', state: 'New Jersey', stateCode: 'NJ', city: 'Newark', zip: '07102' }
   /** The live 07102 pool: a carrier IP placed in Manhattan, a Newark IP in the next ZIP, and the requested ZIP. */
   const NY_CARRIER: Partial<IpInfo> = { ip: '107.77.76.91', region: 'New York', city: 'New York', postalCode: '10118' }
-  const NEWARK_07103: Partial<IpInfo> = { ip: '198.51.100.20', region: 'New Jersey', city: 'Newark', postalCode: '07103' }
+  /** Right state, another city (a ZIP in Newark itself now counts as a match). */
+  const ELIZABETH_07201: Partial<IpInfo> = { ip: '198.51.100.20', region: 'New Jersey', city: 'Elizabeth', postalCode: '07201' }
   const NEWARK_07102: Partial<IpInfo> = { ip: '198.51.100.21', region: 'New Jersey', city: 'Newark', postalCode: '07102' }
   const BASE_ID = 'ql-20261005-ab12'
 
@@ -473,14 +491,100 @@ describe('verifyForLaunch (location re-roll)', () => {
       logger,
       credentials: [{ pool: 'residential', host: 'gw.dataimpulse.com', port: 823, username: 'acme_login', password: PASSWORD, sessionTemplate: null }],
     })
-    return { manager: createProxyManager({ provider, sessions: db.proxySessions, profiles: db.profiles, logger, locations: fakeLocations }), seen }
+    return { manager: createProxyManager({ provider, sessions: db.proxySessions, profiles: db.profiles, logger, locations: fakeLocations, stickyConfirmDelayMs: 0 }), seen }
   }
 
   const zipProfile = (overrides: Partial<ProfileInput> = {}): Profile =>
     db.profiles.create({ ...input, name: 'Quick ZIP', stickySessionId: BASE_ID, target: ZIP_07102, ephemeral: true, ...overrides })
 
+  const noIp = (): AppException =>
+    new AppException('PROXY_DEAD', 'The proxy gateway had no exit IP available for this session and location right now (HTTP 503).', 'HTTP 503 from the proxy gateway during the ip-api request')
+
+  it('widens ZIP → city → state when the area has no exit IP, for this launch only', async () => {
+    const lankinZip: GeoTarget = { mode: 'zip', country: 'us', state: 'North Dakota', stateCode: 'ND', city: 'Lankin', zip: '58250' }
+    const fargo: Partial<IpInfo> = { ip: '198.51.100.30', region: 'North Dakota', city: 'Fargo', postalCode: '58102' }
+    const { manager, seen } = managerWith([noIp(), noIp(), fargo])
+    const profile = zipProfile({ target: lankinZip })
+    const progress: string[] = []
+    const verification = await manager.verifyForLaunch(profile, { policy: 'state', attempts: 3, widenWhenUnavailable: true, onProgress: (p) => progress.push(p.message) })
+    expect(verification.result.status).toBe('working')
+    expect(verification.widenedTarget).toMatchObject({ mode: 'state', state: 'North Dakota', city: null, zip: null })
+    expect(verification.targetMatch).toBe('match')
+    expect(verification.warning).toBe('No exit IPs available in ZIP 58250 (Lankin, ND) right now; connected via North Dakota instead (Fargo, North Dakota 58102).')
+    expect(progress).toEqual([
+      'No exit IPs in ZIP 58250 (Lankin, ND) right now — trying Lankin, ND…',
+      'No exit IPs in ZIP 58250 (Lankin, ND) right now — trying North Dakota…',
+    ])
+    // ZIP, then city, then state — each with a fresh sticky id.
+    expect(seen.map((c) => c.targetingString.replace(/;sessid\.[^;]+/, ''))).toEqual([
+      'cr.us;state.northdakota;city.lankin;zip.58250',
+      'cr.us;state.northdakota;city.lankin',
+      'cr.us;state.northdakota',
+    ])
+    expect(new Set(seen.map((c) => c.sessionId)).size).toBe(3)
+    // The saved profile keeps the requested ZIP; only the sticky id moves to the one that worked.
+    const saved = db.profiles.get(profile.id)!
+    expect(saved.target).toEqual(lankinZip)
+    expect(saved.stickySessionId).toBe(verification.sessionId)
+  })
+
+  it('does not widen when the setting is off, or when the failure is not "no exit IP"', async () => {
+    const off = managerWith([noIp()])
+    const v1 = await off.manager.verifyForLaunch(zipProfile(), { policy: 'state', attempts: 3, widenWhenUnavailable: false })
+    expect(v1.result.status).toBe('failed')
+    expect(v1.widenedTarget).toBeUndefined()
+    expect(off.seen).toHaveLength(1)
+
+    const auth = managerWith([new AppException('PROXY_AUTH_FAILED', 'rejected', 'HTTP 407')])
+    const v2 = await auth.manager.verifyForLaunch(zipProfile({ name: 'Auth' }), { policy: 'state', attempts: 3, widenWhenUnavailable: true })
+    expect(v2.result.status).toBe('failed')
+    expect(auth.seen).toHaveLength(1)
+  })
+
+  it('checks the widened session a second time and moves on from one that does not keep its IP', async () => {
+    const lankinZip: GeoTarget = { mode: 'zip', country: 'us', state: 'North Dakota', stateCode: 'ND', city: 'Lankin', zip: '58250' }
+    const fargo: Partial<IpInfo> = { ip: '198.51.100.30', region: 'North Dakota', city: 'Fargo', postalCode: '58102' }
+    const bismarck: Partial<IpInfo> = { ip: '198.51.100.31', region: 'North Dakota', city: 'Bismarck', postalCode: '58501' }
+    // ZIP and city have no IP; the first state session switches IP on the second look, the next one holds.
+    const { manager, seen } = managerWith([noIp(), noIp(), fargo, bismarck, fargo, fargo])
+    const progress: string[] = []
+    const verification = await manager.verifyForLaunch(zipProfile({ target: lankinZip }), {
+      policy: 'state',
+      attempts: 3,
+      widenWhenUnavailable: true,
+      confirmSticky: true,
+      onProgress: (p) => progress.push(p.message),
+    })
+    expect(verification.result.status).toBe('working')
+    expect(verification.widenedTarget).toMatchObject({ mode: 'state', state: 'North Dakota' })
+    expect(progress).toContain('Exit IP 198.51.100.30 changed to 198.51.100.31 within seconds — trying another session…')
+    const stateIds = seen.slice(2).map((c) => c.sessionId)
+    expect(stateIds[0]).toBe(stateIds[1])
+    expect(stateIds[2]).not.toBe(stateIds[0])
+    expect(stateIds[2]).toBe(stateIds[3])
+    expect(verification.sessionId).toBe(stateIds[2])
+  })
+
+  it('gives up when even the state has no exit IP', async () => {
+    const { manager, seen } = managerWith([noIp(), noIp(), noIp()])
+    const verification = await manager.verifyForLaunch(zipProfile(), { policy: 'state', attempts: 3, widenWhenUnavailable: true })
+    expect(verification.result.status).toBe('failed')
+    expect(verification.widenedTarget).toBeUndefined()
+    expect(seen).toHaveLength(3)
+  })
+
+  it('widerTargets and isNoExitIpAvailable', () => {
+    expect(widerTargets(ZIP_07102).map((t) => t.mode)).toEqual(['city', 'state'])
+    expect(widerTargets({ ...ZIP_07102, mode: 'zip', city: null }).map((t) => t.mode)).toEqual(['state'])
+    expect(widerTargets({ ...ZIP_07102, mode: 'city', zip: null }).map((t) => t.mode)).toEqual(['state'])
+    expect(widerTargets({ ...ZIP_07102, mode: 'state', city: null, zip: null })).toEqual([])
+    expect(isNoExitIpAvailable(noIp().toAppError())).toBe(true)
+    expect(isNoExitIpAvailable({ code: 'PROXY_DEAD', message: 'The proxy connection failed', detail: 'ECONNRESET' })).toBe(false)
+    expect(isNoExitIpAvailable({ code: 'PROXY_AUTH_FAILED', message: 'x', detail: 'HTTP 503' })).toBe(false)
+  })
+
   it('exact: re-rolls mismatch → partial → match, reports each attempt and keeps the matching session id', async () => {
-    const { manager, seen } = managerWith([NY_CARRIER, NEWARK_07103, NEWARK_07102])
+    const { manager, seen } = managerWith([NY_CARRIER, ELIZABETH_07201, NEWARK_07102])
     const profile = zipProfile()
     const progress: string[] = []
     const verification = await manager.verifyForLaunch(profile, { policy: 'exact', attempts: 3, onProgress: (p) => progress.push(`${p.attempt}/${p.attempts} ${p.sessionId} ${p.message}`) })
@@ -489,7 +593,7 @@ describe('verifyForLaunch (location re-roll)', () => {
     expect(verification.result).toMatchObject({ status: 'working', sessionId: `${BASE_ID}-r3`, ip: { ip: '198.51.100.21', postalCode: '07102' } })
     expect(progress).toEqual([
       `2/3 ${BASE_ID}-r2 Exit IP 107.77.76.91 is in New York, NY 10118 — re-rolling session (2/3)…`,
-      `3/3 ${BASE_ID}-r3 Exit IP 198.51.100.20 is in Newark, NJ 07103 — re-rolling session (3/3)…`,
+      `3/3 ${BASE_ID}-r3 Exit IP 198.51.100.20 is in Elizabeth, NJ 07201 — re-rolling session (3/3)…`,
     ])
     // One IP check per attempt, each with its own sticky id and the ZIP targeting.
     expect(seen.map((c) => c.sessionId)).toEqual([BASE_ID, `${BASE_ID}-r2`, `${BASE_ID}-r3`])
@@ -509,7 +613,7 @@ describe('verifyForLaunch (location re-roll)', () => {
   })
 
   it('state: a partial result (right state, other ZIP) is accepted, so the same sequence stops at attempt 2', async () => {
-    const { manager, seen } = managerWith([NY_CARRIER, NEWARK_07103, NEWARK_07102])
+    const { manager, seen } = managerWith([NY_CARRIER, ELIZABETH_07201, NEWARK_07102])
     const profile = zipProfile()
     const verification = await manager.verifyForLaunch(profile, { policy: 'state', attempts: 3 })
     expect(verification).toMatchObject({ attempts: 2, maxAttempts: 3, sessionId: `${BASE_ID}-r2`, targetMatch: 'partial', warning: null })
@@ -542,20 +646,20 @@ describe('verifyForLaunch (location re-roll)', () => {
   })
 
   it('when no attempt meets the policy it continues with the best result (match > partial > mismatch) and restores that session', async () => {
-    const { manager } = managerWith([NEWARK_07103, NY_CARRIER, NY_CARRIER])
+    const { manager } = managerWith([ELIZABETH_07201, NY_CARRIER, NY_CARRIER])
     const profile = zipProfile()
     const updates: ProxySession[] = []
     manager.onSessionUpdate((s) => updates.push(s))
     const verification = await manager.verifyForLaunch(profile, { policy: 'exact', attempts: 3 })
     expect(verification).toMatchObject({ attempts: 3, maxAttempts: 3, sessionId: BASE_ID, targetMatch: 'partial' })
-    expect(verification.result.ip).toMatchObject({ ip: '198.51.100.20', postalCode: '07103' })
-    expect(verification.warning).toBe('Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Newark, NJ 07103 (same state)')
+    expect(verification.result.ip).toMatchObject({ ip: '198.51.100.20', postalCode: '07201' })
+    expect(verification.warning).toBe('Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Elizabeth, NJ 07201 (same state)')
     // The first sticky id still holds that exit IP: it is written back and its row shows the chosen result again.
     expect(db.profiles.get(profile.id)?.stickySessionId).toBe(BASE_ID)
-    expect(db.proxySessions.getByProfile(profile.id)).toMatchObject({ sessionId: BASE_ID, status: 'working', lastIp: '198.51.100.20', postalCode: '07103', targetMatch: 'partial' })
+    expect(db.proxySessions.getByProfile(profile.id)).toMatchObject({ sessionId: BASE_ID, status: 'working', lastIp: '198.51.100.20', postalCode: '07201', targetMatch: 'partial' })
     expect(updates.at(-1)).toMatchObject({ sessionId: BASE_ID, status: 'working', targetMatch: 'partial' })
     const warn = entries.find((e) => e.level === 'WARN' && e.message === verification.warning)
-    expect(warn?.meta).toMatchObject({ policy: 'exact', requested: 'ZIP 07102 (Newark, NJ)', got: 'Newark, NJ 07103', chosenAttempt: 1, attempts: 3 })
+    expect(warn?.meta).toMatchObject({ policy: 'exact', requested: 'ZIP 07102 (Newark, NJ)', got: 'Elizabeth, NJ 07201', chosenAttempt: 1, attempts: 3 })
   })
 
   it('ties go to the later attempt; a state-policy fallback names the state', async () => {
@@ -581,13 +685,13 @@ describe('verifyForLaunch (location re-roll)', () => {
 
     // Live finding: once both IPs of the 07102 pool were pinned by sticky sessions, the gateway answered HTTP 503 to every new
     // sticky id for that ZIP (other ZIPs and rotating mode kept working) — so a refusal ends the re-roll instead of burning attempts.
-    const exhausted = managerWith([NY_CARRIER, NEWARK_07103, new AppException('PROXY_DEAD', 'Could not connect through the proxy gateway.', 'HTTP 503 from the proxy gateway during the ip-api request'), NEWARK_07102])
+    const exhausted = managerWith([NY_CARRIER, ELIZABETH_07201, new AppException('PROXY_DEAD', 'Could not connect through the proxy gateway.', 'HTTP 503 from the proxy gateway during the ip-api request'), NEWARK_07102])
     const pool = zipProfile({ name: 'Exhausted pool' })
     const settled = await exhausted.manager.verifyForLaunch(pool, { policy: 'exact', attempts: 4 })
     expect(settled).toMatchObject({ attempts: 3, maxAttempts: 4, sessionId: `${BASE_ID}-r2`, targetMatch: 'partial' })
     expect(exhausted.seen).toHaveLength(3)
     expect(settled.warning).toBe(
-      'Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Newark, NJ 07103 (same state). Re-rolling stopped early: the gateway refused a new sticky session (PROXY_DEAD); this location may have no free exit IP right now.',
+      'Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Elizabeth, NJ 07201 (same state). Re-rolling stopped early: the gateway refused a new sticky session (PROXY_DEAD); this location may have no free exit IP right now.',
     )
     expect(db.profiles.get(pool.id)?.stickySessionId).toBe(`${BASE_ID}-r2`)
     // A refusal on the last allowed attempt is just the end of the budget.

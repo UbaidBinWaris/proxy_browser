@@ -3,6 +3,7 @@
  * Covers Chromium (ERR_*), Firefox (NS_ERROR_*) and WebKit (prose) failure modes.
  */
 import { AppException } from '../contracts'
+import type { IpInfo } from '@shared/types'
 
 function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message
@@ -105,4 +106,35 @@ export function mapNavigationError(
     )
   }
   return new AppException('INTERNAL', `Navigation failed: ${text || 'unknown error'}`, text)
+}
+
+/**
+ * Navigation errors that a proxy problem and a website problem both produce. After one of these,
+ * the browser manager re-checks the exit IP through the same proxy session: if the proxy still
+ * answers, the website is to blame and the message says so (users were sent rotating sessions
+ * for a site that was simply down).
+ */
+export const AMBIGUOUS_NAVIGATION_CODES: readonly AppException['code'][] = ['PROXY_DEAD', 'SITE_TIMEOUT', 'DNS_FAILURE', 'INTERNAL']
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host || url
+  } catch {
+    return url
+  }
+}
+
+/** The error to show once the proxy session was confirmed working after a failed page load. */
+export function blameWebsite(original: AppException, formUrl: string, exit: Pick<IpInfo, 'ip' | 'city' | 'region'>): AppException {
+  const host = hostOf(formUrl)
+  const where = [exit.city, exit.region].filter((part): part is string => Boolean(part)).join(', ')
+  const exitText = where ? `${exit.ip} (${where})` : exit.ip
+  if (original.code === 'DNS_FAILURE') {
+    return new AppException('DNS_FAILURE', `The address ${host} could not be found. The proxy exit ${exitText} is working, so check the form URL for a typo.`, original.detail)
+  }
+  return new AppException(
+    'SITE_UNREACHABLE',
+    `${host} did not respond. The proxy exit ${exitText} is working, so the website may be down or blocking this IP. Try again later, or check the site without a proxy.`,
+    original.detail,
+  )
 }

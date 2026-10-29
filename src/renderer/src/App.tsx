@@ -28,6 +28,8 @@ import { RunDetailPage } from '@/pages/RunDetail'
 import { SettingsPage } from '@/pages/Settings'
 import { SetupPage } from '@/pages/Setup'
 import { KeysWindowPage } from '@/pages/KeysWindow'
+import { useIpStopAlertStore } from '@/stores/ipStopAlert'
+import { IpStopDialog } from '@/components/IpStopDialog'
 import { AutomationPage } from '@/pages/Automation'
 
 /** Subscribes to main-process push events once and feeds the stores; also performs initial loads. */
@@ -46,6 +48,9 @@ function EventBridge(): null {
       toast.error(`Launch failed · ${session.profileName}`, `${session.error.code}: ${session.error.message}`)
     } else if (session.status === 'open' && previous?.status !== 'open' && session.ip) {
       toast.success(`Browser open · ${session.profileName}`, `Exit IP ${session.ip.ip}`)
+    }
+    if (session.error?.code === 'IP_CHANGED' && previous?.error?.code !== 'IP_CHANGED') {
+      useIpStopAlertStore.getState().show({ runId: session.runId, profileName: session.profileName, message: session.error.message })
     }
   })
   useEvent(EVENTS.runUpdate, upsertRun)
@@ -148,6 +153,7 @@ function Shell(): React.JSX.Element {
 
   return (
     <AppShell sidebar={!pending && !firstRun}>
+      <IpStopDialog />
       {pending ? (
         <AppLoading />
       ) : (

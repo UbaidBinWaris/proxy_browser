@@ -24,8 +24,12 @@
  *     ('remove-spaces' default, 'underscore', 'keep') in case the gateway changes
  *     its convention.
  *   - `zip.<5 digits>`.
- *   - `sessid.<value>` pins the exit IP (~30 min by default); `sessttl.<minutes>`
- *     sets the interval.
+ *   - `sessid.<value>` pins the exit IP; `sessttl.<minutes>` sets its lifetime.
+ *     Measured 2026-10-30 (3 states, 7.5 min): without `sessttl` the IP changed after
+ *     ~5 minutes (same state, another city); `sessttl.30` and `sessttl.60` held; `sessttl.120`
+ *     was unreliable (one session got a new IP on every request). Lifetimes are therefore
+ *     clamped to DATAIMPULSE_TTL_MINUTES (1–60), and the app always sends one
+ *     (settings.defaultStickyTtlMinutes, 60 by default).
  *
  * Products: Residential and Mobile are separate plans with separate logins on the
  * same gateway (gw.dataimpulse.com:823). Credentials are kept per product.
@@ -55,6 +59,7 @@ import { DATAIMPULSE_STATES_FILE } from '../../locations/geonames-loader'
 import { DEFAULT_TARGETING_ENCODING, TARGETING_ENCODINGS, encodePlaceName, encodeStateName, notConfiguredMessage, productNotConfiguredMessage } from '../targeting-text'
 import type { TargetingEncoding } from '../targeting-text'
 import type { ComposedConnection, DialectOptions, ProviderCredentials, ProviderDialect } from './dialect'
+import { clampTtlMinutes } from './dialect-helpers'
 import { GatewayProvider } from './gateway-provider'
 
 // Neutral helpers re-exported so existing imports from this module keep working.
@@ -83,6 +88,8 @@ export const GEO_TARGETING_BILLING_NOTE = 'State/city/ZIP targeting is billed at
 /** Auto-generated ids (`createSession`) are short lowercase slugs. */
 export const SESSION_ID_MAX_LENGTH = 32
 export const SESSION_ID_PATTERN = /^[a-z0-9-]{1,32}$/
+/** Accepted `sessttl` range. Above 60 minutes the gateway stopped honouring the session in testing. */
+export const DATAIMPULSE_TTL_MINUTES = { min: 1, max: 60 } as const
 /** Rotation keeps whatever the user typed (profile charset) and only appends `-r<N>`. */
 const ROTATION_SUFFIX_PATTERN = /^(.*)-r(\d+)$/
 
@@ -133,7 +140,8 @@ export function geoParams(target: GeoTarget | null, encoding: TargetingEncoding 
 export function sessionParams(request: Pick<ProxyRequest, 'sessionId' | 'ttlMinutes'>): TargetingParam[] {
   if (!request.sessionId) return []
   const params: TargetingParam[] = [['sessid', request.sessionId]]
-  if (request.ttlMinutes !== null && request.ttlMinutes > 0) params.push(['sessttl', String(Math.trunc(request.ttlMinutes))])
+  const ttl = clampTtlMinutes(request.ttlMinutes, DATAIMPULSE_TTL_MINUTES)
+  if (ttl !== null) params.push(['sessttl', String(ttl)])
   return params
 }
 
@@ -281,8 +289,8 @@ export const dataImpulseDialect: ProviderDialect = {
     targetModes: [...TARGET_MODES],
     sticky: {
       supported: true,
-      // `sessttl` range accepted by the profile schema (stickyTtlMinutes).
-      ttlMinutes: { min: 1, max: 1440 },
+      // `sessttl` range that held a stable exit IP in testing (see DATAIMPULSE_TTL_MINUTES).
+      ttlMinutes: { min: DATAIMPULSE_TTL_MINUTES.min, max: DATAIMPULSE_TTL_MINUTES.max },
       idPattern: STICKY_SESSION_ID_PATTERN.source,
       idMaxLength: STICKY_SESSION_ID_MAX_LENGTH,
     },

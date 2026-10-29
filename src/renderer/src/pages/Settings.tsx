@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { NavLink, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FolderOpen, Save } from 'lucide-react'
 import type { AppError, InstalledBrowserEngine, IpCheckProvider, LocationMatchPolicy, ProductKey } from '@shared/types'
-import { BROWSER_ENGINE_LABELS, IP_CHECK_PROVIDERS, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, IP_CHECK_PROVIDERS, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, STICKY_TTL_MINUTES_MAX, STICKY_TTL_MINUTES_MIN } from '@shared/types'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -363,7 +363,7 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
 
       {section(
         'targeting',
-        `${(providers?.length ?? 0) > 1 ? `${defaultProvider?.displayName ?? form.defaultProviderId} ` : ''}${productLabelFor(defaultProvider, form.defaultProxyPool)} · ${form.defaultTargetCountry} · match ${LOCATION_MATCH_POLICY_LABELS[form.locationMatchPolicy].toLowerCase()}`,
+        `${(providers?.length ?? 0) > 1 ? `${defaultProvider?.displayName ?? form.defaultProviderId} ` : ''}${productLabelFor(defaultProvider, form.defaultProxyPool)} · ${form.defaultTargetCountry} · match ${LOCATION_MATCH_POLICY_LABELS[form.locationMatchPolicy].toLowerCase()} · keep IP ${form.defaultStickyTtlMinutes} min`,
         <SettingsForm onSubmit={onSubmit} className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field htmlFor="settings-defaultProviderId" label="Default proxy provider" error={errors.defaultProviderId} hint="Pre-selected for new profiles and on Launch." required>
             <Select
@@ -454,6 +454,52 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
               aria-describedby={fieldDescribedBy('settings-locationMatchAttempts', true, !!errors.locationMatchAttempts)}
             />
           </Field>
+          <Field
+            htmlFor="settings-defaultStickyTtlMinutes"
+            label="Keep the same IP for (minutes)"
+            error={errors.defaultStickyTtlMinutes}
+            hint="How long a sticky session keeps one exit IP (15 is enough for a 5–10 minute visit). Without it, providers switch the IP after about 5 minutes. DataImpulse allows at most 60."
+            required
+          >
+            <Input
+              id="settings-defaultStickyTtlMinutes"
+              type="number"
+              inputMode="numeric"
+              min={STICKY_TTL_MINUTES_MIN}
+              max={STICKY_TTL_MINUTES_MAX}
+              value={form.defaultStickyTtlMinutes}
+              onChange={(e) => set('defaultStickyTtlMinutes', e.target.value)}
+              className="w-24"
+              invalid={!!errors.defaultStickyTtlMinutes}
+              aria-describedby={fieldDescribedBy('settings-defaultStickyTtlMinutes', true, !!errors.defaultStickyTtlMinutes)}
+            />
+          </Field>
+          <div className="md:col-span-2">
+            <Switch
+              id="settings-watchExitIp"
+              checked={form.watchExitIp}
+              onChange={(checked) => set('watchExitIp', checked)}
+              label="Stop the browser if the IP changes (recommended)"
+              description={
+                form.watchExitIp
+                  ? 'Re-checks the exit IP every 20 seconds through the same session. If it changes, the page is cut off, the browser is closed and you get an alert.'
+                  : 'Off: the IP is only checked once, before the browser opens. A change mid-visit goes unnoticed.'
+              }
+            />
+          </div>
+          <div className="md:col-span-2">
+            <Switch
+              id="settings-widenTargetWhenUnavailable"
+              checked={form.widenTargetWhenUnavailable}
+              onChange={(checked) => set('widenTargetWhenUnavailable', checked)}
+              label="Use a wider area when the location has no IPs"
+              description={
+                form.widenTargetWhenUnavailable
+                  ? 'If a ZIP or city has no exit IP right now, connect through its city, then its state, and say so on the run.'
+                  : 'Off: the launch fails when the chosen ZIP or city has no exit IP right now.'
+              }
+            />
+          </div>
         </SettingsForm>,
       )}
 

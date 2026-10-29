@@ -1,5 +1,5 @@
 import type { AppSettings, BrowserExecutableOverrides, IpCheckProvider, LocationMatchPolicy, ProductKey, ProviderId } from '@shared/types'
-import { AppSettingsSchema, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, LOCATION_MATCH_POLICIES } from '@shared/types'
+import { AppSettingsSchema, LOCATION_MATCH_ATTEMPTS_MAX, LOCATION_MATCH_ATTEMPTS_MIN, LOCATION_MATCH_POLICIES, STICKY_TTL_MINUTES_MAX, STICKY_TTL_MINUTES_MIN } from '@shared/types'
 import { flagsErrorMessage, formatChromiumArgs, parseChromiumArgs } from './flags'
 
 export const LOCATION_MATCH_POLICY_LABELS: Record<LocationMatchPolicy, string> = {
@@ -40,6 +40,10 @@ export interface SettingsFormState {
   locationMatchPolicy: LocationMatchPolicy
   /** Editor text; validated as a whole number in the shared range. */
   locationMatchAttempts: string
+  /** Editor text; validated as whole minutes in the shared range (providers clamp further). */
+  defaultStickyTtlMinutes: string
+  watchExitIp: boolean
+  widenTargetWhenUnavailable: boolean
   checkUpdatesOnStartup: boolean
   simpleDevices: boolean
   updateChannel: AppSettings['updateChannel']
@@ -65,6 +69,9 @@ export function settingsFormFrom(settings: AppSettings): SettingsFormState {
     defaultTargetCountry: settings.defaultTargetCountry.toUpperCase(),
     locationMatchPolicy: settings.locationMatchPolicy,
     locationMatchAttempts: String(settings.locationMatchAttempts),
+    defaultStickyTtlMinutes: String(settings.defaultStickyTtlMinutes),
+    watchExitIp: settings.watchExitIp,
+    widenTargetWhenUnavailable: settings.widenTargetWhenUnavailable,
     checkUpdatesOnStartup: settings.checkUpdatesOnStartup,
     simpleDevices: settings.simpleDevices,
     updateChannel: settings.updateChannel,
@@ -89,6 +96,8 @@ function friendly(key: keyof SettingsFormState, message: string): string {
       return 'Country must be a 2-letter ISO code, e.g. US'
     case 'locationMatchAttempts':
       return `Attempts must be a whole number between ${LOCATION_MATCH_ATTEMPTS_MIN} and ${LOCATION_MATCH_ATTEMPTS_MAX}`
+    case 'defaultStickyTtlMinutes':
+      return `Session lifetime must be a whole number of minutes between ${STICKY_TTL_MINUTES_MIN} and ${STICKY_TTL_MINUTES_MAX}`
     default:
       return message
   }
@@ -136,6 +145,9 @@ export function validateSettingsForm(
     defaultTargetCountry: form.defaultTargetCountry.trim().toLowerCase(),
     locationMatchPolicy: form.locationMatchPolicy,
     locationMatchAttempts: numberOrNaN(form.locationMatchAttempts),
+    defaultStickyTtlMinutes: numberOrNaN(form.defaultStickyTtlMinutes),
+    watchExitIp: form.watchExitIp,
+    widenTargetWhenUnavailable: form.widenTargetWhenUnavailable,
     checkUpdatesOnStartup: form.checkUpdatesOnStartup,
     simpleDevices: form.simpleDevices,
     updateChannel: form.updateChannel,

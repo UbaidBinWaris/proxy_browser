@@ -1,6 +1,7 @@
 import { readFile, mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { GatewayInputSchema, MatrixInputSchema, QaHealingModeSchema } from '@shared/qa'
+import { DEFAULT_STICKY_TTL_MINUTES } from '@shared/types'
 import { createProfileManager } from '../browser/profile-manager'
 import { createBrowserProvisioner } from '../browser/browser-provisioner'
 import { openDatabase } from '../database'
@@ -130,6 +131,7 @@ export async function runQaCli(args: string[]): Promise<number> {
   const proxy = createProxyManager({
     providers: registry,
     defaultProviderId: () => proxySetup.providerId,
+    defaultStickyTtlMinutes: () => DEFAULT_STICKY_TTL_MINUTES,
     sessions: db.proxySessions,
     profiles: db.profiles,
     logger,

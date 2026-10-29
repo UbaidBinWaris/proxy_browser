@@ -34,6 +34,7 @@ const runInput = (overrides: Partial<Omit<TestRun, 'id'>> = {}): Omit<TestRun, '
   locationAttempts: 1,
   locationMaxAttempts: 1,
   locationWarning: null,
+  ipChanges: [],
   proxySessionId: null,
   formUrl: 'https://forms.example.com/qa',
   startedAt: '2026-10-07T09:00:00.000Z',

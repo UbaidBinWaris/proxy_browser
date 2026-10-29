@@ -399,6 +399,7 @@ describe('QA input validation and evidence privacy', () => {
       locationAttempts: 1,
       locationMaxAttempts: 1,
       locationWarning: null,
+      ipChanges: [],
       proxySessionId: null,
       formUrl: h.input.startUrl,
       startedAt: new Date().toISOString(),

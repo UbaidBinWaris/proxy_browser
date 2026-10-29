@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, Camera, MonitorUp, X } from 'lucide-react'
+import { AlertOctagon, ArrowUpRight, Camera, MonitorUp, X } from 'lucide-react'
 import type { BrowserSession, DevicePresetInfo } from '@shared/types'
 import { BROWSER_ENGINE_LABELS } from '@shared/types'
 import { EngineIcon } from '@/components/icons/BrandIcon'
@@ -8,6 +8,7 @@ import { Badge, StatusBadge } from '@/components/ui/Badge'
 import { Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '@/components/ui/Table'
 import { TargetMatchBadge } from '@/components/TargetMatchBadge'
 import { isBrowserWindowOpen } from '@/lib/launch'
+import { describeChangeTarget } from '@/lib/exitIpWatch'
 import { historyRunPath } from '@/lib/navigation'
 import { relativeTime } from '@/lib/security'
 import { describeTarget, locationAttemptsLabel } from '@/lib/targeting'
@@ -114,6 +115,16 @@ export function SessionsTable({ sessions, presets, selected, onToggle, onToggleA
                     <span className="font-mono">{orDash(session.ip?.ip)}</span>
                     {attempts ? <span title={session.locationWarning ?? undefined}> · {attempts}</span> : null}
                   </span>
+                  {session.ipChanges.length > 0 ? (
+                    <span className="flex items-center gap-1 text-xs font-medium text-destructive" title={`Now ${describeChangeTarget(session.ipChanges[session.ipChanges.length - 1]!)}`}>
+                      <AlertOctagon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      IP changed — stopped
+                    </span>
+                  ) : session.exitIpWatch === 'rotating' ? (
+                    <span className="text-xs text-info">Rotating IP</span>
+                  ) : session.exitIpWatch === 'unverified' ? (
+                    <span className="text-xs text-warning">IP not re-checked</span>
+                  ) : null}
                 </div>
               </TableCell>
               <TableCell>

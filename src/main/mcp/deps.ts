@@ -23,6 +23,7 @@ import type { z } from 'zod'
 import { GatewayInputSchema, MatrixInputSchema } from '@shared/qa'
 import type { QaBatch } from '@shared/qa'
 import type { BrowserEngine } from '@shared/types'
+import { DEFAULT_STICKY_TTL_MINUTES } from '@shared/types'
 
 import { AppException } from '../contracts'
 import type { AppPaths } from '../contracts'
@@ -195,6 +196,7 @@ export async function createMcpRuntime(env: NodeJS.ProcessEnv, policy: McpPolicy
   const proxy = createProxyManager({
     providers: registry,
     defaultProviderId: () => proxySetup.providerId,
+    defaultStickyTtlMinutes: () => DEFAULT_STICKY_TTL_MINUTES,
     sessions: db.proxySessions,
     profiles: db.profiles,
     logger,

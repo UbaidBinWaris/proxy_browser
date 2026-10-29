@@ -183,9 +183,10 @@ function countryMatches(target: GeoTarget, ip: VerifiedLocation): boolean | null
  * Compare the requested location with the verified exit IP when the main process has not recorded a verdict.
  * - `unknown`: no target, no IP or no comparable fields.
  * - `mismatch`: country differs, or (state/city/zip modes) the state differs.
- * - `partial`: city requested, same state but a different (or unknown) city; ZIP requested, same state but a
- *   different (or unreported) postal code.
- * - `match`: every requested level agrees; a ZIP is verified exactly against the IP's postal code.
+ * - `partial`: city or ZIP requested, same state but a different (or unknown) city; a ZIP without a city
+ *   whose postal code differs.
+ * - `match`: every requested level agrees. A ZIP matches when the IP's postal code is equal, or when the
+ *   IP is in the requested city — IP databases disagree by a ZIP or two for the same IP.
  */
 export function deriveTargetMatch(target: GeoTarget | null | undefined, ip: VerifiedLocation | null | undefined): TargetMatch {
   if (!target || !ip) return 'unknown'
@@ -202,8 +203,7 @@ export function deriveTargetMatch(target: GeoTarget | null | undefined, ip: Veri
   if (normalise(ip.region) === '') return 'unknown'
   if (!stateMatches(target, ip)) return 'mismatch'
   if (target.mode === 'state') return 'match'
-  if (wantZip !== '') return 'partial'
-  if (target.city === null) return 'match'
+  if (target.city === null) return wantZip !== '' ? 'partial' : 'match'
   const city = normalise(ip.city)
   if (city === '') return 'partial'
   return city === normalise(target.city) ? 'match' : 'partial'
@@ -242,7 +242,8 @@ function verifiedLabel(mode: TargetMode, ip: VerifiedLocation): string {
       const postal = ip.postalCode?.trim() ?? ''
       const place = first(ip.city, ip.region, ip.country)
       if (postal === '') return place
-      return place === 'unknown location' ? postal : `${postal} (${place})`
+      // ≈: IP lookups place an IP within a ZIP or two; a website may show a neighbouring ZIP for the same IP.
+      return place === 'unknown location' ? `≈ ${postal}` : `≈ ${postal} (${place})`
     }
   }
 }

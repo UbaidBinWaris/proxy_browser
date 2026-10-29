@@ -104,9 +104,19 @@ export function describeLocation(...parts: Array<string | null | undefined>): st
 export function describeVerifiedLocation(location: { city?: string | null; region?: string | null; postalCode?: string | null; country?: string | null } | null | undefined): string {
   if (!location) return EM_DASH
   const region = location.region?.trim() ?? ''
-  const postal = location.postalCode?.trim() ?? ''
+  // ≈: IP lookups place an IP within a ZIP or two; a website may show a neighbouring ZIP for the same IP.
+  const postal = location.postalCode?.trim() ? `≈ ${location.postalCode.trim()}` : ''
   const regionPostal = region !== '' && postal !== '' ? `${region} ${postal}` : region || postal
   return describeLocation(location.city, regionPostal, location.country)
+}
+
+/** Tooltip for every approximate ZIP shown in the app. */
+export const APPROXIMATE_ZIP_NOTE = 'IP lookups place an IP within a ZIP or two. A website may show a neighbouring ZIP for the same IP — compare IP addresses, not ZIPs.'
+
+/** "Newark · ≈ 07103" for the City / ZIP facts. */
+export function cityAndApproxZip(city: string | null | undefined, postalCode: string | null | undefined): string {
+  const zip = postalCode?.trim()
+  return zip ? `${orDash(city)} · ≈ ${zip}` : orDash(city)
 }
 
 /** Render a nullable value or an em dash. */

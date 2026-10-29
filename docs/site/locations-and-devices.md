@@ -26,8 +26,8 @@ To check your proxy's location, the app looks up the exit IP on each launch befo
 
 | Badge | Meaning |
 | --- | --- |
-| **Match** | Every requested level agrees: country; state; the city name for a City target; the **exact ZIP** for a ZIP target |
-| **Partial** | Right state, but another city (City target) or another or unreported postal code (ZIP target) |
+| **Match** | Every requested level agrees: country; state; the city name for a City target; for a ZIP target the exact ZIP **or** the ZIP's city. IP lookup services disagree on ZIPs for the same IP, so the reported ZIP is shown as approximate (**≈ 07103**) |
+| **Partial** | Right state, but another city |
 | **Mismatch** | Another country or another state |
 | **Unverified** | No target, or the IP service did not report enough to compare |
 
@@ -41,16 +41,18 @@ A sticky session keeps one IP, so a bad draw would last the whole session. For a
 | --- | --- |
 | **Off** | Never; the first exit IP is used |
 | **Same state** (default) | Mismatch (another state or country) |
-| **Exact (city or ZIP)** | Mismatch or Partial; the city name or the exact ZIP must match |
+| **Exact (city or ZIP)** | Mismatch or Partial; the city must match (for a ZIP target, the exact ZIP or the ZIP's city) |
 
 - Each attempt is shown live on the run page, for example *"Exit IP 107.77.76.91 is in New York, NY 10118 — re-rolling session (2/3)…"*, and logged.
 - **Rotating sessions are never re-rolled**, and with **Off** or **Attempts = 1** there is exactly one check.
-- If the first check fails, the launch fails. A later failed check only costs an attempt, except `PROXY_AUTH_FAILED` and `PROXY_DEAD`, which stop re-rolling at once.
-- If no attempt meets the policy, the launch continues with the **best** result (Match, then Partial, then Unverified, then Mismatch; on a tie the later one). Its sticky ID, which still holds that IP, is saved on the profile and used by the browser, and the run shows a warning such as *"Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Newark, NJ 07103 (same state)"*.
+- If the first check fails because the area has **no exit IP right now** (HTTP 503) and **Use a wider area when the location has no IPs** is on (the default), the app tries the ZIP's city, then the state, for this launch only, and the run says so: *"No exit IPs available in ZIP 58250 (Lankin, ND) right now; connected via North Dakota instead (…)"*.
+- Before the browser opens, the chosen sticky session is checked a second time 3 seconds later. If its IP changed, a fresh session is tried (this does not use up attempts); after three unstable sessions the launch fails with `IP_UNSTABLE`.
+- Otherwise, if the first check fails, the launch fails. A later failed check only costs an attempt, except `PROXY_AUTH_FAILED` and `PROXY_DEAD`, which stop re-rolling at once.
+- If no attempt meets the policy, the launch continues with the **best** result (Match, then Partial, then Unverified, then Mismatch; on a tie the later one). Its sticky ID, which still holds that IP, is saved on the profile and used by the browser, and the run shows a warning such as *"Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Elizabeth, NJ 07201 (same state)"*.
 
 ### ZIP targeting caveat
 
-Some ZIP codes have only a handful of exit IPs in a pool, and carrier (mobile network) IPs often geolocate to the carrier's hub instead of the subscriber's town. Every sticky ID that is tried keeps its IP pinned until it expires, so re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503** (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session and location right now"*) until a session expires (about 30 minutes, or the TTL).
+Some ZIP codes have only a handful of exit IPs in a pool, and carrier (mobile network) IPs often geolocate to the carrier's hub instead of the subscriber's town. Every sticky ID that is tried keeps its IP pinned until it expires, so re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503** (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session and location right now"*) until a session expires (its TTL, 15 minutes by default).
 
 **Same state** is the pragmatic default. For thin ZIPs, use City or State targeting, rotating mode, or wait.
 

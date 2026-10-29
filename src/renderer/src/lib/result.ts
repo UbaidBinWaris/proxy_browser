@@ -82,6 +82,9 @@ const ERROR_LABELS: Readonly<Record<string, string>> = {
   NOT_FOUND: 'Not found',
   SESSION_CLOSED: 'Session closed',
   ENGINE_BUSY: 'Browser is being installed',
+  IP_CHANGED: 'IP changed — browser stopped',
+  IP_UNSTABLE: 'Proxy could not keep one IP',
+  SITE_UNREACHABLE: 'Website not responding',
   INTERNAL: 'Internal error',
 }
 

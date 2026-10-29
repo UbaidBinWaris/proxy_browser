@@ -135,6 +135,12 @@ describe('place-name encoding', () => {
 })
 
 describe('targeting string composition', () => {
+  it('caps sessttl at 60 minutes (longer lifetimes were not honoured by the gateway in testing)', () => {
+    expect(buildTargetingString(request({ target: NJ, sessionId: 'abc', ttlMinutes: 120 }))).toBe('cr.us;state.newjersey;sessid.abc;sessttl.60')
+    expect(buildTargetingString(request({ target: NJ, sessionId: 'abc', ttlMinutes: 1 }))).toBe('cr.us;state.newjersey;sessid.abc;sessttl.1')
+    expect(buildTargetingString(request({ target: NJ, sessionId: 'abc', ttlMinutes: 0 }))).toBe('cr.us;state.newjersey;sessid.abc')
+  })
+
   it('orders parameters cr, state, city, zip, sessid, sessttl', () => {
     expect(buildTargetingString(request({ target: NJ, sessionId: 'abc', ttlMinutes: 60 }))).toBe('cr.us;state.newjersey;sessid.abc;sessttl.60')
     expect(buildTargetingString(request({ target: ZIP, sessionId: 'abc' }))).toBe('cr.us;state.newjersey;city.newark;zip.07102;sessid.abc')

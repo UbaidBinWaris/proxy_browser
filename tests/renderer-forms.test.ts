@@ -253,6 +253,9 @@ describe('settings form validation', () => {
     defaultTargetCountry: 'us',
     locationMatchPolicy: 'state' as const,
     locationMatchAttempts: 3,
+    defaultStickyTtlMinutes: 60,
+    watchExitIp: true,
+    widenTargetWhenUnavailable: true,
     // Off on purpose: saving the form must keep an opt-out instead of restoring the schema default.
     checkUpdatesOnStartup: false,
     updateChannel: 'beta' as const,

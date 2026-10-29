@@ -315,12 +315,16 @@ async function buildHarness(): Promise<Harness> {
         locationAttempts: 1,
         locationMaxAttempts: 1,
         locationWarning: null,
+        ipChanges: [],
         proxySessionId: null,
         currentUrl: null,
         startedAt: new Date().toISOString(),
         error: null,
         browserPid: null,
         lastHeartbeatAt: null,
+        exitIpWatch: 'off',
+        currentExitIp: null,
+        lastIpCheckAt: null,
       }
       active.push(session)
       queueMicrotask(() => {
@@ -745,6 +749,7 @@ describe('registerIpcHandlers', () => {
       locationAttempts: 1,
       locationMaxAttempts: 1,
       locationWarning: null,
+      ipChanges: [],
       proxySessionId: null,
       formUrl: 'https://example.com/',
       startedAt: new Date().toISOString(),
@@ -1014,7 +1019,7 @@ describe('registerIpcHandlers', () => {
     const preview = (await h.registrar.invoke(IPC.launcher.preview, quickLaunchInput)) as { ok: true; data: TargetingPreview }
     expect(preview.ok).toBe(true)
     expect(preview.data.pool).toBe('residential')
-    expect(preview.data.targetingString).toMatch(/^cr\.us;state\.newjersey;sessid\.ql-\d{8}-[a-z0-9]{4}$/)
+    expect(preview.data.targetingString).toMatch(/^cr\.us;state\.newjersey;sessid\.ql-\d{8}-[a-z0-9]{4};sessttl\.15$/)
     expect(preview.data.poolConfigured).toBe(true)
     expect(preview.data.warnings).toEqual(['State/city/ZIP targeting is billed at 2× by DataImpulse.'])
     const mobile = (await h.registrar.invoke(IPC.launcher.preview, { ...quickLaunchInput, proxyPool: 'mobile' })) as { ok: true; data: TargetingPreview }

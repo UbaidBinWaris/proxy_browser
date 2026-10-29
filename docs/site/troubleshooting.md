@@ -8,6 +8,10 @@ Details of any failure are in **Settings → Advanced → Logs**. When you repor
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| The website or TrustedForm recorded a different IP (same state, other city) than the app showed | The sticky session expired or the provider replaced an offline IP | Update to 2.1.0 or later: a lifetime is always sent (15 minutes by default), each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again** |
+| The website shows a nearby ZIP or city for the same IP | IP location databases disagree at ZIP level (e.g. 98104 vs 98101) | Normal — compare the IP address, not the ZIP. The app shows ZIPs as approximate (**≈ 98104**) |
+| *"The proxy could not keep one IP in …"* (`IP_UNSTABLE`) | Three sessions in a row changed IP within seconds | Try again in a minute, or choose another city or state |
+| *"… did not respond. The proxy exit … is working"* (`SITE_UNREACHABLE`) | The page failed to load but the proxy works: the website is down or blocking the IP | Try later, or open the site without a proxy to check it |
 | Windows: *"Windows protected your PC"* | The EXE is not code-signed | Click **More info**, then **Run anyway** |
 | Windows: antivirus quarantines or slows the EXE | Unsigned portable EXEs that unpack themselves to `%TEMP%` look suspicious to some scanners | Restore the file or add an exception for it |
 | Windows: the window takes several seconds to appear | The portable EXE unpacks itself on every launch | Use **Settings → App & updates → Set up on this computer**, then start the computer copy |
@@ -26,7 +30,7 @@ Details of any failure are in **Settings → Advanced → Logs**. When you repor
 | --- | --- | --- |
 | `PROXY_AUTH_FAILED` / HTTP 407 | Wrong username or password, inactive plan, or the plan does not allow the requested option | Re-enter the keys in **Manage keys** (the message names the provider), click **Test connection**, then **Save encrypted**. Check the plan in your provider account |
 | `PROXY_NOT_CONFIGURED` / pool shows **Not set up** | No login saved for that provider product (DataImpulse Mobile needs its own Mobile-plan login), or the provider does not offer that product | **Manage keys** → the provider → the product's tab → enter and save |
-| `PROXY_DEAD` with *"…no exit IP available… (HTTP 503)"* | The gateway has no free exit IP for this new sticky session and location (typical for thin ZIP codes) | Launch again later (about 30 minutes), use rotating mode, or target the city or state. See [ZIP targeting caveat](/docs/locations-and-devices#zip-targeting-caveat) |
+| `PROXY_DEAD` with *"…no exit IP available… (HTTP 503)"* | The gateway has no free exit IP for this new sticky session and location (typical for thin ZIP codes) | Launch again later, or target the city or state. See [ZIP targeting caveat](/docs/locations-and-devices#zip-targeting-caveat) |
 | `PROXY_DEAD` / `PROXY_TIMEOUT` (other) | Gateway unreachable, port blocked, exit node offline | **Test** the product under **Settings → Advanced → Proxy keys**; check firewall and VPN; rotate the session; raise the IP-check timeout |
 | `DNS_FAILURE` | The gateway host or start URL does not resolve | Check the proxy host in **Manage keys**, the start URL and your DNS |
 | `IP_VERIFY_FAILED` | The IP-check service failed or answered unexpectedly | Pick another **Provider** under **Settings → Advanced → IP verification**, or raise timeout and retries |

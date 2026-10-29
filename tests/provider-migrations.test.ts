@@ -153,7 +153,7 @@ describe('database migration 8 (proxy providers) on a v7 database', () => {
     const raw = new DatabaseSync(file)
     try {
       const versions = (raw.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as Array<{ version: number }>).map((r) => Number(r.version))
-      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+      expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9])
       const modes = (raw.prepare('SELECT DISTINCT proxy_mode FROM profiles ORDER BY proxy_mode').all() as Array<{ proxy_mode: string }>).map((r) => r.proxy_mode)
       expect(modes).toEqual(['none', 'rotating', 'sticky'])
       expect(raw.prepare("SELECT COUNT(*) AS n FROM app_settings WHERE key = 'targetingEncoding'").get()).toMatchObject({ n: 0 })

@@ -315,8 +315,8 @@ export interface LocationRerollProgress {
   /** The attempt about to start (2…attempts). */
   attempt: number
   attempts: number
-  /** Sticky session id the attempt uses. */
-  sessionId: string
+  /** Sticky session id the attempt uses (null for a rotating session widening its area). */
+  sessionId: string | null
   /** e.g. "Exit IP 107.77.76.91 is in New York, NY 10118 — re-rolling session (2/3)…" (no secrets). */
   message: string
 }
@@ -328,6 +328,17 @@ export interface LaunchVerifyOptions {
   onProgress?: (progress: LocationRerollProgress) => void
   /** Checked before every re-roll; returning false stops re-rolling (e.g. the launch was cancelled). */
   shouldContinue?: () => boolean
+  /**
+   * settings.widenTargetWhenUnavailable: when the first check finds no exit IP in the target area
+   * (the gateway answers HTTP 503), retry with a wider area — ZIP → city → state — for this launch only.
+   */
+  widenWhenUnavailable?: boolean
+  /**
+   * Sticky sessions: check the exit IP a second time a few seconds after the first check and
+   * switch to a fresh session when it changed (live: some DataImpulse Texas sessions changed IP
+   * on every request whatever lifetime was asked for). Fails with IP_UNSTABLE when no session holds.
+   */
+  confirmSticky?: boolean
 }
 
 /** Outcome of the pre-launch proxy check, including the location re-roll. */
@@ -346,8 +357,13 @@ export interface LaunchVerification {
   maxAttempts: number
   /** Sticky session id of the chosen result (written back to the profile when it changed); null when rotating. */
   sessionId: string | null
-  /** Set when no attempt met the policy: which result was used instead, and why. */
+  /** Set when no attempt met the policy, or when the area was widened: which result was used instead, and why. */
   warning: string | null
+  /**
+   * The target actually used when the area had to be widened (the browser must connect with it);
+   * absent when the requested target was used. Never written back to a saved profile.
+   */
+  widenedTarget?: GeoTarget
 }
 
 export interface ProxyManager {

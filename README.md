@@ -293,8 +293,10 @@ pool is Direct) a random location, all at once.
     picked at random).
 - **Options · sticky / rotating** (collapsed) — **Sticky session** (on by
   default: *"Keeps the same exit IP for the whole session."*; off = a rotating
-  exit IP) and **Session TTL (min)** (1–1440; *"Empty = provider default
-  (~30)."*).
+  exit IP) and **Session TTL (min)** (1–1440; empty = the default from
+  Settings → Advanced → Targeting → **Keep the same IP for (minutes)**, 15).
+  With Sticky session off, a blue note warns that the website may see a
+  different IP than the one shown.
 
 **Browser & device** card
 
@@ -331,7 +333,7 @@ pool is Direct) a random location, all at once.
   <device>"*, e.g. *"Residential · New Jersey · Apple iPhone 15"* (*"Direct ·
   <device>"* for Direct).
 - **Will connect as** — the exact DataImpulse parameter string that will be
-  sent, e.g. `cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.60`, with a
+  sent, e.g. `cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.15`, with a
   copy button. It never contains your login or password. For Direct it reads
   *"Direct · this machine’s own connection"*; without a location and without
   sticky mode, *"No targeting parameters · any exit IP in the pool"*. An icon
@@ -634,7 +636,7 @@ Parameters are appended to the login after a double underscore: `__` starts
 the list, `;` separates parameters, `.` separates key and value.
 
 ```
-login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sessttl.60
+login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sessttl.15
 ```
 
 | Key | Meaning | Sent when |
@@ -673,8 +675,9 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sesst
 
 ### Sticky and rotating sessions
 
-- **Sticky** (default): `sessid` pins one exit IP for about 30 minutes, or for
-  **Session TTL** minutes. Quick launches generate a fresh id per launch,
+- **Sticky** (default): `sessid` pins one exit IP for **Session TTL**
+  minutes, or for **Keep the same IP for (minutes)** from Settings (15 by
+  default) — the app always sends a lifetime (`sessttl`). Quick launches generate a fresh id per launch,
   `ql-<YYYYMMDD>-<4 random characters>`. Saved profiles use their **Sticky
   session ID** (the editor suggests `profile-<name>`); a sticky profile without
   one gets `profile-<name>` (lower-case, dashes, at most 32 characters)
@@ -682,7 +685,56 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sesst
 - **Rotate** (Settings → Advanced → Proxy session history) appends `-r2`,
   `-r3`, … to the id — a new sticky session, normally with a new exit IP.
 - **Rotating** (Sticky session off): no `sessid`/`sessttl` is sent; every
-  request may use a different exit IP.
+  request may use a different exit IP. The IP shown after the launch check is
+  only a sample (labelled **Public IP (sample)**) — the website can record
+  another one. Rotating sessions are not watched for IP changes, because
+  changing is what they do. Don't use rotating mode for lead forms.
+
+### Keeping one IP for the whole visit
+
+A lead-certification service (TrustedForm, Jornaya) records the IP the page is
+loaded from. If that IP differs from the one the app verified, the lead looks
+inconsistent even when both IPs are in the requested state. Three things cause
+this, and the app handles each of them:
+
+1. **The sticky session expired.** Measured on 2026-10-30 with DataImpulse
+   (3 states, 7.5 minutes, polled every 20 s): without a lifetime parameter
+   every sticky session switched to another exit IP — same state, another
+   city — about **5 minutes** after it started. With `sessttl.15`, `.30` and
+   `.60` the IP held; `sessttl.10` switched at about 10 minutes, as asked;
+   `sessttl.120` was unreliable, so DataImpulse lifetimes are capped at 60
+   minutes. The app therefore **always** sends a lifetime: the profile's own
+   **Session TTL**, else **Keep the same IP for (minutes)** (Settings →
+   Advanced → Targeting, default **15** — enough for a 5–10 minute visit, and
+   the IP is released soon after you are done).
+2. **The session never held its IP.** Some sessions (seen in Texas) got a new
+   IP on every request whatever lifetime was asked for. Before the browser
+   opens, the app checks the exit IP of the chosen session a **second time,
+   3 seconds later**. If it changed, the app silently tries a fresh session
+   (this does not use up location attempts); after three such sessions in a
+   row the launch fails with *"The proxy could not keep one IP in … Try again
+   in a minute or choose another location."* (`IP_UNSTABLE`) — no browser is
+   opened.
+3. **The provider replaced the IP mid-visit.** Residential IPs are real home
+   connections; when one goes offline the provider swaps in another one in the
+   same area. Nothing can prevent this, so the app **watches** for it: while a
+   proxied sticky browser is open it re-checks the exit IP through the very
+   same session right after the page opens and then **every 20 seconds**
+   (**Stop the browser if the IP changes**, on by default). On a change the
+   app **stops at once**: it blocks every request from the browser (so a
+   half-filled form cannot be sent from the new IP), closes the browser, and
+   shows *"Browser stopped: the IP address changed"* — as a dialog in the app
+   (brought to the front) with **Launch again**, as a **system
+   notification**, on the run page and in the Sessions table (*IP changed —
+   stopped*). The change, with both IPs and places, is saved on the run
+   (History shows it later). If re-checks fail three times in a row the
+   session shows *"IP could not be re-checked"*.
+
+What to tell users: **if the browser was stopped because the IP changed,
+click Launch again** — nothing was sent from the new IP. Small ZIP
+differences between IP lookup services (e.g. Seattle 98104 vs 98101 for the
+same IP) are normal and not a change of IP; that is why ZIPs are shown as
+**≈ 98104**.
 
 ### Location verification
 
@@ -692,8 +744,8 @@ region, city and **postal code** with the target:
 
 | Badge | Meaning |
 | --- | --- |
-| **Match** | Every requested level agrees: country; state; the city name for a City target; the **exact ZIP** (the IP's postal code) for a ZIP target |
-| **Partial** | Right state, but another city (City target) or another / unreported postal code (ZIP target) |
+| **Match** | Every requested level agrees: country; state; the city name for a City target; for a ZIP target the exact ZIP **or** the ZIP's city (IP lookup services disagree on ZIPs for the same IP, so the reported ZIP is shown as approximate: **≈ 07103**) |
+| **Partial** | Right state, but another city (City or ZIP target) |
 | **Mismatch** | Another country, or another state |
 | **Unverified** | No target, or the IP service did not report enough to compare |
 
@@ -709,19 +761,25 @@ checks in total (first check included, 1–8, default 3):
 | --- | --- |
 | **Off** | never — the first exit IP is used |
 | **Same state (default)** | Mismatch (another state or country) |
-| **Exact (city or ZIP)** | Mismatch or Partial — the city name or the exact ZIP must match |
+| **Exact (city or ZIP)** | Mismatch or Partial — the city must match (for a ZIP target, the exact ZIP or the ZIP's city) |
 
 - Each attempt is shown live on the run page and logged.
 - **Rotating sessions are never re-rolled** (they cannot keep an IP), and with
   **Off** or **Attempts = 1** there is exactly one check.
-- If the very first check fails, the launch fails. A later failed check only
+- If the very first check fails because the area has **no exit IP right now**
+  (HTTP 503) and **Use a wider area when the location has no IPs** is on (the
+  default), the app tries the ZIP's city, then the state, each with a fresh
+  session. The first that works is used for this launch only (the profile
+  keeps its target) and the run shows *"No exit IPs available in ZIP 58250
+  (Lankin, ND) right now; connected via North Dakota instead (…)"*.
+- Otherwise, if the very first check fails, the launch fails. A later failed check only
   costs an attempt, except `PROXY_AUTH_FAILED` and `PROXY_DEAD` (the gateway
   refused a new sticky session), which stop re-rolling at once.
 - If no attempt meets the policy, the launch continues with the **best**
   result (Match > Partial > Unverified > Mismatch; on a tie the later one). Its
   sticky id — which still holds that IP — is saved on the profile and used by
   the browser, and the run shows a warning such as *"Could not get an exit IP
-  in ZIP 07102 (Newark, NJ) after 3 attempts; using Newark, NJ 07103 (same
+  in ZIP 07102 (Newark, NJ) after 3 attempts; using Elizabeth, NJ 07201 (same
   state)"*.
 
 #### ZIP targeting caveat
@@ -734,7 +792,7 @@ IPs: one placed in Newark, NJ 07103 and a carrier IP placed in New York, NY
 re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503**
 (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session
 and location right now"*) to new sticky ids for that ZIP until a session
-expires (≈ 30 minutes or the TTL). ZIPs such as `90012` (Los Angeles) and
+expires (its TTL, 15 minutes by default). ZIPs such as `90012` (Los Angeles) and
 `60601` (Chicago) matched on the first draw. **Same state** is the pragmatic
 default; for thin ZIPs use City or State targeting, rotating mode, or wait.
 
@@ -1291,6 +1349,9 @@ All settings are stored in the database (`app_settings`) and validated with Zod
 | `providerOptions` | Advanced → Targeting → **Place name encoding** | `{}` (each provider's default) | Per-provider options keyed by provider id; `encoding` is how multi-word places are written (DataImpulse: `remove-spaces`, `underscore`, `keep`). Replaces the global `targetingEncoding` of earlier versions, whose value is moved to `providerOptions.dataimpulse.encoding` on the first start |
 | `locationMatchPolicy` | Advanced → Targeting → **Location match** | `state` (*Same state*) | `off`, `state` or `exact` — see [policy](#location-match-policy-and-re-rolls) |
 | `locationMatchAttempts` | Advanced → Targeting → **Attempts** | `3` | Total IP checks for the policy (1–8) |
+| `defaultStickyTtlMinutes` | Advanced → Targeting → **Keep the same IP for (minutes)** | `15` | Sticky lifetime sent when a profile or launch sets none (1–1440; each provider clamps it, DataImpulse to 60). Without it providers switch the IP after a few minutes — see [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
+| `watchExitIp` | Advanced → Targeting → **Stop the browser if the IP changes (recommended)** | on | Re-check an open sticky session's exit IP right after the page opens and every 20 seconds through the same session; on a change block the browser's traffic, close it, alert (dialog, system notification) and record the change on the run |
+| `widenTargetWhenUnavailable` | Advanced → Targeting → **Use a wider area when the location has no IPs** | on | When a ZIP or city has no exit IP right now (HTTP 503), try its city, then its state, for this launch only |
 | `extraChromiumArgs` | Advanced → Browser flags → **Extra Chromium flags** | none | Extra command-line flags (`--flag` or `--flag=value`, one per line) for every Chromium-family launch, bundled and installed; Firefox and WebKit ignore them |
 | `ipCheckProvider` | Advanced → IP verification → **Provider** | `ip-api` | `ip-api`, `ipinfo` or `ipwhois` |
 | `ipCheckTimeoutMs` | Advanced → IP verification → **Timeout (ms)** | `15000` | 1,000–120,000 |
@@ -1308,6 +1369,10 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 | Windows: *"Windows protected your PC"* | The EXE is not code-signed | **More info** → **Run anyway**. See [FAQ](#faq) for code signing |
 | Windows: antivirus quarantines or slows the EXE | Unsigned portable EXEs that unpack themselves to `%TEMP%` look suspicious to some scanners | Restore it / add an exception for the file, or sign the build |
 | Windows: the window takes several seconds to appear | The portable EXE unpacks itself to `%TEMP%` on every launch | Use **App & updates → Set up on this computer**, then launch the local shortcut |
+| **The website / TrustedForm recorded a different IP (same state, other city) than the app showed** | The sticky session expired (older versions sent no lifetime, so the provider switched the IP after ~5 minutes) or the provider replaced an offline IP | Update: a lifetime is now always sent (15 minutes by default), each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again**. See [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
+| The website shows a nearby ZIP or city for the **same** IP | IP location databases disagree at ZIP level (e.g. 98104 vs 98101) | Normal — compare the IP address, not the ZIP. The app shows ZIPs as approximate (**≈ 98104**) |
+| `IP_UNSTABLE` *"The proxy could not keep one IP in …"* | Three sessions in a row changed IP within seconds (the provider ignored stickiness in that area) | Try again in a minute, or choose another city or state |
+| `SITE_UNREACHABLE` *"… did not respond. The proxy exit … is working"* | The page failed to load, but a re-check showed the proxy works: the website is down or blocking the IP | Try later, or open the site without a proxy to check it |
 | **Browsers opened by themselves on Windows** (fixed in this version) | Older versions read browser versions by running `chrome.exe --version` (and Edge, Brave, Opera, Vivaldi), which on Windows opens a window; Opera/Brave installers also started the browser after installing | Update. Versions are now read from the `.exe` file without running it, Opera installs pass `/launchopera=0`, and windows an installer opens after an install are closed. Windows you opened yourself are never touched |
 | Linux: `dlopen(): error loading libfuse.so.2` | FUSE 2 missing | Install `fuse2` / `libfuse2t64` / `libfuse2`, or run with `--appimage-extract-and-run` |
 | Linux: AppImage fails with a `chrome-sandbox` / namespace error | Unprivileged user namespaces disabled | Enable them (e.g. `sudo sysctl kernel.unprivileged_userns_clone=1` where that sysctl exists, or your distribution's AppArmor/userns setting) |

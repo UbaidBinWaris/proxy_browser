@@ -49,5 +49,14 @@
     "Receive beta updates is an optional switch beside the update controls. It saves your preference and checks a separate signed beta feed; macOS opens the exact verified download for the selected channel.",
     "QA execution now stops subsequent actions after a blocked document, frame or pop-up instead of continuing a failed run. Smoke tests correctly handle macOS browser cache paths and setup navigation.",
     "Strict mode improves failure handling; it does not guarantee undetectability, third-party acceptance or an error-free submission. Configure and verify each form's approved automation access, required scripts and success confirmation."
+  ],
+  "2.1.0": [
+    "Keeps one IP for the whole visit: every sticky launch now asks the proxy to hold the IP for 15 minutes (Settings → Advanced → Targeting → Keep the same IP for). Before, DataImpulse could switch to another IP in the same state after about 5 minutes, so the website recorded a different IP and city than the app showed.",
+    "Before the browser opens, the IP is checked twice, 3 seconds apart. If the proxy does not keep it, the app quietly tries another session; if none holds, it says so instead of opening the browser.",
+    "Stops at once if the IP changes: while the browser is open the IP is re-checked every 20 seconds. If it changes, the browser is blocked and closed so nothing is sent from the new IP, and the app shows \"Browser stopped: the IP address changed\" with Launch again.",
+    "When a ZIP code or small town has no IPs available, the app uses the city or the state for that launch and tells you, instead of failing (Use a wider area when the location has no IPs, on by default).",
+    "ZIP codes are shown as approximate (≈ 07103): IP lookup services disagree on ZIPs for the same IP, so a ZIP in the requested city now counts as a match.",
+    "Rotating mode is labelled clearly: the IP shown is a sample and the website may see a different one.",
+    "When a website does not load but the proxy works, the message now names the website instead of blaming the proxy."
   ]
 }

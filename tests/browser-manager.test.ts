@@ -134,6 +134,11 @@ class FakePage extends EventEmitter {
 class FakeContext extends EventEmitter {
   closed = false
   created: FakePage[] = []
+  /** URL patterns routed with context.route (the IP watch blocks every URL on a change). */
+  routes: string[] = []
+  async route(url: string, _handler: unknown): Promise<void> {
+    this.routes.push(url)
+  }
   pages(): FakePage[] {
     return this.created.filter((page) => !page.closed)
   }
@@ -287,6 +292,15 @@ interface Harness {
   executables: Map<BrowserEngine, string>
   /** Insert a real profile row (runs reference profiles by FK). */
   profile: (overrides?: Partial<ProfileInput>) => Profile
+  /**
+   * Scripted results for the exit-IP watch's lookups (taken in order; when empty the lookup
+   * returns the IP verified at launch). An Error entry makes that lookup fail.
+   */
+  ipLookups: Array<IpInfo | Error>
+  /** When set, the fake proxy's launch check reports that the area was widened to this target. */
+  widened: { current: GeoTarget | null }
+  /** Proxy connections the IP checker was called with (null = direct lookup). */
+  lookupCalls: Array<ProxyConnection | null>
 }
 
 const SYSTEM_CHROMIUM_PATH = '/usr/bin/chromium'
@@ -315,7 +329,7 @@ interface HarnessOptions {
   /** Replace the fake proxy manager (e.g. with a real one over a scripted IP checker). */
   makeProxy?: (db: Database, logger: Logger) => ProxyManager
   launchTimeoutMs?: number
-  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess' | 'screenWorkArea'>
+  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess' | 'screenWorkArea' | 'ipWatchIntervalMs' | 'onExitIpChange'>
 }
 
 async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null = null, options: HarnessOptions = {}): Promise<Harness> {
@@ -334,6 +348,7 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
   }
   const proxyResult = { current: { status: 'working', sessionId: 'qa-session-1', ip: ipInfo, error: null } as ProxyTestResult }
   const installed = { current: true }
+  const widened: { current: GeoTarget | null } = { current: null }
 
   const profiles: ProfileManager = {
     list: () => db.profiles.list(),
@@ -388,6 +403,10 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
       const result = proxyResult.current
       const targetMatch = profile.target && result.ip ? fakeProxy.compareTarget(profile.target, result.ip) : null
       const sessionId = profile.proxyMode === 'sticky' ? profile.stickySessionId : null
+      if (widened.current) {
+        const wider = widened.current
+        return { result, targetMatch: 'match', attempts: 3, maxAttempts: 3, sessionId: `${sessionId}-r3`, warning: `No exit IPs available in the ZIP right now; connected via ${wider.state} instead.`, widenedTarget: wider }
+      }
       return { result, targetMatch, attempts: 1, maxAttempts: 1, sessionId, warning: null }
     },
     getCurrentIp: async () => ipInfo,
@@ -398,7 +417,18 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     onSessionUpdate: () => () => undefined,
   }
   const proxy = options.makeProxy ? options.makeProxy(db, logger) : fakeProxy
-  const ipChecker: IpChecker = { lookup: async () => ({ ...ipInfo, ip: '198.51.100.4' }) }
+  const ipLookups: Array<IpInfo | Error> = []
+  const lookupCalls: Array<ProxyConnection | null> = []
+  const ipChecker: IpChecker = {
+    lookup: async (connection) => {
+      lookupCalls.push(connection)
+      // Direct (no proxy) lookups keep their historical fixture IP.
+      if (!connection) return { ...ipInfo, ip: '198.51.100.4' }
+      const next = ipLookups.shift()
+      if (next instanceof Error) throw next
+      return next ?? proxyResult.current.ip ?? ipInfo
+    },
+  }
   const executables = new Map<BrowserEngine, string>([['system-chromium', SYSTEM_CHROMIUM_PATH]])
   const engines = async (): Promise<BrowserEngineInfo[]> => BROWSER_ENGINES.map((engine) => engineInfo(engine, executables.get(engine) ?? null))
   const status = async (): Promise<BrowsersStatus> => ({
@@ -448,6 +478,8 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     logger,
     closeTimeoutMs,
     webkitLibsDir,
+    // The exit-IP watch has its own cases; elsewhere it would only add background lookups.
+    ipWatchIntervalMs: 0,
     ...(options.launchTimeoutMs !== undefined ? { launchTimeoutMs: options.launchTimeoutMs } : {}),
     ...options.manager,
   })
@@ -466,6 +498,9 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     settings,
     executables,
     profile: (overrides = {}) => db.profiles.create({ ...baseInput, ...overrides }),
+    ipLookups,
+    lookupCalls,
+    widened,
   }
 }
 
@@ -592,6 +627,114 @@ describe('createBrowserManager', () => {
     expect(h.db.testRuns.get(direct.runId)).toMatchObject({ proxyPool: null, targetMatch: null })
     await h.manager.close(direct.id)
     expect(JSON.stringify(h.logs)).not.toContain(PASSWORD)
+  })
+
+  describe('exit-IP watch', () => {
+    const OKLAHOMA_A: IpInfo = { ...ipInfo, ip: '203.0.113.74', region: 'Oklahoma', city: 'Shawnee', postalCode: '74801' }
+    const OKLAHOMA_B: IpInfo = { ...ipInfo, ip: '198.51.100.57', region: 'Oklahoma', city: 'Duncan', postalCode: '73533' }
+    const OK: GeoTarget = { mode: 'state', country: 'us', state: 'Oklahoma', stateCode: 'OK', city: null, zip: null }
+
+    async function watched(interval = 15, onExitIpChange?: BrowserManagerOptions['onExitIpChange']): Promise<Harness> {
+      const w = await buildHarness(200, null, { manager: { ipWatchIntervalMs: interval, ...(onExitIpChange ? { onExitIpChange } : {}) } })
+      w.proxyResult.current = { status: 'working', sessionId: 'ok-1', ip: OKLAHOMA_A, error: null }
+      return w
+    }
+
+    it('on an IP switch blocks the page, fails the run, alerts and closes the browser (the TrustedForm case)', async () => {
+      const changes: Array<{ to: string; detail: string }> = []
+      const w = await watched(15, (session, change) => changes.push({ to: change.toIp, detail: session.statusDetail }))
+      try {
+        // First re-check (right after the page opens): unchanged. Second: the provider swapped the IP.
+        w.ipLookups.push(OKLAHOMA_A, OKLAHOMA_B)
+        const session = await w.manager.launch(w.profile({ name: 'OK sticky', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => w.sessions.some((s) => s.id === session.id && s.status === 'closed'), 'stopped and closed', 3_000)
+        const changed = w.sessions.find((s) => s.id === session.id && s.exitIpWatch === 'changed')!
+        expect(changed.ip?.ip).toBe('203.0.113.74')
+        expect(changed.currentExitIp?.ip).toBe('198.51.100.57')
+        expect(changed.ipChanges).toEqual([expect.objectContaining({ fromIp: '203.0.113.74', toIp: '198.51.100.57', city: 'Duncan', region: 'Oklahoma', postalCode: '73533' })])
+        expect(changed.error).toMatchObject({ code: 'IP_CHANGED' })
+        expect(changed.statusDetail).toContain('Stopped: the IP changed from 203.0.113.74 (Shawnee')
+        expect(changed.statusDetail).toContain('198.51.100.57 (Duncan')
+        // Traffic was cut before the browser closed, and the browser is gone.
+        const browser = world.browsers[0]!
+        expect(browser.contexts[0]?.routes).toContain('**/*')
+        expect(browser.disconnected).toBe(true)
+        expect(w.manager.get(session.id)).toBeNull()
+        const run = w.db.testRuns.get(session.runId)!
+        expect(run.status).toBe('failed')
+        expect(run.errorMessage).toContain('Stopped: the IP changed')
+        expect(run.ipChanges).toEqual(changed.ipChanges)
+        expect(changes).toEqual([expect.objectContaining({ to: '198.51.100.57' })])
+        // The checks used exactly the browser's proxy credentials (same sticky session ⇒ same exit).
+        const launchUsername = (world.launches[0]?.options.proxy as { username?: string } | undefined)?.username
+        const watchCalls = w.lookupCalls.filter((c): c is ProxyConnection => c !== null)
+        expect(watchCalls.length).toBe(2)
+        for (const call of watchCalls) expect(call.username).toBe(launchUsername)
+        // No more checks after the stop.
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(w.lookupCalls.filter((c) => c !== null).length).toBe(2)
+        expect(w.logs.some((l) => l.level === 'WARN' && l.message.includes('exit IP changed 203.0.113.74 → 198.51.100.57'))).toBe(true)
+        expect(JSON.stringify(w.logs)).not.toContain(PASSWORD)
+      } finally {
+        w.db.close()
+      }
+    })
+
+    it('stays "watching" while the IP holds, and stops checking once the session closes', async () => {
+      const w = await watched(10)
+      try {
+        const session = await w.manager.launch(w.profile({ name: 'Stable', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => (w.manager.get(session.id)?.lastIpCheckAt ?? null) !== null, 'first re-check')
+        await waitFor(() => w.lookupCalls.filter(Boolean).length >= 3, 'several re-checks')
+        expect(w.manager.get(session.id)).toMatchObject({ exitIpWatch: 'watching', ipChanges: [] })
+        await w.manager.close(session.id)
+        const after = w.lookupCalls.length
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(w.lookupCalls.length).toBe(after)
+        expect(w.db.testRuns.get(session.runId)?.ipChanges).toEqual([])
+      } finally {
+        w.db.close()
+      }
+    })
+
+    it('marks the IP unverified after three failed checks and recovers on the next success', async () => {
+      const w = await watched(10)
+      try {
+        w.ipLookups.push(OKLAHOMA_A, new Error('timeout'), new Error('timeout'), new Error('timeout'), OKLAHOMA_A)
+        const session = await w.manager.launch(w.profile({ name: 'Flaky', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => w.sessions.some((s) => s.id === session.id && s.exitIpWatch === 'unverified'), 'unverified')
+        await waitFor(() => w.manager.get(session.id)?.exitIpWatch === 'watching', 'recovered')
+        expect(w.manager.get(session.id)?.ipChanges).toEqual([])
+        await w.manager.close(session.id)
+      } finally {
+        w.db.close()
+      }
+    })
+
+    it('does not watch rotating, direct or disabled sessions', async () => {
+      const w = await watched(10)
+      try {
+        const rotating = await w.manager.launch(w.profile({ name: 'Rotating', proxyMode: 'rotating', stickySessionId: null, target: OK }))
+        await waitFor(() => w.manager.get(rotating.id)?.exitIpWatch === 'rotating', 'rotating marked')
+        await w.manager.close(rotating.id)
+
+        const direct = await w.manager.launch(w.profile({ name: 'Direct', proxyMode: 'none', stickySessionId: null }))
+        await waitFor(() => w.manager.get(direct.id)?.status === 'open', 'direct open')
+        expect(w.manager.get(direct.id)?.exitIpWatch).toBe('off')
+        await w.manager.close(direct.id)
+
+        w.settings.watchExitIp = false
+        const off = await w.manager.launch(w.profile({ name: 'Off', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => w.manager.get(off.id)?.status === 'open', 'off open')
+        await new Promise((resolve) => setTimeout(resolve, 40))
+        expect(w.manager.get(off.id)?.exitIpWatch).toBe('off')
+        await w.manager.close(off.id)
+        // Only direct launches looked up an IP; nothing re-checked a proxied session.
+        expect(w.lookupCalls.filter((c) => c !== null)).toEqual([])
+      } finally {
+        w.db.close()
+      }
+    })
   })
 
   it('singleSessionMode: a second session for another profile is refused with SESSION_LIMIT until the first closes', async () => {
@@ -888,6 +1031,8 @@ describe('createBrowserManager', () => {
 
   it('keeps the window open after a navigation failure and finalises the run when it closes', async () => {
     world.gotoError = new Error('page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://forms.example.com/qa')
+    // The re-check through the same proxy session fails too: the proxy really is the problem.
+    h.ipLookups.push(new Error('tunnel failed'))
     const session = await h.manager.launch(h.profile())
     await waitFor(() => h.manager.get(session.id)?.status === 'error', 'error')
     expect(h.manager.get(session.id)?.error?.code).toBe('PROXY_DEAD')
@@ -900,6 +1045,50 @@ describe('createBrowserManager', () => {
     expect(run?.status).toBe('failed')
     expect(run?.endedAt).not.toBeNull()
     expect(h.sessions.filter((s) => s.id === session.id).at(-1)?.status).toBe('closed')
+  })
+
+  it('connects the browser through the widened area when the requested ZIP had no exit IP', async () => {
+    const zip: GeoTarget = { mode: 'zip', country: 'us', state: 'Texas', stateCode: 'TX', city: 'Lankin', zip: '79999' }
+    h.widened.current = TX
+    const session = await h.manager.launch(h.profile({ name: 'Thin ZIP', stickySessionId: 'zip-1', target: zip }))
+    await waitFor(() => h.manager.get(session.id)?.status === 'open', 'open')
+    // The browser connected with the widened target and the sticky id that worked — not the requested ZIP.
+    expect(world.launches[0]?.options).toMatchObject({ proxy: { username: 'login__cr.us;state.texas;sessid.zip-1-r3' } })
+    const live = h.manager.get(session.id)!
+    expect(live.target).toEqual(TX)
+    expect(live.locationWarning).toContain('connected via Texas instead')
+    expect(h.db.testRuns.get(session.runId)).toMatchObject({ target: TX, locationWarning: expect.stringContaining('connected via Texas') })
+    // The saved profile still targets the ZIP.
+    expect(h.db.profiles.get(session.profileId)?.target).toEqual(zip)
+    await h.manager.close(session.id)
+  })
+
+  it('blames the website, not the proxy, when the page fails but the proxy session still answers', async () => {
+    world.gotoError = new Error('page.goto: net::ERR_TUNNEL_CONNECTION_FAILED at https://forms.example.com/qa')
+    const session = await h.manager.launch(h.profile({ formUrlOverride: 'https://confinality.com/' }))
+    await waitFor(() => h.manager.get(session.id)?.status === 'error', 'error')
+    const error = h.manager.get(session.id)?.error
+    expect(error?.code).toBe('SITE_UNREACHABLE')
+    expect(error?.message).toBe('confinality.com did not respond. The proxy exit 203.0.113.9 (Austin, Texas) is working, so the website may be down or blocking this IP. Try again later, or check the site without a proxy.')
+    expect(error?.detail).toContain('ERR_TUNNEL_CONNECTION_FAILED')
+    expect(h.db.testRuns.get(session.runId)?.errorMessage).toContain('confinality.com did not respond')
+    // The re-check used the session's own proxy connection.
+    expect(h.lookupCalls.filter((c) => c !== null)).toHaveLength(1)
+    await h.manager.close(session.id)
+  })
+
+  it('does not re-check direct sessions or non-ambiguous failures', async () => {
+    world.gotoError = new Error('page.goto: net::ERR_CERT_AUTHORITY_INVALID at https://forms.example.com/qa')
+    const proxied = await h.manager.launch(h.profile({ name: 'TLS' }))
+    await waitFor(() => h.manager.get(proxied.id)?.status === 'error', 'tls error')
+    expect(h.manager.get(proxied.id)?.error?.code).toBe('SSL_ERROR')
+    await h.manager.close(proxied.id)
+    world.gotoError = new Error('page.goto: net::ERR_CONNECTION_REFUSED at https://forms.example.com/qa')
+    const direct = await h.manager.launch(h.profile({ name: 'Direct', proxyMode: 'none', stickySessionId: null }))
+    await waitFor(() => h.manager.get(direct.id)?.status === 'error', 'direct error')
+    expect(h.manager.get(direct.id)?.error?.code).not.toBe('SITE_UNREACHABLE')
+    expect(h.lookupCalls.filter((c) => c !== null)).toHaveLength(0)
+    await h.manager.close(direct.id)
   })
 
   it('close() during an in-flight launch cancels it, disposes the browser and finalises the run as aborted', async () => {
@@ -1048,7 +1237,8 @@ describe('createBrowserManager', () => {
 describe('createBrowserManager location re-roll (real proxy manager, scripted IP checker)', () => {
   const ZIP_07102: GeoTarget = { mode: 'zip', country: 'us', state: 'New Jersey', stateCode: 'NJ', city: 'Newark', zip: '07102' }
   const NY_CARRIER: Partial<IpInfo> = { ip: '107.77.76.91', region: 'New York', city: 'New York', postalCode: '10118' }
-  const NEWARK_07103: Partial<IpInfo> = { ip: '198.51.100.20', region: 'New Jersey', city: 'Newark', postalCode: '07103' }
+  const ELIZABETH_07201: Partial<IpInfo> = { ip: '198.51.100.20', region: 'New Jersey', city: 'Elizabeth', postalCode: '07201' }
+  const NEWARK_07103: Partial<IpInfo> = { ip: '198.51.100.22', region: 'New Jersey', city: 'Newark', postalCode: '07103' }
   const NEWARK_07102: Partial<IpInfo> = { ip: '198.51.100.21', region: 'New Jersey', city: 'Newark', postalCode: '07102' }
   const locations = {
     states: (): LocationEntry[] =>
@@ -1094,6 +1284,7 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
           profiles: db.profiles,
           logger,
           locations,
+          stickyConfirmDelayMs: 0,
         }),
     })
   })
@@ -1107,7 +1298,8 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
   it('re-rolls until the exact ZIP matches, then launches the browser with the final sticky id', async () => {
     h.settings.locationMatchPolicy = 'exact'
     h.settings.locationMatchAttempts = 3
-    script = [NY_CARRIER, NEWARK_07103, NEWARK_07102]
+    // The last entry is the stickiness check of the accepted session (same IP: it holds).
+    script = [NY_CARRIER, ELIZABETH_07201, NEWARK_07102, NEWARK_07102]
     const profile = h.profile({ name: 'ZIP 07102', stickySessionId: 'zip-1', target: ZIP_07102 })
     const session = await h.manager.launch(profile)
     expect(session).toMatchObject({ locationAttempts: 1, locationMaxAttempts: 3, locationWarning: null })
@@ -1117,7 +1309,7 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
     expect(detailsOf(session.id)).toEqual(
       expect.arrayContaining([
         'Exit IP 107.77.76.91 is in New York, NY 10118 — re-rolling session (2/3)…',
-        'Exit IP 198.51.100.20 is in Newark, NJ 07103 — re-rolling session (3/3)…',
+        'Exit IP 198.51.100.20 is in Elizabeth, NJ 07201 — re-rolling session (3/3)…',
       ]),
     )
     expect(statusesOf(h.sessions, session.id)).toEqual(['starting', 'verifying-proxy', 'launching', 'open'])
@@ -1141,7 +1333,7 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
       locationMaxAttempts: 3,
       locationWarning: null,
     })
-    expect(seen.map((c) => c.sessionId)).toEqual(['zip-1', 'zip-1-r2', 'zip-1-r3'])
+    expect(seen.map((c) => c.sessionId)).toEqual(['zip-1', 'zip-1-r2', 'zip-1-r3', 'zip-1-r3'])
     expect(world.launches[0]?.options.proxy).toEqual({ server: 'http://gw.dataimpulse.com:823', username: `acme_login__${finalTargeting}`, password: PASSWORD })
     expect(h.db.profiles.get(profile.id)?.stickySessionId).toBe('zip-1-r3')
     expect(JSON.stringify({ logs: h.logs, sessions: h.sessions, runs: h.runs })).not.toContain(PASSWORD)
@@ -1151,15 +1343,15 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
   it('falls back to the best attempt with a warning when no exit IP meets the policy', async () => {
     h.settings.locationMatchPolicy = 'exact'
     h.settings.locationMatchAttempts = 3
-    script = [NEWARK_07103, NY_CARRIER, NY_CARRIER]
+    script = [ELIZABETH_07201, NY_CARRIER, NY_CARRIER]
     const profile = h.profile({ name: 'ZIP fallback', stickySessionId: 'zip-2', target: ZIP_07102 })
     const session = await h.manager.launch(profile)
     await waitFor(() => h.manager.get(session.id)?.status === 'open', 'session to open')
 
-    const warning = 'Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Newark, NJ 07103 (same state)'
+    const warning = 'Could not get an exit IP in ZIP 07102 (Newark, NJ) after 3 attempts; using Elizabeth, NJ 07201 (same state)'
     expect(detailsOf(session.id)).toContain(warning)
-    expect(h.manager.get(session.id)).toMatchObject({ targetMatch: 'partial', proxySessionId: 'zip-2', locationAttempts: 3, locationWarning: warning, ip: { postalCode: '07103' } })
-    expect(h.db.testRuns.get(session.runId)).toMatchObject({ targetMatch: 'partial', proxySessionId: 'zip-2', postalCode: '07103', locationAttempts: 3, locationWarning: warning })
+    expect(h.manager.get(session.id)).toMatchObject({ targetMatch: 'partial', proxySessionId: 'zip-2', locationAttempts: 3, locationWarning: warning, ip: { postalCode: '07201' } })
+    expect(h.db.testRuns.get(session.runId)).toMatchObject({ targetMatch: 'partial', proxySessionId: 'zip-2', postalCode: '07201', locationAttempts: 3, locationWarning: warning })
     // The browser uses the first session id again: it still holds the best exit IP.
     expect(world.launches[0]?.options.proxy).toMatchObject({ username: 'acme_login__cr.us;state.newjersey;city.newark;zip.07102;sessid.zip-2' })
     expect(h.db.profiles.get(profile.id)?.stickySessionId).toBe('zip-2')
@@ -1168,13 +1360,57 @@ describe('createBrowserManager location re-roll (real proxy manager, scripted IP
 
   it("policy 'off' launches after a single check, whatever the location", async () => {
     h.settings.locationMatchPolicy = 'off'
-    script = [NY_CARRIER, NEWARK_07102]
+    script = [NY_CARRIER, NY_CARRIER, NEWARK_07102]
     const session = await h.manager.launch(h.profile({ name: 'ZIP off', stickySessionId: 'zip-3', target: ZIP_07102 }))
     expect(session.locationMaxAttempts).toBe(1)
     await waitFor(() => h.manager.get(session.id)?.status === 'open', 'session to open')
-    expect(seen).toHaveLength(1)
+    // One location check plus the stickiness check of the same session.
+    expect(seen.map((c) => c.sessionId)).toEqual(['zip-3', 'zip-3'])
     expect(h.manager.get(session.id)).toMatchObject({ targetMatch: 'mismatch', proxySessionId: 'zip-3', locationAttempts: 1, locationMaxAttempts: 1, locationWarning: null })
     expect(detailsOf(session.id).some((detail) => detail.includes('re-rolling'))).toBe(false)
+    await h.manager.close(session.id)
+  })
+
+  it('counts a ZIP in the requested city as a match: lookups disagree on ZIPs for the same IP', async () => {
+    h.settings.locationMatchPolicy = 'exact'
+    h.settings.locationMatchAttempts = 3
+    script = [NEWARK_07103, NEWARK_07103]
+    const session = await h.manager.launch(h.profile({ name: 'ZIP same city', stickySessionId: 'zip-4', target: ZIP_07102 }))
+    await waitFor(() => h.manager.get(session.id)?.status === 'open', 'session to open')
+    expect(h.manager.get(session.id)).toMatchObject({ targetMatch: 'match', proxySessionId: 'zip-4', locationAttempts: 1, locationWarning: null })
+    await h.manager.close(session.id)
+  })
+
+  it('switches to a fresh session when the exit IP changes between two quick checks, without using a location attempt', async () => {
+    h.settings.locationMatchPolicy = 'exact'
+    h.settings.locationMatchAttempts = 3
+    // Session zip-5 answers with a different IP on the second look (the provider ignored stickiness); zip-5-r2 holds.
+    script = [NEWARK_07102, NEWARK_07103, NEWARK_07102, NEWARK_07102]
+    const profile = h.profile({ name: 'Unstable', stickySessionId: 'zip-5', target: ZIP_07102 })
+    const session = await h.manager.launch(profile)
+    await waitFor(() => h.manager.get(session.id)?.status === 'open', 'session to open')
+    expect(seen.map((c) => c.sessionId)).toEqual(['zip-5', 'zip-5', 'zip-5-r2', 'zip-5-r2'])
+    expect(detailsOf(session.id)).toContain('Exit IP 198.51.100.21 changed to 198.51.100.22 within seconds — trying another session…')
+    expect(h.manager.get(session.id)).toMatchObject({ targetMatch: 'match', proxySessionId: 'zip-5-r2', locationAttempts: 1, ip: { ip: '198.51.100.21' } })
+    expect(world.launches[0]?.options.proxy).toMatchObject({ username: 'acme_login__cr.us;state.newjersey;city.newark;zip.07102;sessid.zip-5-r2' })
+    expect(h.db.profiles.get(profile.id)?.stickySessionId).toBe('zip-5-r2')
+    expect(h.logs.some((l) => l.message === 'Sticky session did not keep its exit IP (198.51.100.21 then 198.51.100.22)')).toBe(true)
+    await h.manager.close(session.id)
+  })
+
+  it('fails with IP_UNSTABLE, without opening a browser, when no session keeps one IP', async () => {
+    h.settings.locationMatchPolicy = 'off'
+    script = [NEWARK_07102, NEWARK_07103, NEWARK_07102, NEWARK_07103, NEWARK_07102, NEWARK_07103]
+    const session = await h.manager.launch(h.profile({ name: 'Never sticky', stickySessionId: 'zip-6', target: ZIP_07102 }))
+    await waitFor(() => h.manager.get(session.id)?.status === 'error', 'error')
+    expect(world.launches).toHaveLength(0)
+    expect(h.manager.get(session.id)?.error).toMatchObject({
+      code: 'IP_UNSTABLE',
+      message:
+        'The proxy could not keep one IP in ZIP 07102 (Newark, NJ): the IP changed within seconds in 3 sessions in a row. Try again in a minute or choose another location.',
+    })
+    expect(seen.map((c) => c.sessionId)).toEqual(['zip-6', 'zip-6', 'zip-6-r2', 'zip-6-r2', 'zip-6-r3', 'zip-6-r3'])
+    expect(h.db.testRuns.get(session.runId)?.status).toBe('failed')
     await h.manager.close(session.id)
   })
 })
