@@ -51,12 +51,13 @@ export function missingToolMessage(tool: string): string {
 /**
  * A consumer (tar, xz, zstd) closing its input before we finished writing is normal: tar stops
  * at the end-of-archive marker and ignores the trailing record padding. Node reports that as
- * EPIPE or ERR_STREAM_PREMATURE_CLOSE depending on timing. Success is decided by the tool's exit
- * status (tar fails on a truncated archive), so both are tolerated here.
+ * EPIPE or ERR_STREAM_PREMATURE_CLOSE depending on timing, and as ENOTCONN on macOS, where a
+ * child's stdin is a socket pair (seen in CI). Success is decided by the tool's exit status
+ * (tar fails on a truncated archive), so all of them are tolerated here.
  */
 export function isEarlyCloseError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException | null)?.code
-  return code === 'EPIPE' || code === 'ERR_STREAM_PREMATURE_CLOSE'
+  return code === 'EPIPE' || code === 'ENOTCONN' || code === 'ERR_STREAM_PREMATURE_CLOSE'
 }
 
 function tolerateEarlyClose(err: unknown): void {

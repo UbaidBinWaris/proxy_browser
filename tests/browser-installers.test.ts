@@ -739,8 +739,9 @@ describe('install watcher', () => {
 describe('system tar closing its input early (regression: "Premature close")', () => {
   const tools = detectTarTools()
 
-  it('treats EPIPE and ERR_STREAM_PREMATURE_CLOSE as an early close, nothing else', () => {
+  it('treats EPIPE, ENOTCONN (macOS socket-pair stdin) and ERR_STREAM_PREMATURE_CLOSE as an early close, nothing else', () => {
     expect(isEarlyCloseError(Object.assign(new Error('x'), { code: 'EPIPE' }))).toBe(true)
+    expect(isEarlyCloseError(Object.assign(new Error('write ENOTCONN'), { code: 'ENOTCONN' }))).toBe(true)
     expect(isEarlyCloseError(Object.assign(new Error('Premature close'), { code: 'ERR_STREAM_PREMATURE_CLOSE' }))).toBe(true)
     expect(isEarlyCloseError(Object.assign(new Error('x'), { code: 'ENOSPC' }))).toBe(false)
     expect(isEarlyCloseError(null)).toBe(false)
