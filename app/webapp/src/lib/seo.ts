@@ -11,7 +11,7 @@ export const DEFAULT_SOCIAL_IMAGE: SocialImage = { url: '/opengraph-image', widt
 
 /** Last content change of the about page and of the use-case pages (ISO dates, for the sitemap); update with their copy. */
 export const ABOUT_DATE = '2026-10-10'
-export const USE_CASES_DATE = '2026-10-18'
+export const USE_CASES_DATE = '2026-10-30'
 /** Last content change of /faq (src/lib/faq.ts), for the sitemap; update with its questions. */
 export const FAQ_DATE = '2026-10-18'
 

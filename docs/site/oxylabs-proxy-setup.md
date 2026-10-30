@@ -31,11 +31,22 @@ Multi-word names use underscores (`us_new_york`, `los_angeles`, `st_louis`). Sta
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `-sessid-<id>`, which Oxylabs keeps for 10 minutes by default, and `-sesstime-<minutes>` (1–1440) when you set a **Session TTL**. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `-sessid-<id>` and a lifetime, `-sesstime-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Without a lifetime Oxylabs keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
 
 ```text
-customer-USERNAME-st-us_new_jersey-sessid-ql202610077f3a0uv3n6-sesstime-30
+customer-USERNAME-st-us_new_jersey-sessid-ql202610077f3a0uv3n6-sesstime-15
 ```
+
+## Use Oxylabs proxies without a browser extension
+
+You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the Oxylabs login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
+
+## Check that your Oxylabs proxy works
+
+- **Test connection** in **Manage keys** sends one request through the Oxylabs gateway with the login you typed and shows the result. Nothing is saved.
+- **Test Proxy** on a saved profile (Profiles page) runs one IP check through that profile's pool, location and sticky session.
+- **Every launch** looks up the exit IP through the same login the browser will use, before the window opens, and shows the IP with its city, state and approximate ZIP (shown as ≈ 07102, because IP-location services disagree on ZIP codes for the same IP), plus a **Match**, **Partial** or **Mismatch** badge against your target.
+- **Sticky sessions are watched**: the IP is checked a second time 3 seconds later, and a fresh session is tried if it changed. While the browser is open the IP is re-checked every 20 seconds, and the browser is **stopped** if it changes, so a form is never sent from a second IP.
 
 ## Run Oxylabs in CI
 

@@ -45,6 +45,20 @@ export const LEGAL_LINKS: SiteLink[] = [
   { href: '/security', label: 'Security' },
   { href: '/disclaimer', label: 'Disclaimer' },
 ]
+/**
+ * Docs guides linked from the footer of every page: the provider guides get search impressions for the providers'
+ * names but were linked only from other docs pages. Each href must be a docs page in docs/site/manifest.json.
+ */
+export const FOOTER_GUIDES: SiteLink[] = [
+  { href: '/docs/install', label: 'Install' },
+  { href: '/docs/proxy-providers', label: 'Proxy providers' },
+  { href: '/docs/dataimpulse-proxy-setup', label: 'DataImpulse proxy' },
+  { href: '/docs/bright-data-proxy-setup', label: 'Bright Data proxy' },
+  { href: '/docs/oxylabs-proxy-setup', label: 'Oxylabs proxy' },
+  { href: '/docs/decodo-proxy-setup', label: 'Decodo proxy' },
+  { href: '/docs/iproyal-proxy-setup', label: 'IPRoyal proxy' },
+  { href: '/docs/troubleshooting', label: 'Troubleshooting' },
+]
 /** Static (non-docs) pages listed in the sitemap, with their relative priority. */
 export const STATIC_PAGES: { path: string; priority: number }[] = [
   { path: '/', priority: 1 },

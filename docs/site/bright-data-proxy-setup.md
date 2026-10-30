@@ -31,11 +31,22 @@ City names are lower case without spaces (`sanfrancisco`). State and ZIP targeti
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `-session-<id>` and keeps one exit IP. Bright Data has **no session lifetime parameter**: a session ends after about 5 idle minutes, so the **Session TTL** field is ignored. Bright Data accepts only letters and digits in session IDs, so the app maps your profile's session ID to a stable alphanumeric token. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `-session-<id>` and keeps one exit IP. Bright Data has **no session lifetime parameter**: a session ends after about 5 idle minutes, so the **Session TTL** field is ignored. While the browser is open, the app's IP re-check every 20 seconds keeps the session from going idle. Bright Data accepts only letters and digits in session IDs, so the app maps your profile's session ID to a stable alphanumeric token. Turn **Sticky session** off for rotating mode.
 
 ```text
 brd-customer-EXAMPLE-zone-EXAMPLE-country-us-state-nj-session-ql202610077f3a0uv3n6
 ```
+
+## Use Bright Data proxies without a browser extension
+
+You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the Bright Data login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
+
+## Check that your Bright Data proxy works
+
+- **Test connection** in **Manage keys** sends one request through the Bright Data gateway with the login you typed and shows the result. Nothing is saved.
+- **Test Proxy** on a saved profile (Profiles page) runs one IP check through that profile's pool, location and sticky session.
+- **Every launch** looks up the exit IP through the same login the browser will use, before the window opens, and shows the IP with its city, state and approximate ZIP (shown as ≈ 07102, because IP-location services disagree on ZIP codes for the same IP), plus a **Match**, **Partial** or **Mismatch** badge against your target.
+- **Sticky sessions are watched**: the IP is checked a second time 3 seconds later, and a fresh session is tried if it changed. While the browser is open the IP is re-checked every 20 seconds, and the browser is **stopped** if it changes, so a form is never sent from a second IP.
 
 ## Run Bright Data in CI
 

@@ -11,7 +11,7 @@ import { parseReleaseNotes } from '../src/lib/changelog.ts'
 import { GALLERY_SCREENSHOTS, HERO_SCREENSHOT } from '../src/lib/home.ts'
 import { securityTxt } from '../src/lib/security-txt.ts'
 import { ABOUT_DATE, FAQ_DATE, SCHEMA_IDS, USE_CASES_DATE, breadcrumbList, docArticle, homeGraph, legalBreadcrumbs, pageBreadcrumbs, pageMetadata, profilePage, sitemapEntries } from '../src/lib/seo.ts'
-import { LEGAL_LINKS, OWNER, POLICY_DATE, REPO_URL, SITE_URL } from '../src/lib/site.ts'
+import { FOOTER_GUIDES, LEGAL_LINKS, OWNER, POLICY_DATE, REPO_URL, SITE_URL } from '../src/lib/site.ts'
 import { USE_CASES } from '../src/lib/use-cases.ts'
 
 const app = resolve(import.meta.dirname, '../src/app')
@@ -188,4 +188,13 @@ test('docs index, about and changelog titles and descriptions fit search results
 test('the footer links the use-case hub and every published use-case page', () => {
   const html = renderToStaticMarkup(SiteFooter())
   for (const path of ['/use-cases', ...USE_CASES.map(u => `/use-cases/${u.slug}`)]) assert.ok(html.includes(`href="${path}"`), path)
+})
+
+test('the footer links every provider setup guide, and each guide link is a published docs page', async () => {
+  const manifest = JSON.parse(await readFile(resolve(import.meta.dirname, '../../../docs/site/manifest.json'), 'utf8')) as { sections: { title: string; pages: { slug: string }[] }[] }
+  const slugs = new Set(manifest.sections.flatMap(section => section.pages.map(page => page.slug)))
+  for (const link of FOOTER_GUIDES) assert.ok(slugs.has(link.href.replace('/docs/', '')), link.href)
+  const providerGuides = manifest.sections.find(section => section.title === 'Provider setup guides')!.pages.map(page => `/docs/${page.slug}`)
+  const html = renderToStaticMarkup(SiteFooter())
+  for (const path of providerGuides) assert.ok(html.includes(`href="${path}"`), path)
 })

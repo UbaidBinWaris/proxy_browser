@@ -31,11 +31,22 @@ Multi-word names use underscores (`us_new_york`, `las_vegas`). A city target car
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `-session-<id>`, which Decodo keeps for 10 minutes by default, and `-sessionduration-<minutes>` (1–1440) when you set a **Session TTL**. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `-session-<id>` and a lifetime, `-sessionduration-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Without a lifetime Decodo keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
 
 ```text
-user-USERNAME-country-us-state-us_new_jersey-session-ql202610077f3a0uv3n6-sessionduration-30
+user-USERNAME-country-us-state-us_new_jersey-session-ql202610077f3a0uv3n6-sessionduration-15
 ```
+
+## Use Decodo proxies without a browser extension
+
+You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the Decodo login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
+
+## Check that your Decodo proxy works
+
+- **Test connection** in **Manage keys** sends one request through the Decodo gateway with the login you typed and shows the result. Nothing is saved.
+- **Test Proxy** on a saved profile (Profiles page) runs one IP check through that profile's pool, location and sticky session.
+- **Every launch** looks up the exit IP through the same login the browser will use, before the window opens, and shows the IP with its city, state and approximate ZIP (shown as ≈ 07102, because IP-location services disagree on ZIP codes for the same IP), plus a **Match**, **Partial** or **Mismatch** badge against your target.
+- **Sticky sessions are watched**: the IP is checked a second time 3 seconds later, and a fresh session is tried if it changed. While the browser is open the IP is re-checked every 20 seconds, and the browser is **stopped** if it changes, so a form is never sent from a second IP.
 
 ## Run Decodo in CI
 

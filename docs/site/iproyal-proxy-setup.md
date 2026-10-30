@@ -30,11 +30,22 @@ State and city names are lower case without spaces (`newjersey`). IPRoyal does n
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `_session-<id>`, where IPRoyal requires exactly 8 letters and digits; the app maps your profile's session ID to a stable 8-character token. A **Session TTL** is sent as `_lifetime-<N>m`, up to 7 days. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `_session-<id>`, where IPRoyal requires exactly 8 letters and digits; the app maps your profile's session ID to a stable 8-character token. A lifetime is always sent as `_lifetime-<N>m`, up to 7 days: the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Turn **Sticky session** off for rotating mode.
 
 ```text
-PASSWORD_country-us_state-newjersey_session-0uv3n6d0_lifetime-30m
+PASSWORD_country-us_state-newjersey_session-0uv3n6d0_lifetime-15m
 ```
+
+## Use IPRoyal proxies without a browser extension
+
+You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the IPRoyal login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
+
+## Check that your IPRoyal proxy works
+
+- **Test connection** in **Manage keys** sends one request through the IPRoyal gateway with the login you typed and shows the result. Nothing is saved.
+- **Test Proxy** on a saved profile (Profiles page) runs one IP check through that profile's pool, location and sticky session.
+- **Every launch** looks up the exit IP through the same login the browser will use, before the window opens, and shows the IP with its city and state, plus a **Match**, **Partial** or **Mismatch** badge against your target.
+- **Sticky sessions are watched**: the IP is checked a second time 3 seconds later, and a fresh session is tried if it changed. While the browser is open the IP is re-checked every 20 seconds, and the browser is **stopped** if it changes, so a form is never sent from a second IP.
 
 ## Run IPRoyal in CI
 

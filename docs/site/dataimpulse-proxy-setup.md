@@ -41,6 +41,17 @@ login__cr.us;state.newjersey;sessid.ql-20261007-7f3a;sessttl.15
 
 Before the window opens, the app checks the exit IP and can re-roll the sticky session until its location meets your [match policy](/docs/locations-and-devices#location-match-policy-and-re-rolls).
 
+## Use DataImpulse proxies without a browser extension
+
+You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the DataImpulse login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
+
+## Check that your DataImpulse proxy works
+
+- **Test connection** in **Manage keys** sends one request through the DataImpulse gateway with the login you typed and shows the result. Nothing is saved.
+- **Test Proxy** on a saved profile (Profiles page) runs one IP check through that profile's pool, location and sticky session.
+- **Every launch** looks up the exit IP through the same login the browser will use, before the window opens, and shows the IP with its city, state and approximate ZIP (shown as ≈ 07102, because IP-location services disagree on ZIP codes for the same IP), plus a **Match**, **Partial** or **Mismatch** badge against your target.
+- **Sticky sessions are watched**: the IP is checked a second time 3 seconds later, and a fresh session is tried if it changed. While the browser is open the IP is re-checked every 20 seconds, and the browser is **stopped** if it changes, so a form is never sent from a second IP.
+
 ## Run DataImpulse in CI
 
 The [CI runner](/docs/ci-runner#proxy-credentials) reads the login from environment variables set from your secret store: `QA_PROVIDER=dataimpulse`, `QA_PROVIDER_PRODUCT=residential` or `mobile`, `QA_PROVIDER_USERNAME` and `QA_PROVIDER_PASSWORD`. The older `DATAIMPULSE_PROXY_*` variables still work as an alias.

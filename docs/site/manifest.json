@@ -23,11 +23,11 @@
     {
       "title": "Provider setup guides",
       "pages": [
-        { "slug": "dataimpulse-proxy-setup", "title": "DataImpulse proxy setup", "seoTitle": "DataImpulse proxy setup for QA testing", "description": "Use your DataImpulse Residential or Mobile plan to test your own site by US state, city or ZIP: login, targeting parameters, sticky sessions and fixes." },
-        { "slug": "bright-data-proxy-setup", "title": "Bright Data proxy setup", "seoTitle": "Bright Data proxy setup for QA testing", "description": "Use your Bright Data residential zone to test your own site by US state, city or ZIP: zone username, targeting parameters, sessions and common errors." },
-        { "slug": "oxylabs-proxy-setup", "title": "Oxylabs proxy setup", "seoTitle": "Oxylabs proxy setup for QA testing", "description": "Use your Oxylabs Residential Proxies plan to test your own site by US state, city or ZIP: customer- login, cc, st and postalcode parameters and fixes." },
-        { "slug": "decodo-proxy-setup", "title": "Decodo proxy setup", "seoTitle": "Decodo proxy setup for QA testing", "description": "Use your Decodo (formerly Smartproxy) residential plan to test your own site by US state, city or ZIP: user- login, parameters, sticky sessions, fixes." },
-        { "slug": "iproyal-proxy-setup", "title": "IPRoyal proxy setup", "seoTitle": "IPRoyal proxy setup for QA testing", "description": "Use your IPRoyal residential plan to test your own site by US state or city: password parameters, 8-character sticky sessions, lifetime and common errors." }
+        { "slug": "dataimpulse-proxy-setup", "title": "DataImpulse proxy setup", "seoTitle": "DataImpulse proxy: setup, test, sticky IP", "description": "How to use a DataImpulse proxy in a browser on Windows, Linux or macOS: setup, US state/city/ZIP targeting, sticky sessions, testing the IP and fixes." },
+        { "slug": "bright-data-proxy-setup", "title": "Bright Data proxy setup", "seoTitle": "Bright Data proxy: setup, test, sticky IP", "description": "How to use a Bright Data residential proxy in a browser on Windows, Linux or macOS: zone login, state/city/ZIP targeting, sessions, testing and fixes." },
+        { "slug": "oxylabs-proxy-setup", "title": "Oxylabs proxy setup", "seoTitle": "Oxylabs proxy: setup, test, sticky IP", "description": "How to use an Oxylabs residential proxy in a browser on Windows, Linux or macOS: customer- login, state/city/ZIP targeting, sessions, testing, fixes." },
+        { "slug": "decodo-proxy-setup", "title": "Decodo proxy setup", "seoTitle": "Decodo proxy: setup, test, sticky IP", "description": "How to use a Decodo (formerly Smartproxy) proxy in a browser on Windows, Linux or macOS: login, US state/city/ZIP targeting, sticky sessions, fixes." },
+        { "slug": "iproyal-proxy-setup", "title": "IPRoyal proxy setup", "seoTitle": "IPRoyal proxy: setup, test, sticky IP", "description": "How to use an IPRoyal residential proxy in a browser on Windows, Linux or macOS: password parameters, US state/city targeting, sticky sessions, fixes." }
       ]
     },
     {

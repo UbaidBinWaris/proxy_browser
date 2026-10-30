@@ -97,8 +97,8 @@ export const USE_CASES: UseCase[] = [
         heading: 'The exit IP is checked before the window opens',
         text: 'The app looks up the exit IP through the same proxy login the browser will use and compares the reported country, region, city and postal code with your target. The verdict appears on the run next to what you requested. Read [how exit-IP verification works](/docs/locations-and-devices#exit-ip-verification).',
         points: [
-          'Match: every requested level agrees, including the exact ZIP for a ZIP target',
-          'Partial: right state, but another city or another postal code',
+          'Match: every requested level agrees; for a ZIP target, the exact ZIP or the ZIP\'s own city, because IP-location services disagree on ZIP codes for the same IP (the app shows them as ≈ 07102)',
+          'Partial: right state, but another city',
           'Mismatch: another state or country',
           'Unverified: no target, or the IP service did not report enough to compare',
         ],
@@ -109,6 +109,16 @@ export const USE_CASES: UseCase[] = [
         points: [
           'Location match Off, Same state (the default) or Exact (city or ZIP)',
           'Rotating sessions are not retried',
+          'When a ZIP code or small town has no exit IP right now, the app can use its city, then its state, for that launch and says so',
+        ],
+      },
+      {
+        heading: 'One exit IP for the whole visit',
+        text: 'Lead-certificate scripts and your own server logs record the IP a page is loaded from, so the IP must not change halfway through a form. A sticky session asks the provider to keep its IP for the lifetime you set, 15 minutes by default, which covers a 5 to 10 minute visit. Before the window opens, the app checks the IP a second time 3 seconds later and moves to a fresh session if it changed.',
+        points: [
+          'While the browser is open, the exit IP is re-checked every 20 seconds through the same session',
+          'If the provider switches the IP, the browser is stopped and closed at once and the app says so, so nothing is sent from a second IP',
+          'Every change is saved on the run with both IPs and their places',
         ],
       },
       {
@@ -142,7 +152,7 @@ export const USE_CASES: UseCase[] = [
       { title: 'Review the run', text: 'Check the result, screenshot and network requests under History, and save the setup as a profile to repeat it later.' },
     ],
     faqs: [
-      { question: 'Can I test from locations outside the United States?', answer: 'Yes, by country: Country targeting accepts any two-letter country code. State, city and ZIP search uses the bundled US dataset, and the community-verified providers accept state and ZIP targets only in the United States.', link: { href: '/docs/locations-and-devices#choosing-a-location', label: 'Choosing a location' } },
+      { question: 'Can I check my website from another country?', answer: 'Yes, by country: Country targeting accepts any two-letter country code. State, city and ZIP search uses the bundled US dataset, and the community-verified providers accept state and ZIP targets only in the United States.', link: { href: '/docs/locations-and-devices#choosing-a-location', label: 'Choosing a location' } },
       { question: 'Is location testing free?', answer: 'The app is free and open source. Location targeting needs your own paid plan with a supported proxy provider, billed by that provider, and some providers charge more for state, city or ZIP targeting. Direct launches and QA automation runs without location targets work without a plan, on this computer\'s own IP. The app does not sell or include proxies.', link: { href: '/docs/proxy-providers#pools-logins-and-billing', label: 'Pools, logins and billing' } },
       { question: 'Does this change the IP address my site sees, or only browser settings?', answer: 'Your site\'s IP-based geo rules see the proxy exit IP, which the app looks up before the window opens. Your site\'s own geo-IP database may place that IP differently from the app\'s lookup service. Locale and timezone are profile settings, so date- and time-dependent content can be checked for the target. Emulation is for testing your own pages; it is not designed to disguise the browser.', link: { href: '/docs/locations-and-devices#how-emulation-is-applied', label: 'How emulation is applied' } },
       { question: 'Why might the reported city differ from my target?', answer: 'Geolocation is a third-party estimate, and some ZIP codes have few exit IPs.', link: { href: '/docs/locations-and-devices#zip-targeting-caveat', label: 'ZIP targeting caveat' }, ownedBy: '/docs/locations-and-devices' },
@@ -159,6 +169,8 @@ export const USE_CASES: UseCase[] = [
     secondaryKeywords: [
       'test my website from another state',
       'test my website from another country',
+      'check website from another country',
+      'view website from another country',
       'website geolocation testing',
       'website screenshot from different countries',
       'ZIP code targeting',
@@ -298,6 +310,10 @@ export const USE_CASES: UseCase[] = [
         text: 'Phone and tablet presets work on WebKit and every Chromium-family browser, bundled or installed, but never on Firefox. Most desktop presets work on every engine; the macOS Safari (WebKit) preset works only on WebKit and the Windows Firefox preset only on Firefox. Browsers that cannot emulate the chosen device are greyed out with the reason.',
       },
       {
+        heading: 'iPhone layouts on Windows and Linux, without a Mac',
+        text: 'WebKit, the open-source engine Safari is built on, runs natively in the app on Windows, Linux and macOS. Pick WebKit with an iPhone preset to check your own pages at the iPhone\'s viewport, scale factor and touch support, with its user agent, no Mac or iPhone needed.',
+      },
+      {
         heading: 'Emulation, not physical devices',
         text: 'Emulation is good for layout, breakpoints, touch and user-agent-dependent behaviour on your own pages. It runs inside desktop browsers on your computer: it is not a cloud of physical devices, and an iPhone preset on WebKit is still not Apple Safari.',
       },
@@ -340,6 +356,7 @@ export const USE_CASES: UseCase[] = [
       'test website on different mobile devices',
       'view mobile version of website on desktop',
       'test website on iPhone without an iPhone',
+      'test iPhone website on Windows',
       'test responsive website on different screen sizes',
     ],
   },
@@ -433,7 +450,7 @@ export const USE_CASES: UseCase[] = [
     description: 'Record a test on your own form once and replay it across browsers, devices and, with your own proxy plan, locations. Assertions, CSV datasets and reports.',
     eyebrow: 'USE CASE · TEST RECORDER',
     h1: 'Record a form test once and replay it across browsers, devices and locations.',
-    lead: 'A free desktop recorder for your own forms. Scenarios run locally in the app with no sign-in, shared server or cloud account, and replay as a matrix of browsers, devices and, with your own proxy plan, checked locations.',
+    lead: 'A free, open-source desktop recorder for your own forms. Scenarios run locally in the app with no sign-in, shared server or cloud account, and replay as a matrix of browsers, devices and, with your own proxy plan, checked locations.',
     screenshot: {
       src: '/docs-assets/images/automation-steps.webp',
       alt: 'The Test steps list of a scenario: a consent checkbox check, three fill steps using the {{name}}, {{phone}} and {{zip}} variables, a check checkbox step and a consent disclosure check with its approved wording.',
@@ -502,7 +519,7 @@ export const USE_CASES: UseCase[] = [
       { slug: 'settings', label: 'Settings reference' },
     ],
     primaryKeyword: 'record and playback testing tool',
-    secondaryKeywords: ['codeless test automation tools open source', 'free no-code test automation', 'web test recorder', 'test form submission', 'regression testing for web forms'],
+    secondaryKeywords: ['record and playback testing tools open source', 'codeless test automation tools open source', 'free no-code test automation', 'web test recorder', 'test form submission', 'regression testing for web forms'],
   },
   {
     slug: 'visual-regression-testing',
