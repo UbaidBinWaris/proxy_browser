@@ -114,7 +114,7 @@ export const USE_CASES: UseCase[] = [
       },
       {
         heading: 'One exit IP for the whole visit',
-        text: 'Lead-certificate scripts and your own server logs record the IP a page is loaded from, so the IP must not change halfway through a form. A sticky session asks the provider to keep its IP for the lifetime you set, 15 minutes by default, which covers a 5 to 10 minute visit. Before the window opens, the app checks the IP a second time 3 seconds later and moves to a fresh session if it changed.',
+        text: 'Lead-certificate scripts and your own server logs record the IP a page is loaded from, so the IP must not change halfway through a form. A sticky session asks the provider to keep its IP for the lifetime you set, 15 minutes by default, which covers a 5 to 10 minute visit. Before the window opens, the app checks the IP a second time 3 seconds later and moves to a fresh session if it changed. See [why a sticky IP changes and what we measured](/docs/sticky-sessions).',
         points: [
           'While the browser is open, the exit IP is re-checked every 20 seconds through the same session',
           'If the provider switches the IP, the browser is stopped and closed at once and the app says so, so nothing is sent from a second IP',

@@ -69,5 +69,10 @@ jobs:
             || { echo '::error title=Website deploy::Installing the website failed; the server kept or restored the previous version. Check DEPLOY_* secrets and the server service.'; exit 1; }
           curl --fail --silent --show-error --max-time 30 https://proxybrowser.ubaidbinwaris.com/api/health
           echo "Website deployed from ${COMMIT_SHA}"
+      # Tells Bing and the other IndexNow engines which pages changed (sitemap lastmod within 2 days). Never fails the deploy.
+      - name: Notify search engines (IndexNow)
+        continue-on-error: true
+        timeout-minutes: 2
+        run: node scripts/indexnow.mjs
       - if: always()
         run: rm -f ~/.ssh/proxy-browser-deploy

@@ -8,7 +8,7 @@ Details of any failure are in **Settings → Advanced → Logs**. When you repor
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| The website or TrustedForm recorded a different IP (same state, other city) than the app showed | The sticky session expired or the provider replaced an offline IP | Update to 2.1.0 or later: a lifetime is always sent (15 minutes by default), each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again** |
+| The website or TrustedForm recorded a different IP (same state, other city) than the app showed | The sticky session expired or the provider replaced an offline IP | Update to 2.1.0 or later: a lifetime is always sent (15 minutes by default), each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again**. Background: [why a sticky IP changes](/docs/sticky-sessions) |
 | The website shows a nearby ZIP or city for the same IP | IP location databases disagree at ZIP level (e.g. 98104 vs 98101) | Normal — compare the IP address, not the ZIP. The app shows ZIPs as approximate (**≈ 98104**) |
 | *"The proxy could not keep one IP in …"* (`IP_UNSTABLE`) | Three sessions in a row changed IP within seconds | Try again in a minute, or choose another city or state |
 | *"… did not respond. The proxy exit … is working"* (`SITE_UNREACHABLE`) | The page failed to load but the proxy works: the website is down or blocking the IP | Try later, or open the site without a proxy to check it |

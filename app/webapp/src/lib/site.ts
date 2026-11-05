@@ -57,6 +57,7 @@ export const FOOTER_GUIDES: SiteLink[] = [
   { href: '/docs/oxylabs-proxy-setup', label: 'Oxylabs proxy' },
   { href: '/docs/decodo-proxy-setup', label: 'Decodo proxy' },
   { href: '/docs/iproyal-proxy-setup', label: 'IPRoyal proxy' },
+  { href: '/docs/sticky-sessions', label: 'Sticky sessions' },
   { href: '/docs/troubleshooting', label: 'Troubleshooting' },
 ]
 /** Static (non-docs) pages listed in the sitemap, with their relative priority. */

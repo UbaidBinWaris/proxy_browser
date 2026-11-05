@@ -81,7 +81,7 @@ These providers accept only certain sticky session IDs (letters and digits only;
 
 ## Sticky and rotating sessions
 
-Use sticky for multi-step forms: one exit IP is kept for the session TTL (the app always sends one: **Keep the same IP for (minutes)** in Settings, 15 by default; Bright Data has no TTL and ends a session after 5 idle minutes — the app's 20-second IP re-check keeps it active). Rotating may use a different exit IP for every request.
+Use sticky for multi-step forms: one exit IP is kept for the session TTL (the app always sends one: **Keep the same IP for (minutes)** in Settings, 15 by default; Bright Data has no TTL and ends a session after 5 idle minutes — the app's 20-second IP re-check keeps it active). Rotating may use a different exit IP for every request. Why a sticky IP can still change, with measurements, is in [Sticky sessions](/docs/sticky-sessions).
 
 | Mode | Behaviour |
 | --- | --- |
