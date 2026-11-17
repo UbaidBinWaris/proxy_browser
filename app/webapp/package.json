@@ -15,7 +15,7 @@
     "test": "node --import tsx --test --test-isolation=none tests/*.test.ts"
   },
   "dependencies": {
-    "marked": "18.0.14",
+    "marked": "18.1.2",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
