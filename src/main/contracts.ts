@@ -364,6 +364,13 @@ export interface LaunchVerification {
    * absent when the requested target was used. Never written back to a saved profile.
    */
   widenedTarget?: GeoTarget
+  /**
+   * Lifetime of the chosen sticky session in minutes, after the provider's limit: how long the provider keeps
+   * its IP. Null/absent for rotating sessions and providers without a lifetime parameter.
+   */
+  ipHoldMinutes?: number | null
+  /** When the chosen sticky session was first used (ISO), which starts its lifetime; null/absent when unknown. */
+  sessionStartedAt?: string | null
 }
 
 export interface ProxyManager {

@@ -299,6 +299,8 @@ interface Harness {
   ipLookups: Array<IpInfo | Error>
   /** When set, the fake proxy's launch check reports that the area was widened to this target. */
   widened: { current: GeoTarget | null }
+  /** When set, the fake proxy's launch check reports the sticky session's lifetime and first use. */
+  ipHold: { current: { minutes: number; startedAt: string } | null }
   /** Proxy connections the IP checker was called with (null = direct lookup). */
   lookupCalls: Array<ProxyConnection | null>
 }
@@ -329,7 +331,7 @@ interface HarnessOptions {
   /** Replace the fake proxy manager (e.g. with a real one over a scripted IP checker). */
   makeProxy?: (db: Database, logger: Logger) => ProxyManager
   launchTimeoutMs?: number
-  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess' | 'screenWorkArea' | 'ipWatchIntervalMs' | 'onExitIpChange'>
+  manager?: Pick<BrowserManagerOptions, 'engineBusyMessage' | 'liveSessions' | 'findBrowserPid' | 'heartbeatIntervalMs' | 'siteAccess' | 'screenWorkArea' | 'ipWatchIntervalMs' | 'onExitIpChange' | 'onIpHoldEnding'>
 }
 
 async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null = null, options: HarnessOptions = {}): Promise<Harness> {
@@ -349,6 +351,7 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
   const proxyResult = { current: { status: 'working', sessionId: 'qa-session-1', ip: ipInfo, error: null } as ProxyTestResult }
   const installed = { current: true }
   const widened: { current: GeoTarget | null } = { current: null }
+  const ipHold: { current: { minutes: number; startedAt: string } | null } = { current: null }
 
   const profiles: ProfileManager = {
     list: () => db.profiles.list(),
@@ -407,7 +410,8 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
         const wider = widened.current
         return { result, targetMatch: 'match', attempts: 3, maxAttempts: 3, sessionId: `${sessionId}-r3`, warning: `No exit IPs available in the ZIP right now; connected via ${wider.state} instead.`, widenedTarget: wider }
       }
-      return { result, targetMatch, attempts: 1, maxAttempts: 1, sessionId, warning: null }
+      const hold = ipHold.current ? { ipHoldMinutes: ipHold.current.minutes, sessionStartedAt: ipHold.current.startedAt } : {}
+      return { result, targetMatch, attempts: 1, maxAttempts: 1, sessionId, warning: null, ...hold }
     },
     getCurrentIp: async () => ipInfo,
     rotateSession: async () => {
@@ -501,6 +505,7 @@ async function buildHarness(closeTimeoutMs: number, webkitLibsDir: string | null
     ipLookups,
     lookupCalls,
     widened,
+    ipHold,
   }
 }
 
@@ -692,6 +697,51 @@ describe('createBrowserManager', () => {
         await new Promise((resolve) => setTimeout(resolve, 60))
         expect(w.lookupCalls.length).toBe(after)
         expect(w.db.testRuns.get(session.runId)?.ipChanges).toEqual([])
+      } finally {
+        w.db.close()
+      }
+    })
+
+    it('knows when the sticky lifetime ends, warns before it, and says the time ran out when the IP changes then', async () => {
+      const endings: number[] = []
+      const w = await buildHarness(200, null, { manager: { ipWatchIntervalMs: 15, onIpHoldEnding: (_session, minutesLeft) => endings.push(minutesLeft) } })
+      try {
+        w.proxyResult.current = { status: 'working', sessionId: 'ok-1', ip: OKLAHOMA_A, error: null }
+        // A 15-minute session first used 14.6 minutes ago: the 2-minute warning is due at once, and the
+        // change the second check sees falls in the last minute of its lifetime.
+        w.ipHold.current = { minutes: 15, startedAt: new Date(Date.now() - 14.6 * 60_000).toISOString() }
+        w.ipLookups.push(OKLAHOMA_A, OKLAHOMA_B)
+        const session = await w.manager.launch(w.profile({ name: 'OK sticky', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => w.sessions.some((s) => s.id === session.id && s.status === 'closed'), 'stopped and closed', 3_000)
+        expect(endings).toEqual([1])
+        const changed = w.sessions.find((s) => s.id === session.id && s.exitIpWatch === 'changed')!
+        expect(changed.ipHoldMinutes).toBe(15)
+        expect(Date.parse(changed.ipHoldUntil!)).toBeGreaterThan(Date.now() - 60_000)
+        expect(changed.ipChanges[0]).toMatchObject({ reason: 'expired', afterMinutes: 15 })
+        expect(changed.statusDetail).toBe(
+          'Stopped: the proxy keeps an IP for 15 minutes and that time ran out, so the IP changed from 203.0.113.74 (Shawnee, Oklahoma, 74801) to 198.51.100.57 (Duncan, Oklahoma, 73533). The browser was closed so the form could not be sent from another IP. Launch again for a fresh IP; to keep an IP longer, raise "Keep the same IP for" in Settings.',
+        )
+      } finally {
+        w.db.close()
+      }
+    })
+
+    it('says the provider replaced the IP early when it changes well before the lifetime ends', async () => {
+      const endings: number[] = []
+      const w = await buildHarness(200, null, { manager: { ipWatchIntervalMs: 15, onIpHoldEnding: (_session, minutesLeft) => endings.push(minutesLeft) } })
+      try {
+        w.proxyResult.current = { status: 'working', sessionId: 'ok-1', ip: OKLAHOMA_A, error: null }
+        w.ipHold.current = { minutes: 60, startedAt: new Date(Date.now() - 6 * 60_000).toISOString() }
+        w.ipLookups.push(OKLAHOMA_A, OKLAHOMA_B)
+        const session = await w.manager.launch(w.profile({ name: 'Small town', stickySessionId: 'ok-1', target: OK }))
+        await waitFor(() => w.sessions.some((s) => s.id === session.id && s.status === 'closed'), 'stopped and closed', 3_000)
+        const changed = w.sessions.find((s) => s.id === session.id && s.exitIpWatch === 'changed')!
+        expect(changed.ipChanges[0]).toMatchObject({ reason: 'replaced', afterMinutes: 6 })
+        expect(changed.statusDetail).toContain('Stopped: after 6 min the proxy replaced the IP, from 203.0.113.74')
+        expect(changed.statusDetail).toContain('a city or state target keeps its IP longer')
+        expect(w.db.testRuns.get(session.runId)?.ipChanges[0]).toMatchObject({ reason: 'replaced', afterMinutes: 6 })
+        // 54 minutes were left: no warning was due.
+        expect(endings).toEqual([])
       } finally {
         w.db.close()
       }

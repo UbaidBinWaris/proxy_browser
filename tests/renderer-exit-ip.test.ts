@@ -39,4 +39,25 @@ describe('exit-IP watch wording', () => {
     expect(newIpChanges(undefined, [change])).toEqual([change])
     expect(newIpChanges([change], [change])).toEqual([])
   })
+
+  it('counts down the sticky session lifetime and warns in its last two minutes', () => {
+    const now = Date.parse('2026-11-24T12:00:00.000Z')
+    const base = { watch: 'watching' as const, ipChanges: [], verifiedIp, target: OK, lastIpCheckAt: change.at, ipHoldMinutes: 15 }
+    const plenty = exitIpNotice({ ...base, ipHoldUntil: new Date(now + 9.5 * 60_000).toISOString(), now })
+    expect(plenty).toMatchObject({ tone: 'ok', title: 'IP stable' })
+    expect(plenty?.detail).toMatch(/^Same IP until .+ \(10 min left\)\. Re-checked every 20 seconds/)
+    const ending = exitIpNotice({ ...base, ipHoldUntil: new Date(now + 90_000).toISOString(), now })
+    expect(ending).toMatchObject({ tone: 'warning', title: 'The IP changes in about 2 minutes' })
+    expect(ending?.detail).toContain('submit the form now, or close the browser and launch again')
+    // Past the end (the change is detected on the next check) and unknown lifetimes keep the plain wording.
+    expect(exitIpNotice({ ...base, ipHoldUntil: new Date(now - 1000).toISOString(), now })?.detail).toMatch(/^Re-checked every 20 seconds/)
+    expect(exitIpNotice({ ...base, ipHoldUntil: null, now })?.detail).toMatch(/^Re-checked every 20 seconds/)
+  })
+
+  it('explains an expired lifetime and an early replacement differently', () => {
+    const expired = exitIpNotice({ watch: 'changed', ipChanges: [{ ...change, reason: 'expired', afterMinutes: 15 }], verifiedIp, target: OK, lastIpCheckAt: change.at, ipHoldMinutes: 15 })
+    expect(expired?.detail).toContain('The proxy keeps an IP for 15 minutes, and that time ran out.')
+    const replaced = exitIpNotice({ watch: 'changed', ipChanges: [{ ...change, reason: 'replaced', afterMinutes: 6 }], verifiedIp, target: OK, lastIpCheckAt: change.at, ipHoldMinutes: 60 })
+    expect(replaced?.detail).toContain('The proxy replaced the IP early (after 6 min) because the home connection behind it went offline')
+  })
 })

@@ -93,6 +93,8 @@ function session(id: string, overrides: Partial<BrowserSession> = {}): BrowserSe
     exitIpWatch: 'off',
     currentExitIp: null,
     lastIpCheckAt: null,
+    ipHoldUntil: null,
+    ipHoldMinutes: null,
     ...overrides,
   }
 }

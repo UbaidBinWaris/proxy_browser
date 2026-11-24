@@ -67,7 +67,7 @@ import type {
   TargetMatch,
   TestRun,
 } from '@shared/types'
-import { BROWSER_ENGINE_LABELS, IP_WATCH_INTERVAL_MS } from '@shared/types'
+import { BROWSER_ENGINE_LABELS, IP_HOLD_WARNING_MS, IP_WATCH_INTERVAL_MS } from '@shared/types'
 import { AppException } from '../contracts'
 import type {
   BrowserManager,
@@ -153,6 +153,11 @@ export interface BrowserManagerOptions {
   ipWatchIntervalMs?: number
   /** Called once per detected exit-IP change (main.ts shows a system notification: the user is in the browser window, not the app). */
   onExitIpChange?: (session: BrowserSession, change: ExitIpChange) => void
+  /**
+   * Called once, IP_HOLD_WARNING_MS before an open sticky session's lifetime ends (main.ts shows a system
+   * notification), so the user can finish the form or launch again before the provider changes the IP.
+   */
+  onIpHoldEnding?: (session: BrowserSession, minutesLeft: number) => void
   /** Site access tokens (src/main/site-access): routes enabled tokens into every new context. */
   siteAccess?: SiteAccessAttacher
   /**
@@ -216,6 +221,8 @@ interface LiveSession {
   ipWatchTimer: ReturnType<typeof setTimeout> | null
   ipWatchBusy: boolean
   ipWatchFailures: number
+  /** Fires IP_HOLD_WARNING_MS before session.ipHoldUntil. */
+  ipHoldTimer: ReturnType<typeof setTimeout> | null
 }
 
 /** What the verify step established before the browser launches. */
@@ -227,6 +234,9 @@ interface VerifiedExit {
   attempts: number
   maxAttempts: number
   warning: string | null
+  /** Lifetime of the sticky session (null when unknown) and when it ends (ISO). */
+  ipHoldMinutes: number | null
+  ipHoldUntil: string | null
 }
 
 /** Attempt budget for a launch: re-rolls only apply to a sticky session with a target and a policy other than 'off'. */
@@ -353,10 +363,36 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
   // -------------------------------------------------------------------------
 
   const ipWatchIntervalMs = opts.ipWatchIntervalMs ?? IP_WATCH_INTERVAL_MS
+  /** A change detected this close to the end of the session's lifetime counts as the lifetime running out. */
+  const IP_HOLD_EXPIRY_SLACK_MS = 60_000
   /** Consecutive failed checks before the session's IP is reported as unverified. */
   const IP_WATCH_FAILURE_LIMIT = 3
 
   const placeOf = (ip: IpInfo): string => [ip.city, ip.region, ip.postalCode].filter((part): part is string => Boolean(part)).join(', ') || ip.country || 'unknown location'
+
+  /**
+   * Why the IP changed, when the session's lifetime is known: at (or within IP_HOLD_EXPIRY_SLACK_MS of) its end the
+   * lifetime ran out; earlier, the provider replaced the IP (its home connection went offline).
+   */
+  const changeReason = (session: BrowserSession, at: number): Pick<ExitIpChange, 'reason' | 'afterMinutes'> => {
+    const until = session.ipHoldUntil ? Date.parse(session.ipHoldUntil) : Number.NaN
+    if (Number.isNaN(until) || session.ipHoldMinutes === null) return {}
+    const started = until - session.ipHoldMinutes * 60_000
+    return { reason: at >= until - IP_HOLD_EXPIRY_SLACK_MS ? 'expired' : 'replaced', afterMinutes: Math.max(0, Math.round((at - started) / 60_000)) }
+  }
+
+  /** The stop message: what happened, in plain words, and what to do next. */
+  const ipChangedMessage = (previous: IpInfo, next: IpInfo, change: ExitIpChange, holdMinutes: number | null): string => {
+    const swap = `${previous.ip} (${placeOf(previous)}) to ${next.ip} (${placeOf(next)})`
+    const closed = 'The browser was closed so the form could not be sent from another IP.'
+    if (change.reason === 'expired') {
+      return `Stopped: the proxy keeps an IP for ${holdMinutes} minutes and that time ran out, so the IP changed from ${swap}. ${closed} Launch again for a fresh IP; to keep an IP longer, raise "Keep the same IP for" in Settings.`
+    }
+    if (change.reason === 'replaced') {
+      return `Stopped: after ${change.afterMinutes} min the proxy replaced the IP, from ${swap}, because the home connection behind it went offline. ${closed} Launch again. This happens more often in small towns; a city or state target keeps its IP longer.`
+    }
+    return `Stopped: the IP changed from ${swap}. ${closed} Launch again.`
+  }
 
   /**
    * A page that fails through a verified proxy is usually blamed on the proxy. Re-check the exit IP
@@ -393,10 +429,34 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
   const stopIpWatch = (ls: LiveSession): void => {
     if (ls.ipWatchTimer) clearTimeout(ls.ipWatchTimer)
     ls.ipWatchTimer = null
+    if (ls.ipHoldTimer) clearTimeout(ls.ipHoldTimer)
+    ls.ipHoldTimer = null
+  }
+
+  /** Warn IP_HOLD_WARNING_MS before the sticky session's lifetime ends, while the browser is still open. */
+  const scheduleIpHoldWarning = (ls: LiveSession): void => {
+    const until = ls.session.ipHoldUntil ? Date.parse(ls.session.ipHoldUntil) : Number.NaN
+    if (Number.isNaN(until)) return
+    const delay = Math.max(0, until - IP_HOLD_WARNING_MS - Date.now())
+    if (until - Date.now() <= 0) return
+    ls.ipHoldTimer = setTimeout(() => {
+      ls.ipHoldTimer = null
+      if (ls.finalized || ls.session.status !== 'open' || ls.session.exitIpWatch === 'changed') return
+      const minutesLeft = Math.max(1, Math.round((until - Date.now()) / 60_000))
+      logger.info(SCOPE, `${label(ls)}: the sticky session's IP changes in about ${minutesLeft} min (lifetime ${ls.session.ipHoldMinutes} min)`, { sessionId: ls.session.id, ipHoldUntil: ls.session.ipHoldUntil })
+      try {
+        opts.onIpHoldEnding?.(ls.session, minutesLeft)
+      } catch (err) {
+        logger.warn(SCOPE, `${label(ls)}: IP lifetime notification failed: ${shortErrorText(err, ls.secrets)}`, { sessionId: ls.session.id })
+      }
+    }, delay)
+    ls.ipHoldTimer.unref?.()
   }
 
   const scheduleIpCheck = (ls: LiveSession, delayMs: number): void => {
-    stopIpWatch(ls)
+    // Only the check timer: the lifetime warning (ipHoldTimer) must survive every re-check.
+    if (ls.ipWatchTimer) clearTimeout(ls.ipWatchTimer)
+    ls.ipWatchTimer = null
     if (ls.finalized) return
     ls.ipWatchTimer = setTimeout(() => {
       ls.ipWatchTimer = null
@@ -420,6 +480,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     emitSession(ls.session)
     // First check right away: catches a switch between the launch check and the page load.
     scheduleIpCheck(ls, 0)
+    scheduleIpHoldWarning(ls)
   }
 
   const checkExitIp = async (ls: LiveSession): Promise<void> => {
@@ -441,13 +502,14 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
           city: ip.city,
           region: ip.region,
           postalCode: ip.postalCode,
+          ...changeReason(ls.session, Date.parse(ls.session.lastIpCheckAt)),
         }
         ls.session.ipChanges = [...ls.session.ipChanges, change]
         ls.session.exitIpWatch = 'changed'
         // Stop at once: first cut the page off the network so nothing more (a form submit, a
         // certification ping) leaves from the new IP, then record why and close the browser.
         await blockAllTraffic(ls)
-        const message = `Stopped: the IP changed from ${previous.ip} (${placeOf(previous)}) to ${ip.ip} (${placeOf(ip)}). The browser was closed so the form could not be sent from another IP. Launch again.`
+        const message = ipChangedMessage(previous, ip, change, ls.session.ipHoldMinutes)
         ls.session.statusDetail = message
         ls.session.error = { code: 'IP_CHANGED', message, detail: `${previous.ip} → ${ip.ip}` }
         ls.closeReason = 'exit IP changed'
@@ -460,6 +522,9 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
           toIp: ip.ip,
           fromPlace: placeOf(previous),
           toPlace: placeOf(ip),
+          reason: change.reason ?? null,
+          afterMinutes: change.afterMinutes ?? null,
+          ipHoldMinutes: ls.session.ipHoldMinutes,
         })
         try {
           opts.onExitIpChange?.(ls.session, change)
@@ -618,6 +683,13 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     }
   }
 
+  /** When a sticky session's lifetime ends: its first use plus its lifetime (both needed). */
+  const ipHold = (minutes: number | null, startedAt: string | null): Pick<VerifiedExit, 'ipHoldMinutes' | 'ipHoldUntil'> => {
+    const start = startedAt ? Date.parse(startedAt) : Number.NaN
+    if (minutes === null || Number.isNaN(start)) return { ipHoldMinutes: null, ipHoldUntil: null }
+    return { ipHoldMinutes: minutes, ipHoldUntil: new Date(start + minutes * 60_000).toISOString() }
+  }
+
   /**
    * Verify the exit IP with the real upstream credentials. For a sticky session with a target the
    * proxy manager re-rolls the session id while the location falls short of settings.locationMatchPolicy;
@@ -686,10 +758,11 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         attempts: verification.attempts,
         maxAttempts: verification.maxAttempts,
         warning: verification.warning,
+        ...ipHold(verification.ipHoldMinutes ?? null, verification.sessionStartedAt ?? null),
       }
     }
     // The bundled demo has no network exit; avoid an external IP lookup for offline practice.
-    const direct = { proxySessionId: null, targetMatch: null, attempts: 1, maxAttempts: 1, warning: null }
+    const direct = { proxySessionId: null, targetMatch: null, attempts: 1, maxAttempts: 1, warning: null, ipHoldMinutes: null, ipHoldUntil: null }
     if (isDemoUrl(ls.formUrl)) return { ...direct, ip: null }
     try {
       return { ...direct, ip: await ipChecker.lookup(null) }
@@ -711,6 +784,8 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
     ls.session.locationAttempts = verified.attempts
     ls.session.locationMaxAttempts = verified.maxAttempts
     ls.session.locationWarning = verified.warning
+    ls.session.ipHoldMinutes = verified.ipHoldMinutes
+    ls.session.ipHoldUntil = verified.ipHoldUntil
     // "Could not get an exit IP in … after N attempts; using …" stays on the session as locationWarning.
     if (verified.warning) ls.session.statusDetail = verified.warning
     if (targetMatch && targetMatch !== 'match') {
@@ -1184,6 +1259,8 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
         currentExitIp: null,
         ipChanges: [],
         lastIpCheckAt: null,
+        ipHoldUntil: null,
+        ipHoldMinutes: null,
       },
       runId: run.id,
       profile,
@@ -1207,6 +1284,7 @@ export function createBrowserManager(opts: BrowserManagerOptions): BrowserManage
       ipWatchTimer: null,
       ipWatchBusy: false,
       ipWatchFailures: 0,
+      ipHoldTimer: null,
     }
     live.set(ls.session.id, ls)
     remember(ls)

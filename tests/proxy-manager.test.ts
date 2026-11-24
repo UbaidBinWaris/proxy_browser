@@ -565,6 +565,22 @@ describe('verifyForLaunch (location re-roll)', () => {
     expect(verification.sessionId).toBe(stateIds[2])
   })
 
+  it('reports how long the chosen sticky session keeps its IP (after the provider limit) and when it was first used', async () => {
+    const before = Date.now()
+    const { manager } = managerWith([ELIZABETH_07201, ELIZABETH_07201])
+    const verification = await manager.verifyForLaunch(zipProfile({ stickyTtlMinutes: 90 }), { policy: 'state', attempts: 3, confirmSticky: true })
+    expect(verification.result.status).toBe('working')
+    // DataImpulse lifetimes are capped at 60 minutes.
+    expect(verification.ipHoldMinutes).toBe(60)
+    const started = Date.parse(verification.sessionStartedAt!)
+    expect(started).toBeGreaterThanOrEqual(before)
+    expect(started).toBeLessThanOrEqual(Date.now())
+    // Rotating sessions keep no IP.
+    const rotating = managerWith([ELIZABETH_07201])
+    const loose = await rotating.manager.verifyForLaunch(zipProfile({ name: 'Rotating', proxyMode: 'rotating', stickySessionId: null }), { policy: 'state', attempts: 3 })
+    expect(loose).toMatchObject({ ipHoldMinutes: null, sessionStartedAt: null })
+  })
+
   it('gives up when even the state has no exit IP', async () => {
     const { manager, seen } = managerWith([noIp(), noIp(), noIp()])
     const verification = await manager.verifyForLaunch(zipProfile(), { policy: 'state', attempts: 3, widenWhenUnavailable: true })

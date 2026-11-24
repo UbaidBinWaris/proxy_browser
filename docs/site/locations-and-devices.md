@@ -52,7 +52,7 @@ A sticky session keeps one IP, so a bad draw would last the whole session. For a
 
 ### ZIP targeting caveat
 
-Some ZIP codes have only a handful of exit IPs in a pool, and carrier (mobile network) IPs often geolocate to the carrier's hub instead of the subscriber's town. Every sticky ID that is tried keeps its IP pinned until it expires, so re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503** (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session and location right now"*) until a session expires (its TTL, 15 minutes by default).
+Some ZIP codes have only a handful of exit IPs in a pool, and carrier (mobile network) IPs often geolocate to the carrier's hub instead of the subscriber's town. Every sticky ID that is tried keeps its IP pinned until it expires, so re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503** (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session and location right now"*) until a session expires (its TTL, 60 minutes by default). With **Use a wider area when the location has no IPs** on, a launch there uses the city or state instead.
 
 **Same state** is the pragmatic default. For thin ZIPs, use City or State targeting, rotating mode, or wait.
 

@@ -58,5 +58,11 @@
     "ZIP codes are shown as approximate (≈ 07103): IP lookup services disagree on ZIPs for the same IP, so a ZIP in the requested city now counts as a match.",
     "Rotating mode is labelled clearly: the IP shown is a sample and the website may see a different one.",
     "When a website does not load but the proxy works, the message now names the website instead of blaming the proxy."
+  ],
+  "2.2.0": [
+    "Fixes \"Browser stopped: the IP address changed\" while filling a form. Version 2.1 asked the proxy to keep each IP for only 15 minutes, and the proxy changes the IP the moment that time ends, so anyone who kept the browser open longer was stopped. IPs are now kept for 60 minutes, the DataImpulse maximum; each launch still gets its own fresh IP.",
+    "If you saved Settings in 2.1, the old 15-minute value is moved to 60 automatically. A value you chose yourself is kept.",
+    "While the browser is open, the app shows how long the IP is kept (\"Same IP until 2:45 PM\") and sends a notification 2 minutes before it ends, so you can submit the form or launch again first.",
+    "When the IP does change, the message says why: the time ran out, or the proxy replaced the IP early because the home connection behind it went offline, which happens more often in small towns. A city or state target keeps its IP longer."
   ]
 }

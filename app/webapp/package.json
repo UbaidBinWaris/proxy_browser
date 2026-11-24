@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "marked": "18.0.14",
-    "next": "16.4.3",
+    "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "tsx": "4.23.0",

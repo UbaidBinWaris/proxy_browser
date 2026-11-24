@@ -31,7 +31,7 @@ Multi-word names use underscores (`us_new_york`, `los_angeles`, `st_louis`). Sta
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `-sessid-<id>` and a lifetime, `-sesstime-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Without a lifetime Oxylabs keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `-sessid-<id>` and a lifetime, `-sesstime-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (60 by default). Without a lifetime Oxylabs keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
 
 ```text
 customer-USERNAME-st-us_new_jersey-sessid-ql202610077f3a0uv3n6-sesstime-15

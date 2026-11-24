@@ -58,6 +58,8 @@ function session(overrides: Partial<BrowserSession> = {}): BrowserSession {
     exitIpWatch: 'off',
     currentExitIp: null,
     lastIpCheckAt: null,
+    ipHoldUntil: null,
+    ipHoldMinutes: null,
     ...overrides,
   }
 }

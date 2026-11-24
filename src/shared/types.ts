@@ -506,11 +506,13 @@ export const LOCATION_MATCH_ATTEMPTS_MAX = 8
  * `sessttl.30` / `sessttl.60` the IP held for the whole test; `sessttl.120` was
  * unreliable (one Texas session got a new IP on every request).
  *
- * 15 minutes covers a typical 5–10 minute visit with margin, and a short lifetime releases the
- * IP sooner (a sticky session reserves its IP until the lifetime ends, which exhausts thin
- * ZIP/city pools). A browser kept open longer is still protected by the exit-IP watch.
+ * 2.1.x defaulted to 15 minutes. Measured on 2026-11-24 (Missouri, sessttl.15): the IP held for
+ * 897 s and changed at the next check — the lifetime itself ends the IP, and the exit-IP watch then
+ * stops the browser, so users who kept the browser open past 15 minutes were stopped mid-form.
+ * 60 is DataImpulse's maximum. Each quick launch uses a fresh session id, so a long lifetime never
+ * hands the same IP to the next launch; the exit-IP watch still stops the browser on any change.
  */
-export const DEFAULT_STICKY_TTL_MINUTES = 15
+export const DEFAULT_STICKY_TTL_MINUTES = 60
 export const STICKY_TTL_MINUTES_MIN = 1
 export const STICKY_TTL_MINUTES_MAX = 1440
 /**
@@ -519,6 +521,8 @@ export const STICKY_TTL_MINUTES_MAX = 1440
  * from the new IP is at most this long. Each check is one ~1 KB request through the proxy.
  */
 export const IP_WATCH_INTERVAL_MS = 20_000
+/** How long before a sticky session's lifetime ends the user is warned that the IP is about to change. */
+export const IP_HOLD_WARNING_MS = 2 * 60_000
 
 /** True when `match` satisfies `policy` ('unknown' cannot be improved by a re-roll, so it is accepted). */
 export function satisfiesLocationPolicy(policy: LocationMatchPolicy, match: TargetMatch | null): boolean {
@@ -907,11 +911,20 @@ export interface ExitIpChange {
   city: string | null
   region: string | null
   postalCode: string | null
+  /**
+   * Why the IP changed, when the session's lifetime is known: 'expired' when the session's lifetime ran out,
+   * 'replaced' when the provider swapped the IP earlier (the exit's home connection went offline). Absent on
+   * records from before 2.2.0 and for providers without a lifetime (Bright Data).
+   */
+  reason?: ExitIpChangeReason
+  /** Minutes from the session's first use to the change (rounded), when known. */
+  afterMinutes?: number
 }
+export type ExitIpChangeReason = 'expired' | 'replaced'
 
 /**
  * Exit-IP watch of an open session (settings.watchExitIp):
- * - 'watching': the IP is re-checked every minute through the same session and has not changed;
+ * - 'watching': the IP is re-checked every IP_WATCH_INTERVAL_MS through the same session and has not changed;
  * - 'changed': the provider switched to another exit IP — the page may now see a different IP than the one verified;
  * - 'unverified': the last checks failed, so the current IP is unknown;
  * - 'rotating': a rotating session — every connection may use a different IP by design, so there is nothing to watch;
@@ -959,6 +972,13 @@ export interface BrowserSession {
   /** Every exit-IP change detected while the browser was open, oldest first. */
   ipChanges: ExitIpChange[]
   lastIpCheckAt: string | null
+  /**
+   * When the sticky session's lifetime ends and the provider will hand out another IP (ISO): the session's first
+   * use plus its lifetime. Null for rotating and direct sessions and for providers without a lifetime parameter.
+   */
+  ipHoldUntil: string | null
+  /** The sticky session's lifetime in minutes after the provider's limit (null when ipHoldUntil is null). */
+  ipHoldMinutes: number | null
 }
 
 // ---------------------------------------------------------------------------

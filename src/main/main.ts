@@ -60,7 +60,7 @@ import type {
 import { openDatabase } from './database/index'
 import { createBroadcaster, registerIpcHandlers } from './ipc/index'
 import { SCREENSHOT_SCHEME, resolveScreenshotRequest } from './ipc/screenshot-protocol'
-import { ipChangeNotificationText } from './notifications/ip-change'
+import { ipChangeNotificationText, ipHoldEndingNotificationText } from './notifications/ip-change'
 import { createLauncher } from './launcher/launcher'
 import { resolveGeoNamesDir } from './locations/geonames-loader'
 import { createLocationsService } from './locations/locations-service'
@@ -532,6 +532,12 @@ async function bootstrap(): Promise<Runtime> {
       const notice = new Notification({ title: text.title, body: text.body, urgency: 'critical' })
       notice.on('click', showApp)
       notice.show()
+    },
+    // A heads-up only: the app stays where it is, the user keeps working in the browser.
+    onIpHoldEnding: (session, minutesLeft) => {
+      if (!Notification.isSupported()) return
+      const text = ipHoldEndingNotificationText(session, minutesLeft)
+      new Notification({ title: text.title, body: text.body }).show()
     },
   })
   const launcher = createLauncher({

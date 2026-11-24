@@ -30,7 +30,7 @@ State and city names are lower case without spaces (`newjersey`). IPRoyal does n
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `_session-<id>`, where IPRoyal requires exactly 8 letters and digits; the app maps your profile's session ID to a stable 8-character token. A lifetime is always sent as `_lifetime-<N>m`, up to 7 days: the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Turn **Sticky session** off for rotating mode.
+Sticky mode adds `_session-<id>`, where IPRoyal requires exactly 8 letters and digits; the app maps your profile's session ID to a stable 8-character token. A lifetime is always sent as `_lifetime-<N>m`, up to 7 days: the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (60 by default). Turn **Sticky session** off for rotating mode.
 
 ```text
 PASSWORD_country-us_state-newjersey_session-0uv3n6d0_lifetime-15m

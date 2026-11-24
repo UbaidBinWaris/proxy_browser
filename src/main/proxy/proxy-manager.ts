@@ -52,6 +52,7 @@ import type {
   ProxyRequest,
   ProxySessionRepository,
 } from '../contracts'
+import { clampTtlMinutes } from './providers/dialect-helpers'
 import { encodePlaceName, encodeStateName, notConfiguredMessage, productNotConfiguredMessage } from './targeting-text'
 
 export interface ProxyManagerOptions {
@@ -403,7 +404,31 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     return compareTargetWith(target, ip, states)
   }
 
+  /**
+   * First use of each sticky session id (provider:id → epoch ms). A session's lifetime runs from its first request,
+   * so the browser manager can tell when the provider will hand out another IP. A session id used again after its
+   * lifetime ran out starts a new lifetime.
+   */
+  const sessionFirstUse = new Map<string, number>()
+
+  /** The sticky lifetime the provider applies to this request, in minutes; null when it has none (rotating, Bright Data). */
+  function holdMinutesFor(provider: ProxyProvider, request: Pick<ProxyRequest, 'sessionId' | 'ttlMinutes'>): number | null {
+    const range = provider.capabilities.sticky.ttlMinutes
+    if (request.sessionId === null || !range) return null
+    return clampTtlMinutes(request.ttlMinutes, range)
+  }
+
+  function noteSessionUse(provider: ProxyProvider, request: ProxyRequest): void {
+    if (request.sessionId === null) return
+    const key = `${provider.name}:${request.sessionId}`
+    const now = Date.now()
+    const started = sessionFirstUse.get(key)
+    const minutes = holdMinutesFor(provider, request)
+    if (started === undefined || (minutes !== null && now - started >= minutes * 60_000)) sessionFirstUse.set(key, now)
+  }
+
   async function runTest(profile: Profile | null, provider: ProxyProvider, request: ProxyRequest): Promise<{ result: ProxyTestResult; session: ProxySession }> {
+    noteSessionUse(provider, request)
     const profileName = profile?.name ?? 'gateway'
     const connection = provider.buildProxyConfig(request)
     let row = sessions.upsertForProfile(profile?.id ?? null, request.sessionId, contextFor(provider, request, connection.targetingString))
@@ -540,7 +565,18 @@ export function createProxyManager(opts: ProxyManagerOptions): ProxyManager {
     return null
   }
 
+  /** The pre-launch check, plus how long the chosen sticky session keeps its IP and when that lifetime started. */
   async function verifyForLaunch(profile: Profile, options: LaunchVerifyOptions): Promise<LaunchVerification> {
+    const verification = await verifySessionForLaunch(profile, options)
+    const { sessionId } = verification
+    if (verification.result.status !== 'working' || sessionId === null || profile.proxyMode !== 'sticky') return { ...verification, ipHoldMinutes: null, sessionStartedAt: null }
+    const provider = providerFor(profile)
+    const ipHoldMinutes = holdMinutesFor(provider, { sessionId, ttlMinutes: effectiveStickyTtl(profile.stickyTtlMinutes) })
+    const started = sessionFirstUse.get(`${provider.name}:${sessionId}`)
+    return { ...verification, ipHoldMinutes, sessionStartedAt: ipHoldMinutes !== null && started !== undefined ? new Date(started).toISOString() : null }
+  }
+
+  async function verifySessionForLaunch(profile: Profile, options: LaunchVerifyOptions): Promise<LaunchVerification> {
     if (profile.proxyMode === 'none') {
       throw new AppException('INVALID_PROFILE', `Profile "${profile.name}" does not use a proxy; there is no proxy exit IP to verify.`)
     }

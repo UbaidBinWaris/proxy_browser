@@ -458,7 +458,7 @@ function AdvancedTab({ form, errors, set, onSubmit, openSections, onToggleSectio
             htmlFor="settings-defaultStickyTtlMinutes"
             label="Keep the same IP for (minutes)"
             error={errors.defaultStickyTtlMinutes}
-            hint="How long a sticky session keeps one exit IP (15 is enough for a 5–10 minute visit). Without it, providers switch the IP after about 5 minutes. DataImpulse allows at most 60."
+            hint="How long a sticky session keeps one exit IP, from the launch check. When it runs out the provider switches the IP and the browser is stopped, so keep it longer than any visit. DataImpulse allows at most 60. Each launch gets a new IP either way."
             required
           >
             <Input

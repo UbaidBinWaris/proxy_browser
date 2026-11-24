@@ -294,7 +294,7 @@ pool is Direct) a random location, all at once.
 - **Options · sticky / rotating** (collapsed) — **Sticky session** (on by
   default: *"Keeps the same exit IP for the whole session."*; off = a rotating
   exit IP) and **Session TTL (min)** (1–1440; empty = the default from
-  Settings → Advanced → Targeting → **Keep the same IP for (minutes)**, 15).
+  Settings → Advanced → Targeting → **Keep the same IP for (minutes)**, 60).
   With Sticky session off, a blue note warns that the website may see a
   different IP than the one shown.
 
@@ -676,7 +676,7 @@ login__cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261007-7f3a;sesst
 ### Sticky and rotating sessions
 
 - **Sticky** (default): `sessid` pins one exit IP for **Session TTL**
-  minutes, or for **Keep the same IP for (minutes)** from Settings (15 by
+  minutes, or for **Keep the same IP for (minutes)** from Settings (60 by
   default) — the app always sends a lifetime (`sessttl`). Quick launches generate a fresh id per launch,
   `ql-<YYYYMMDD>-<4 random characters>`. Saved profiles use their **Sticky
   session ID** (the editor suggests `profile-<name>`); a sticky profile without
@@ -705,8 +705,14 @@ this, and the app handles each of them:
    `sessttl.120` was unreliable, so DataImpulse lifetimes are capped at 60
    minutes. The app therefore **always** sends a lifetime: the profile's own
    **Session TTL**, else **Keep the same IP for (minutes)** (Settings →
-   Advanced → Targeting, default **15** — enough for a 5–10 minute visit, and
-   the IP is released soon after you are done).
+   Advanced → Targeting, default **60**). The IP changes the moment the
+   lifetime ends: on 2026-11-24 a `sessttl.15` session held for 897 s and
+   changed at the next check. 2.1 defaulted to 15 minutes, so users who kept
+   the browser open longer were stopped mid-form; 2.2 uses 60 (each quick
+   launch still gets a fresh session and IP) and moves a stored 15 to 60 once.
+   While the browser is open the run shows *"Same IP until 2:45 PM (12 min
+   left)"*, and a system notification warns **2 minutes before** the lifetime
+   ends.
 2. **The session never held its IP.** Some sessions (seen in Texas) got a new
    IP on every request whatever lifetime was asked for. Before the browser
    opens, the app checks the exit IP of the chosen session a **second time,
@@ -726,7 +732,11 @@ this, and the app handles each of them:
    shows *"Browser stopped: the IP address changed"* — as a dialog in the app
    (brought to the front) with **Launch again**, as a **system
    notification**, on the run page and in the Sessions table (*IP changed —
-   stopped*). The change, with both IPs and places, is saved on the run
+   stopped*). The message names the cause when the lifetime is known: *"the
+   proxy keeps an IP for 60 minutes and that time ran out"*, or *"after 6 min
+   the proxy replaced the IP … because the home connection behind it went
+   offline"* (more common in small towns; a city or state target keeps its IP
+   longer). The change, with both IPs, places and cause, is saved on the run
    (History shows it later). If re-checks fail three times in a row the
    session shows *"IP could not be re-checked"*.
 
@@ -792,7 +802,7 @@ IPs: one placed in Newark, NJ 07103 and a carrier IP placed in New York, NY
 re-rolling a thin ZIP can exhaust it: the gateway then answers **HTTP 503**
 (`PROXY_DEAD`, *"The proxy gateway had no exit IP available for this session
 and location right now"*) to new sticky ids for that ZIP until a session
-expires (its TTL, 15 minutes by default). ZIPs such as `90012` (Los Angeles) and
+expires (its TTL, 60 minutes by default). Some small towns have no exit IP at all (ZIP 64070 / Lone Jack, MO answered 503 throughout a 17-minute test on 2026-11-24); with **Use a wider area when the location has no IPs** on, those launches use the whole state. ZIPs such as `90012` (Los Angeles) and
 `60601` (Chicago) matched on the first draw. **Same state** is the pragmatic
 default; for thin ZIPs use City or State targeting, rotating mode, or wait.
 
@@ -1349,7 +1359,7 @@ All settings are stored in the database (`app_settings`) and validated with Zod
 | `providerOptions` | Advanced → Targeting → **Place name encoding** | `{}` (each provider's default) | Per-provider options keyed by provider id; `encoding` is how multi-word places are written (DataImpulse: `remove-spaces`, `underscore`, `keep`). Replaces the global `targetingEncoding` of earlier versions, whose value is moved to `providerOptions.dataimpulse.encoding` on the first start |
 | `locationMatchPolicy` | Advanced → Targeting → **Location match** | `state` (*Same state*) | `off`, `state` or `exact` — see [policy](#location-match-policy-and-re-rolls) |
 | `locationMatchAttempts` | Advanced → Targeting → **Attempts** | `3` | Total IP checks for the policy (1–8) |
-| `defaultStickyTtlMinutes` | Advanced → Targeting → **Keep the same IP for (minutes)** | `15` | Sticky lifetime sent when a profile or launch sets none (1–1440; each provider clamps it, DataImpulse to 60). Without it providers switch the IP after a few minutes — see [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
+| `defaultStickyTtlMinutes` | Advanced → Targeting → **Keep the same IP for (minutes)** | `60` | Sticky lifetime sent when a profile or launch sets none (1–1440; each provider clamps it, DataImpulse to 60). Without it providers switch the IP after a few minutes — see [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
 | `watchExitIp` | Advanced → Targeting → **Stop the browser if the IP changes (recommended)** | on | Re-check an open sticky session's exit IP right after the page opens and every 20 seconds through the same session; on a change block the browser's traffic, close it, alert (dialog, system notification) and record the change on the run |
 | `widenTargetWhenUnavailable` | Advanced → Targeting → **Use a wider area when the location has no IPs** | on | When a ZIP or city has no exit IP right now (HTTP 503), try its city, then its state, for this launch only |
 | `extraChromiumArgs` | Advanced → Browser flags → **Extra Chromium flags** | none | Extra command-line flags (`--flag` or `--flag=value`, one per line) for every Chromium-family launch, bundled and installed; Firefox and WebKit ignore them |
@@ -1369,7 +1379,7 @@ Proxy credentials are **not** settings: they live in the encrypted vault.
 | Windows: *"Windows protected your PC"* | The EXE is not code-signed | **More info** → **Run anyway**. See [FAQ](#faq) for code signing |
 | Windows: antivirus quarantines or slows the EXE | Unsigned portable EXEs that unpack themselves to `%TEMP%` look suspicious to some scanners | Restore it / add an exception for the file, or sign the build |
 | Windows: the window takes several seconds to appear | The portable EXE unpacks itself to `%TEMP%` on every launch | Use **App & updates → Set up on this computer**, then launch the local shortcut |
-| **The website / TrustedForm recorded a different IP (same state, other city) than the app showed** | The sticky session expired (older versions sent no lifetime, so the provider switched the IP after ~5 minutes) or the provider replaced an offline IP | Update: a lifetime is now always sent (15 minutes by default), each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again**. See [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
+| **The website / TrustedForm recorded a different IP (same state, other city) than the app showed** | The sticky session expired (older versions sent no lifetime, so the provider switched the IP after ~5 minutes) or the provider replaced an offline IP | Update to 2.2: a lifetime is always sent (60 minutes by default; 2.1 used 15, which stopped longer visits), the app warns 2 minutes before it ends, each session is checked twice before the browser opens, and if the IP still changes the browser is **stopped at once** with *"Browser stopped: the IP address changed"*. Click **Launch again**. See [Keeping one IP](#keeping-one-ip-for-the-whole-visit) |
 | The website shows a nearby ZIP or city for the **same** IP | IP location databases disagree at ZIP level (e.g. 98104 vs 98101) | Normal — compare the IP address, not the ZIP. The app shows ZIPs as approximate (**≈ 98104**) |
 | `IP_UNSTABLE` *"The proxy could not keep one IP in …"* | Three sessions in a row changed IP within seconds (the provider ignored stickiness in that area) | Try again in a minute, or choose another city or state |
 | `SITE_UNREACHABLE` *"… did not respond. The proxy exit … is working"* | The page failed to load, but a re-check showed the proxy works: the website is down or blocking the IP | Try later, or open the site without a proxy to check it |

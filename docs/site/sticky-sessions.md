@@ -18,19 +18,20 @@ Measured on 30 October 2026 with a DataImpulse Residential plan through `gw.data
 | --- | --- |
 | None (`sessid` only) | Every session switched to another IP, in the same state but another city, about 5 minutes after it started |
 | `sessttl.10` | Switched at about 10 minutes, as asked |
-| `sessttl.15` | Held for the whole test, more than 10 minutes |
+| `sessttl.15` | Held for more than 10 minutes; in a 17-minute test on 24 November it held for 897 seconds and changed at the next check, right at 15 minutes |
 | `sessttl.30` and `sessttl.60` | Held for the whole 7.5-minute test |
 | `sessttl.120` | Unreliable: one Texas session got a new IP on every request |
 
 - In a second test, 2 of 8 Texas sessions changed IP between two checks only 3 seconds apart, whatever lifetime they had. The other six held.
 - The gateway name resolves to two servers, and both returned the same IP for the same session, so which server answers is not the cause.
+- Small towns can have no exit IPs at all: on 24 November, ZIP 64070 and the town of Lone Jack, Missouri, answered HTTP 503 ("no exit IP") for 17 minutes, so a launch there falls back to the whole state, and the IP can be anywhere in Missouri.
 - IP-location services disagree on ZIP codes: the same Seattle IP was placed in 98104 by one service and 98101 by another. Compare IP addresses, not ZIP codes.
 
-This is one provider, a small sample and one month. Providers change their pools, so measure your own plan with the steps below before you rely on these numbers.
+This is one provider, a small sample and two months. Providers change their pools, so measure your own plan with the steps below before you rely on these numbers.
 
 ## How to keep one IP for a whole visit
 
-- **Always send a lifetime longer than the visit.** For a 5 to 10 minute visit, 15 minutes is enough and releases the IP soon after. DataImpulse lifetimes above 60 minutes were unreliable, so the app caps them at 60.
+- **Always send a lifetime longer than the visit, with room to spare.** The lifetime counts from the first check, not from when the form is opened, and people get interrupted. The IP changes the moment the lifetime ends. DataImpulse lifetimes above 60 minutes were unreliable, so the app uses 60 by default and as its cap.
 - **Use a fresh session ID for each visit**, so a new visit never inherits the end of an old session.
 - **Check the IP twice before you start.** Look it up through the session, wait 3 seconds, look it up again. If it changed, that session will not hold: take a new session ID.
 - **Keep watching while the page is open.** Re-check the IP every 20 seconds through the same session, and stop before the form is sent if it changed.
@@ -40,9 +41,10 @@ This is one provider, a small sample and one month. Providers change their pools
 
 Every sticky launch follows those rules without any setup:
 
-- A lifetime is always sent: the profile's **Session TTL**, else **Settings → Advanced → Targeting → Keep the same IP for (minutes)**, 15 by default. Each provider's limit applies; see each provider's guide under [Proxy providers](/docs/proxy-providers#sticky-and-rotating-sessions).
+- A lifetime is always sent: the profile's **Session TTL**, else **Settings → Advanced → Targeting → Keep the same IP for (minutes)**, 60 by default (2.1 used 15, which stopped visits longer than 15 minutes). Each provider's limit applies; see each provider's guide under [Proxy providers](/docs/proxy-providers#sticky-and-rotating-sessions).
 - Before the browser opens, the exit IP is looked up through the same login the browser will use, then checked again 3 seconds later. If it changed, the app tries a fresh session; after three unstable sessions in a row it stops with `IP_UNSTABLE` and does not open a browser.
-- While the browser is open, the IP is re-checked every 20 seconds. If it changes, the app blocks every request from the browser, closes it and shows **"Browser stopped: the IP address changed"** with both IPs and places, as a dialog and a system notification. The change is saved on the run, so History shows it later.
+- While the browser is open, the app shows how long the IP is kept ("Same IP until 2:45 PM") and sends a notification 2 minutes before the lifetime ends, so you can submit or launch again first.
+- While the browser is open, the IP is re-checked every 20 seconds. If it changes, the app blocks every request from the browser, closes it and shows **"Browser stopped: the IP address changed"** with both IPs and places, as a dialog and a system notification. The message says why: the lifetime ran out, or the provider replaced the IP early because its home connection went offline. The change is saved on the run, so History shows it later.
 - The location shown next to the IP comes from an IP-location service, and ZIP codes are shown as approximate (≈ 98104). See [Exit-IP verification](/docs/locations-and-devices#exit-ip-verification).
 
 ## Check a session yourself with curl

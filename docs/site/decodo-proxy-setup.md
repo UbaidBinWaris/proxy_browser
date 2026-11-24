@@ -31,7 +31,7 @@ Multi-word names use underscores (`us_new_york`, `las_vegas`). A city target car
 
 ## Sticky and rotating sessions
 
-Sticky mode adds `-session-<id>` and a lifetime, `-sessionduration-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (15 by default). Without a lifetime Decodo keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
+Sticky mode adds `-session-<id>` and a lifetime, `-sessionduration-<minutes>` (1–1440): the profile's **Session TTL**, else **Keep the same IP for (minutes)** from Settings (60 by default). Without a lifetime Decodo keeps a session for 10 minutes. Session IDs are mapped to a stable alphanumeric token of up to 32 characters. Turn **Sticky session** off for rotating mode.
 
 ```text
 user-USERNAME-country-us-state-us_new_jersey-session-ql202610077f3a0uv3n6-sessionduration-15

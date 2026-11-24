@@ -13,11 +13,11 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { AppSettingsSchema, LEGACY_PROXY_MODES, ProfileInputSchema, ProxyModeSchema, normalizeProxyMode } from '../src/shared/types'
+import { AppSettingsSchema, DEFAULT_STICKY_TTL_MINUTES, LEGACY_PROXY_MODES, ProfileInputSchema, ProxyModeSchema, normalizeProxyMode } from '../src/shared/types'
 import type { Logger } from '../src/main/contracts'
 import { createProfileManager } from '../src/main/browser/profile-manager'
 import { openDatabase } from '../src/main/database/index'
-import { LEGACY_TARGETING_ENCODING_KEY, migrateLegacySettings } from '../src/main/database/repositories/settings'
+import { LEGACY_TARGETING_ENCODING_KEY, PREVIOUS_DEFAULT_STICKY_TTL_MINUTES, STICKY_TTL_MIGRATION_KEY, migrateLegacySettings, migrateStickyTtlDefault } from '../src/main/database/repositories/settings'
 import { MIGRATIONS, runMigrations } from '../src/main/database/schema'
 import { BackupConfigurationSchema, decryptBackup, restoreConfiguration } from '../src/main/qa/backup'
 import { ManifestMatrixSchema, configErrorText, firstIssueText, parseQaManifest } from '../src/main/qa/cli-manifest'
@@ -233,6 +233,28 @@ describe('legacy settings migration', () => {
     expect(valueOf(db, LEGACY_TARGETING_ENCODING_KEY)).toBeUndefined()
     // Nothing to carry over, so the (separately corrupt) providerOptions row is left for the per-key fallback.
     expect(db.prepare('SELECT value FROM app_settings WHERE key = ?').get('providerOptions')).toMatchObject({ value: 'also not json' })
+  })
+
+  it('moves the 2.1.x default sticky lifetime (stored by every Settings save) to the current default, once', () => {
+    expect(DEFAULT_STICKY_TTL_MINUTES).not.toBe(PREVIOUS_DEFAULT_STICKY_TTL_MINUTES)
+    const db = settingsDb({ defaultStickyTtlMinutes: JSON.stringify(PREVIOUS_DEFAULT_STICKY_TTL_MINUTES) })
+    expect(migrateStickyTtlDefault(db)).toBe(true)
+    expect(valueOf(db, 'defaultStickyTtlMinutes')).toBe(DEFAULT_STICKY_TTL_MINUTES)
+    expect(valueOf(db, STICKY_TTL_MIGRATION_KEY)).toBe(true)
+    // Once only: a user who sets 15 again afterwards keeps it.
+    db.prepare('UPDATE app_settings SET value = ? WHERE key = ?').run('15', 'defaultStickyTtlMinutes')
+    expect(migrateStickyTtlDefault(db)).toBe(false)
+    expect(valueOf(db, 'defaultStickyTtlMinutes')).toBe(15)
+  })
+
+  it('keeps a lifetime the user chose, and marks installs that never stored one', () => {
+    const chosen = settingsDb({ defaultStickyTtlMinutes: '30' })
+    expect(migrateStickyTtlDefault(chosen)).toBe(false)
+    expect(valueOf(chosen, 'defaultStickyTtlMinutes')).toBe(30)
+    const fresh = settingsDb({})
+    expect(migrateStickyTtlDefault(fresh)).toBe(false)
+    expect(valueOf(fresh, 'defaultStickyTtlMinutes')).toBeUndefined()
+    expect(valueOf(fresh, STICKY_TTL_MIGRATION_KEY)).toBe(true)
   })
 })
 

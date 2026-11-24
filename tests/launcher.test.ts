@@ -86,6 +86,8 @@ function session(id: string, status: SessionStatus, profileId = `p-${id}`): Brow
     exitIpWatch: 'off',
     currentExitIp: null,
     lastIpCheckAt: null,
+    ipHoldUntil: null,
+    ipHoldMinutes: null,
   }
 }
 
@@ -216,16 +218,16 @@ describe('launcher.preview', () => {
     expect(preview).toEqual({
       providerId: 'dataimpulse',
       pool: 'residential',
-      targetingString: 'cr.us;state.newjersey;sessid.ql-20261005-ssss;sessttl.15',
+      targetingString: 'cr.us;state.newjersey;sessid.ql-20261005-ssss;sessttl.60',
       poolConfigured: true,
       warnings: [DOUBLE_RATE_WARNING],
     })
     expect(h.launcher.preview({ ...baseInput, target: ZIP, stickyTtlMinutes: 60 }).targetingString).toBe('cr.us;state.newjersey;city.newark;zip.07102;sessid.ql-20261005-ssss;sessttl.60')
-    expect(h.launcher.preview({ ...baseInput, target: US })).toMatchObject({ targetingString: 'cr.us;sessid.ql-20261005-ssss;sessttl.15', warnings: [] })
+    expect(h.launcher.preview({ ...baseInput, target: US })).toMatchObject({ targetingString: 'cr.us;sessid.ql-20261005-ssss;sessttl.60', warnings: [] })
     expect(h.launcher.preview({ ...baseInput, target: US, sticky: false })).toMatchObject({ targetingString: 'cr.us', warnings: [] })
     expect(h.launcher.preview({ ...baseInput, target: NJ, sticky: false })).toMatchObject({ targetingString: 'cr.us;state.newjersey', warnings: [DOUBLE_RATE_WARNING] })
     expect(h.launcher.preview({ ...baseInput, target: null, sticky: false, stickyTtlMinutes: 30 })).toMatchObject({ targetingString: null, warnings: [] })
-    // Sticky launches always carry a lifetime: the configured default (15) unless the input sets one; DataImpulse caps it at 60.
+    // Sticky launches always carry a lifetime: the configured default (60) unless the input sets one; DataImpulse caps it at 60.
     expect(h.launcher.preview({ ...baseInput, target: NJ, stickyTtlMinutes: 15 }).targetingString).toBe('cr.us;state.newjersey;sessid.ql-20261005-ssss;sessttl.15')
     expect(h.launcher.preview({ ...baseInput, target: NJ, stickyTtlMinutes: 240 }).targetingString).toBe('cr.us;state.newjersey;sessid.ql-20261005-ssss;sessttl.60')
   })
@@ -257,7 +259,7 @@ describe('launcher.preview', () => {
     expect(() => h.launcher.preview({ ...baseInput, target: { ...ZIP, zip: '1234' } })).toThrowError(/ZIP must be 5 digits/)
     expect(() => h.launcher.preview(null)).toThrowError(AppException)
     // Defaults fill the optional fields.
-    expect(h.launcher.preview({ startUrl: null, engine: 'chromium', devicePreset: 'iphone-15', proxyPool: 'residential', target: null })).toMatchObject({ targetingString: 'sessid.ql-20261005-ssss;sessttl.15' })
+    expect(h.launcher.preview({ startUrl: null, engine: 'chromium', devicePreset: 'iphone-15', proxyPool: 'residential', target: null })).toMatchObject({ targetingString: 'sessid.ql-20261005-ssss;sessttl.60' })
   })
 })
 
