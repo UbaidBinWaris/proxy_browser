@@ -40,6 +40,8 @@ PASSWORD_country-us_state-newjersey_session-0uv3n6d0_lifetime-15m
 
 You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the IPRoyal login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
 
+Windows' own proxy settings have no place for a proxy username and password, which is why the usual advice is to allowlist your computer's IP address in the IPRoyal dashboard or to install a proxy extension. Neither is needed here: the app hands the login to the browser it starts, so it also works from a computer whose IP address changes.
+
 ## Check that your IPRoyal proxy works
 
 - **Test connection** in **Manage keys** sends one request through the IPRoyal gateway with the login you typed and shows the result. Nothing is saved.

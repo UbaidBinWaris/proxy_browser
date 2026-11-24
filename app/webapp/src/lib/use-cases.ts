@@ -365,7 +365,7 @@ export const USE_CASES: UseCase[] = [
     summary: 'Chromium, Firefox and WebKit plus your installed Chrome, Edge, Brave and Opera.',
     navLabel: 'Cross-browser testing',
     title: 'Free, open-source cross-browser testing',
-    description: 'Test your own site in bundled Chromium, Firefox and WebKit and your installed Chrome, Edge, Brave and Opera, by hand or as a matrix. No account, no sign-up.',
+    description: 'Free, open-source app to test your own site in Chromium, Firefox, WebKit and installed Chrome, Edge and Brave. Free download for Windows, Linux or macOS.',
     eyebrow: 'USE CASE · CROSS-BROWSER TESTING',
     h1: 'Cross-browser testing in three bundled engines and your installed Chromium-family browsers.',
     lead: 'Proxy QA Browser opens your own site in bundled engines and in the Chromium-family browsers installed on your computer. It is free and open source, runs on your computer and needs no account or sign-up. Each launch uses a fresh temporary profile; see [how profile isolation works](/faq#does-an-installed-browser-use-my-own-profile-bookmarks-or-extensions).',

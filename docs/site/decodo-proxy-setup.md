@@ -41,6 +41,8 @@ user-USERNAME-country-us-state-us_new_jersey-session-ql202610077f3a0uv3n6-sessio
 
 You do not need a browser extension or a system-wide proxy setting. When you click **Connect & Launch**, the app starts the browser you picked (bundled Chromium, Firefox or WebKit, or your installed Chrome, Edge, Brave or Opera) with the Decodo login applied to that one browser, in a fresh temporary profile. Your other browser windows and apps keep their normal connection, and your own bookmarks, cookies and extensions are never touched. It works the same way on Windows, Linux and macOS.
 
+Windows' own proxy settings have no place for a proxy username and password, which is why the usual advice is to allowlist your computer's IP address in the Decodo dashboard or to install a proxy extension. Neither is needed here: the app hands the login to the browser it starts, so it also works from a computer whose IP address changes.
+
 ## Check that your Decodo proxy works
 
 - **Test connection** in **Manage keys** sends one request through the Decodo gateway with the login you typed and shows the result. Nothing is saved.

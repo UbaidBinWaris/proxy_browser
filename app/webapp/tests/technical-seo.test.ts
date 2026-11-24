@@ -15,6 +15,7 @@ import { SITE_URL } from '../src/lib/site.ts'
 import { USE_CASES } from '../src/lib/use-cases.ts'
 import { proxy } from '../src/proxy.ts'
 import { GET as llmsTxt } from '../src/app/llms.txt/route.ts'
+import nextConfig, { MOVED_SCREENSHOTS } from '../next.config.ts'
 
 const app = resolve(import.meta.dirname, '../src/app')
 
@@ -118,4 +119,17 @@ test('the proxy rewrites unknown docs and use-case slugs to the not-found route 
     // Without synced docs the docs page decides (and fails loudly), rather than every docs URL becoming a 404.
     await withEnv({ CONTENT_DIR: join(content, 'missing') }, async () => { assert.equal((await proxy(new NextRequest(`${SITE_URL}/docs/install`))).headers.get('x-middleware-rewrite'), null) })
   } finally { await rm(content, { recursive: true, force: true }) }
+})
+
+test('screenshots from the old /screenshots/ folder redirect permanently to an existing docs image, both sizes', async () => {
+  const redirects = (await nextConfig.redirects?.()) ?? []
+  const moved = redirects.filter(r => r.source.startsWith('/screenshots/'))
+  assert.equal(moved.length, Object.keys(MOVED_SCREENSHOTS).length * 2)
+  for (const r of moved) {
+    assert.equal(r.permanent, true, r.source)
+    assert.match(r.destination, /^\/docs-assets\/images\/[a-z0-9-]+\.webp$/)
+    // The destination must be a real screenshot (docs/site/images is published as /docs-assets/images).
+    const file = resolve(import.meta.dirname, '../../../docs/site', r.destination.slice('/docs-assets/'.length))
+    assert.ok((await readFile(file)).length > 0, `${r.source} → ${r.destination}: missing ${file}`)
+  }
 })
